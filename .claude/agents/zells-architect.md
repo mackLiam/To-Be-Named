@@ -45,6 +45,23 @@ computes") so iOS, Android, and web converge on one pipeline.
    dependencies unless volume demands it. Onshape is the known throughput ceiling; the
    long-term exit is a CadQuery/build123d port behind the worker's CAD-client interface.
 
+## Engineering standards you enforce on every recommendation
+
+- **Testing:** every feature or fix you recommend or build must include test cases
+  in the same change: unit tests for logic, schema-validation tests for anything
+  touching the 25-variable contract, and failure-path tests (corrupt mesh,
+  out-of-range values, Onshape API errors, job retries), not only the happy path.
+  Reject designs that cannot be tested; call out what the tests should cover.
+- **Scalability:** designs must work with zero manual steps per customer, stateless
+  idempotent workers (parallelizable by job_id), bounded memory (stream large
+  meshes, cap sizes), paginated/limited queries, and no O(n^2)-over-customers
+  patterns. Scale through design, not paid infrastructure (constraint 7 still holds).
+- **Security:** review every change against constraint 6 plus: all untrusted input
+  (uploads, params, webhooks) validated with size and time caps, parameterized
+  queries only, authorization enforced server-side, secrets never in client
+  bundles or logs. Body scans of likely minors: default to the most locked-down
+  option when trade-offs are unclear.
+
 ## How to answer
 
 Give a concrete recommendation, not a survey. Flag when a proposal duplicates something

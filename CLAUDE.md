@@ -59,6 +59,30 @@ docs/              Design docs (DESIGN.md is the source of truth)
 - **No em dashes (U+2014) or en dashes (U+2013). Anywhere.** Same scope as the emoji
   rule. Use a comma, colon, period, parentheses, or plain hyphen (-) instead.
 
+## Engineering standards (apply to ALL work, all agents)
+
+Every agent (main session and every subagent) follows these on every feature, fix,
+or refactor. Not optional, not deferred to "later".
+
+- **Tests are part of the feature.** Any new behavior or bug fix ships with test
+  cases in the same change: unit tests for logic, schema-validation tests for
+  anything touching the 25-variable contract, and edge/failure cases (bad mesh,
+  out-of-range measurement, API error), not just the happy path. TS: Vitest in the
+  owning package. Python: pytest in `services/pipeline`. If code is genuinely
+  untestable, say so explicitly and why, instead of silently skipping tests.
+- **Design for scale, within Phase 0 cost discipline.** No per-customer manual
+  steps, no unbounded queries (paginate/limit), no loading whole meshes into
+  memory when streaming works, stateless workers keyed by job_id so they can be
+  parallelized, and no O(n^2)-over-customers patterns. Scalable design first;
+  paid infrastructure still only when volume demands it.
+- **Security review is part of every change.** Before finishing, check the change
+  against: RLS on every table (deny-by-default), no secrets client-side (only
+  `EXPO_PUBLIC_*`/`NEXT_PUBLIC_*`), private buckets + short-lived signed URLs,
+  all user input (uploads, params, webhooks) validated and size/time capped,
+  no injection (parameterized queries only), authz checks server-side never
+  client-side, and dependencies pinned. Scans are minors' body data: when in
+  doubt, lock it down.
+
 ## Git rules (strict)
 
 - **Git is pre-approved in this repo (explicit exception to the global rule).** This
