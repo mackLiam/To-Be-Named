@@ -1,7 +1,7 @@
 # Zells
 
 Custom 3D printed soccer shin guards, fitted to your leg from a simple phone scan.
-No sizing charts, no generic fits — just a scan, and a shin guard made for your exact leg.
+No sizing charts, no generic fits - just a scan, and a shin guard made for your exact leg.
 
 **How it works:** scan your leg with your iPhone → the app extracts 25 exact
 measurements from the 3D reconstruction → those drive a parametric CAD model that
@@ -12,7 +12,7 @@ a CAD file per customer.
 
 | Path | What |
 |---|---|
-| [`docs/DESIGN.md`](docs/DESIGN.md) | **Design doc — source of truth** (architecture, stack, security, roadmap) |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | **Design doc - source of truth** (architecture, stack, security, roadmap) |
 | [`apps/app/`](apps/app/) | Expo universal product app (iOS + Android + web) |
 | [`apps/web/`](apps/web/) | Next.js marketing site + internal admin panel |
 | [`services/pipeline/`](services/pipeline/) | Python worker: mesh → measurements → Onshape → STL |
@@ -22,10 +22,10 @@ a CAD file per customer.
 ## Getting started
 
 ```sh
-cp .env.example .env   # then fill in real keys — .env is gitignored
+cp .env.example .env   # then fill in real keys - .env is gitignored
 ```
 
-App scaffolding lands in Phase 1; current phase is **Phase 0 — prove the
+App scaffolding lands in Phase 1; current phase is **Phase 0 - prove the
 scan→measurement→CAD→print pipeline end-to-end** (see `docs/DESIGN.md` §11).
 
 ## Status

@@ -1,4 +1,4 @@
-# Zells — System Design Document
+# Zells - System Design Document
 
 **Status:** Draft v1 · **Date:** 2026-07-01 · **Author:** Liam Mackenzie (with Claude)
 
@@ -10,7 +10,7 @@ Zells sells custom-fit, 3D-printed soccer shin guards. A user scans their leg wi
 their phone; the app extracts 25 measurements from the reconstructed mesh; those
 measurements drive a parametric CAD model that generates a print-ready STL; the
 guard is printed and shipped. The core value proposition is a **fully automated
-scan-to-print pipeline** — no human touches a CAD file per customer.
+scan-to-print pipeline** - no human touches a CAD file per customer.
 
 The scan is never printed directly. It is a *measurement instrument*. The printed
 geometry always comes from the parametric model, which guarantees printability,
@@ -20,7 +20,7 @@ scan noise.
 ### The 25 variables
 
 - `Leg_Length` (1)
-- Four cross-sections S1–S4 at 20/40/60/80% of leg length, each with six
+- Four cross-sections S1-S4 at 20/40/60/80% of leg length, each with six
   dimensions: `ISW`, `ISD`, `ICW`, `ICD`, `OW`, `OD` (24)
 
 ---
@@ -31,7 +31,7 @@ scan noise.
 
 1. Prove the scan → measurements → CAD → STL pipeline end-to-end with real scans.
 2. Ship an iOS app first; keep the architecture Android- and web-ready.
-3. Fully automated per-order geometry generation — zero manual CAD work.
+3. Fully automated per-order geometry generation - zero manual CAD work.
 4. A stack a solo/small team can operate, that won't need a rewrite at 10k orders/month.
 5. Treat leg scans as sensitive personal data from day one.
 
@@ -84,7 +84,7 @@ pipeline, and the pipeline can be tested without any phone at all.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Product app (iOS + Android + web) | React Native + **Expo Router universal app** (custom dev client / EAS) | Already started; one codebase ships as both native apps *and* the web app (`app.zells.com`) — identical UX across platforms by construction (see §5). Must move off Expo Go. |
+| Product app (iOS + Android + web) | React Native + **Expo Router universal app** (custom dev client / EAS) | Already started; one codebase ships as both native apps *and* the web app (`app.zells.com`) - identical UX across platforms by construction (see §5). Must move off Expo Go. |
 | Capture module | **Swift native module** wrapping `ObjectCaptureSession` / `PhotogrammetrySession` | Only way to reach Apple photogrammetry. Small, isolated, testable surface. iOS-only; gated off on other platforms. |
 | Marketing + admin | **Next.js (TypeScript)** on Vercel | `zells.com` SEO pages + internal admin panel. Server components keep admin secrets off the client. |
 | Monorepo | **pnpm workspaces + Turborepo** | Share types (measurement JSON schema, order states), API client, and design tokens between mobile and web. |
@@ -96,7 +96,7 @@ pipeline, and the pipeline can be tested without any phone at all.
 | CAD generation | **Onshape REST API** (MVP) | Collaborator's parametric model already exists and accepts the 25 variables. See §7 for the scaling caveat and exit strategy. |
 | Payments | **Stripe** (Payment Sheet on mobile, Checkout on web) | Industry default; handles SCA/tax/receipts. Never touch card data. |
 | Auth | **Supabase Auth**: Sign in with Apple + email OTP (+ Google for Android/web later) | Sign in with Apple is required by App Store review when any third-party login is offered. |
-| CI/CD | **GitHub Actions** + **EAS Build/Submit** (mobile), Vercel (web), Docker deploy (worker) | Solves the "no Mac" problem for release builds — EAS builds iOS in the cloud (see §5). |
+| CI/CD | **GitHub Actions** + **EAS Build/Submit** (mobile), Vercel (web), Docker deploy (worker) | Solves the "no Mac" problem for release builds - EAS builds iOS in the cloud (see §5). |
 | Errors / analytics | **Sentry** (app + worker) · **PostHog** (funnel: scan started → scan succeeded → order) | Scan failure rate is the #1 product metric; instrument it from day one. |
 
 ### Deliberately deferred
@@ -114,18 +114,18 @@ pipeline, and the pipeline can be tested without any phone at all.
 - `ObjectCaptureSession` (guided capture UI) requires **iOS 17+ and a LiDAR
   device** (iPhone 12 Pro and later Pro models). On-device
   `PhotogrammetrySession` reconstruction has its own device floor (A14+, RAM
-  gated). **Decide and enforce a minimum supported device list early** — it
+  gated). **Decide and enforce a minimum supported device list early** - it
   directly shapes the addressable market and the App Store listing.
 - **Critical:** `PhotogrammetrySession` cannot run inside Expo Go. The path is:
   Expo custom dev client (`expo-dev-client`), a Swift native module (config
-  plugin) exposing capture + reconstruction, built via **EAS Build** — which
+  plugin) exposing capture + reconstruction, built via **EAS Build** - which
   also removes the Windows/Mac-VM blocker for producing installable builds.
   A physical iPhone with LiDAR is still required for testing capture itself.
 - **Dev-machine recommendation:** skip MacStadium (~$100+/mo). A **used M1 Mac
-  mini (~$250–350 one-time)** pays for itself inside three months, gives real
+  mini (~$250-350 one-time)** pays for itself inside three months, gives real
   Xcode + device debugging (EAS cloud builds are slow for iterate-debug loops on
   a native module), and later becomes the server-side reconstruction worker for
-  Android/older iPhones (§ below) — one purchase, three jobs.
+  Android/older iPhones (§ below) - one purchase, three jobs.
 
 ### Android (later)
 
@@ -134,7 +134,7 @@ pipeline, and the pipeline can be tested without any phone at all.
      photo burst, uploads images, backend reconstructs. Reconstruction options:
      a Mac mini worker running macOS `PhotogrammetrySession` (cheap, same output
      format as iOS), or a paid API (Luma AI, KIRI Engine).
-  2. Third-party on-device SDK — pricier and quality varies.
+  2. Third-party on-device SDK - pricier and quality varies.
 - Because the pipeline is server-side from the OBJ onward (§3), Android support
   is *only* a capture problem, not a pipeline problem. This is the main payoff
   of the "phone captures, backend computes" split.
@@ -145,11 +145,11 @@ pipeline, and the pipeline can be tested without any phone at all.
 
 - No capture on web (no camera-based photogrammetry worth shipping). Everything
   else has **full parity** with the mobile app: same account, same scan library,
-  same shop, same order history — guaranteed structurally because there is only
+  same shop, same order history - guaranteed structurally because there is only
   one backend (Supabase) and both clients are thin views over it. A scan made on
   the phone is immediately visible and orderable on the web, and vice-versa for
   orders.
-- **Codebase strategy — one product app, three platforms:** build the product
+- **Codebase strategy - one product app, three platforms:** build the product
   surface (login, scans, shop, orders, profile) as a single **Expo Router
   universal app** that ships as the iOS app, the Android app, *and* the web app
   (served at `app.zells.com` via Expo's web output). Identical look and behavior
@@ -159,15 +159,15 @@ pipeline, and the pipeline can be tested without any phone at all.
   reconstruction ships.
 - **Browser upload path:** because the pipeline starts at "mesh file in storage,"
   the web app can also accept a **direct upload** instead of capturing:
-  1. *Mesh upload (OBJ/USDZ)* — e.g. from Polycam/Scaniverse or any scanner app.
+  1. *Mesh upload (OBJ/USDZ)* - e.g. from Polycam/Scaniverse or any scanner app.
      Technically trivial to support, but carries the **scale problem**: an OBJ
      has no units, and pure-photogrammetry meshes (no LiDAR) have *arbitrary
-     scale* — every measurement would be precisely, plausibly wrong. Accept only
+     scale* - every measurement would be precisely, plausibly wrong. Accept only
      sources with trustworthy real-world scale (LiDAR-derived), enforce the §6
      plausibility gates, and require a user-confirmed reference measurement
-     (e.g. knee-to-ankle length in cm) as a cross-check — and to rescale when
-     the mesh is uniform but unscaled — before the scan is marked valid.
-  2. *Photo/video upload → server-side reconstruction* — same backend path
+     (e.g. knee-to-ankle length in cm) as a cross-check - and to rescale when
+     the mesh is uniform but unscaled - before the scan is marked valid.
+  2. *Photo/video upload → server-side reconstruction* - same backend path
      already planned for Android (§ above); the browser is just another capture
      client. Ships when the reconstruction worker ships; capture-guidance UX
      (coverage, lighting, distance) is the quality risk without a native
@@ -177,10 +177,10 @@ pipeline, and the pipeline can be tested without any phone at all.
 - **Next.js stays, but smaller:** `zells.com` marketing/SEO pages and the
   **internal admin panel** (order queue, pipeline job status, failed-scan
   triage, break-glass STL download). These want SEO and server-side secrets
-  respectively — the two things Expo web is worst at.
+  respectively - the two things Expo web is worst at.
 - **Scan reuse & reorder:** a validated scan's 25 measurements are small JSON
   kept indefinitely (only the heavy raw mesh is deleted per the retention policy
-  in §9.3). Reordering — same measurements, different guard model/style — is a
+  in §9.3). Reordering - same measurements, different guard model/style - is a
   measurements-only operation, so it works forever, from any platform, with no
   rescan, and costs nothing to store.
 
@@ -203,17 +203,17 @@ Step details:
 1. **Capture (device):** Apple capture UI → USDZ/OBJ export → compress → upload
    to Supabase Storage via short-lived signed URL. Client never talks to the
    worker directly.
-2. **Measure (worker):** `extract_shin_measurements.py` logic — PCA axis, four
+2. **Measure (worker):** `extract_shin_measurements.py` logic - PCA axis, four
    slices, 25 values. Add **validation gates**: each measurement checked against
-   human-plausible ranges (e.g., calf width 6–16 cm); out-of-range → job fails
+   human-plausible ranges (e.g., calf width 6-16 cm); out-of-range → job fails
    with a user-facing "please rescan" reason rather than generating garbage
    geometry. Log all 25 values per job for drift analysis.
 3. **CAD (worker):** push variables to Onshape via REST, poll regeneration,
    export STL, store next to the scan. **Units:** Onshape stores meters
-   internally regardless of display units — the worker owns a single
+   internally regardless of display units - the worker owns a single
    canonical-units boundary (pipeline computes in mm, converts to meters exactly
    once, at the Onshape client). The 25 variable names must match the Onshape
-   model exactly — freeze them in a shared, versioned JSON Schema that the
+   model exactly - freeze them in a shared, versioned JSON Schema that the
    extraction script, the TypeScript types, and the Onshape client all validate
    against (this is the #1 integration risk; confirm names with collaborator
    before building the client).
@@ -237,12 +237,12 @@ Cross-cutting rules:
 
 ## 7. Onshape: Fine for MVP, a Bottleneck at Scale
 
-Onshape is the right MVP choice — the model exists and is validated. Known
+Onshape is the right MVP choice - the model exists and is validated. Known
 constraints to design around:
 
 - **Rate limits & latency:** API regeneration + export is seconds-to-minutes per
   part and rate-limited per account. At meaningful order volume this becomes the
-  pipeline's throughput ceiling. Mitigation now: queue with concurrency of 1–2
+  pipeline's throughput ceiling. Mitigation now: queue with concurrency of 1-2
   and measure per-order latency from day one.
 - **Concurrency:** parallel orders must not fight over one workspace. Pattern:
   create a per-job branch/version (or per-job copy of the document), set
@@ -251,7 +251,7 @@ constraints to design around:
 - **Vendor risk:** per-seat pricing, API terms, and the model living in a
   collaborator's account. Get the document into a company-owned Onshape account
   early.
-- **Exit strategy (post-PMF):** port the parametric model to code-CAD —
+- **Exit strategy (post-PMF):** port the parametric model to code-CAD -
   **CadQuery or build123d** (Python, OCCT kernel). Geometry generation then runs
   in-process in the worker: no external API, no rate limits, pennies per part,
   horizontally scalable. Significant one-time effort; do it only after the
@@ -278,19 +278,19 @@ pipeline_jobs  id, order_id, step, status, attempts, error, started_at,
 
 Notes:
 
-- Measurements stored as versioned JSONB against the frozen schema — when the
+- Measurements stored as versioned JSONB against the frozen schema - when the
   extraction algorithm changes, `extraction_version` lets you re-run and compare.
 - A guard is per-leg: orders reference up to two scans.
 - **Row Level Security on every table**; users see only their own rows. Admin
   access via a service role used exclusively server-side (worker, admin panel
-  API routes) — the service key never ships in any client.
+  API routes) - the service key never ships in any client.
 
 ---
 
 ## 9. Security & Privacy
 
 A 3D scan of a body part is sensitive personal data (biometric-adjacent under
-GDPR; special-category risk if minors use the app — likely, given youth soccer).
+GDPR; special-category risk if minors use the app - likely, given youth soccer).
 Design accordingly from day one; retrofitting privacy is far harder than
 retrofitting features.
 
@@ -298,7 +298,7 @@ retrofitting features.
    all mesh/STL access via short-lived signed URLs; encryption at rest (managed).
 2. **Least privilege:** clients get scoped, RLS-constrained tokens only. Worker
    uses the service role from server-side env/secrets manager. No secrets in the
-   mobile bundle — anything in the app binary is public.
+   mobile bundle - anything in the app binary is public.
 3. **Data minimization & retention:** raw meshes exist to serve orders and debug
    the pipeline. Policy: auto-delete raw meshes N days after order delivery
    (keep only the 25 measurements, which are far less sensitive), with explicit
@@ -308,7 +308,7 @@ retrofitting features.
    review before launch. Flag for legal review; do not silently ignore.
 5. **Payments:** Stripe-hosted fields/sheets only; PCI SAQ-A scope. Store the
    Stripe customer/payment-intent ids, never card data.
-6. **Pipeline hardening:** the worker parses user-supplied OBJ files — treat as
+6. **Pipeline hardening:** the worker parses user-supplied OBJ files - treat as
    untrusted input (size caps, vertex-count caps, parse in a sandboxed
    container, timeouts). Malformed mesh must fail a job, never the worker.
 7. **Webhooks:** verify Stripe (and later print-partner) signatures; process
@@ -328,7 +328,7 @@ adequate answer:
 |---|---|---|
 | Pipeline throughput (Onshape) | ~100s of orders/week | Queue + measured latency now; code-CAD port later (§7) |
 | Reconstruction compute (Android/older-iPhone path) | When server-side capture ships | Stateless workers; add Mac minis or cloud API horizontally |
-| Storage cost (meshes are 10–100 MB) | ~1k scans | Retention policy (§9.3) + storage lifecycle rules |
+| Storage cost (meshes are 10-100 MB) | ~1k scans | Retention policy (§9.3) + storage lifecycle rules |
 | Postgres | Very late | Supabase scales vertically a long way; RLS design is portable |
 | Web/API traffic | Late | Vercel + Supabase are elastic; nothing stateful in app tier |
 
@@ -346,15 +346,15 @@ monthly costs:
 
 | Item | Pre-launch | Early revenue (~100 orders/mo) |
 |---|---|---|
-| Supabase | $0 (free tier) | $25 (Pro — needed for backups/retention) |
-| Vercel (web) | $0 (Hobby) | $0–20 |
-| Worker (Fly.io/Railway) | ~$5 | ~$10–20 |
+| Supabase | $0 (free tier) | $25 (Pro - needed for backups/retention) |
+| Vercel (web) | $0 (Hobby) | $0-20 |
+| Worker (Fly.io/Railway) | ~$5 | ~$10-20 |
 | EAS Build | $0 (free-tier builds) | $19 (production plan, optional if builds infrequent) |
 | Sentry + PostHog | $0 (free tiers) | $0 |
 | Stripe | $0 | % of revenue only (no fixed fee) |
 | Apple Developer | $99/yr (unavoidable) | $99/yr |
 | Onshape | ⚠ see below | ⚠ |
-| Mac mini (used M1) | ~$300 **one-time** | — |
+| Mac mini (used M1) | ~$300 **one-time** | - |
 | **Total fixed** | **≈ $15/mo + one-times** | **≈ $75/mo** |
 
 Cost rules:
@@ -363,14 +363,14 @@ Cost rules:
   *public*. A customer-measurement-driven CAD model must be private → Standard
   plan (~$1,500/yr) on a company account, or confirm the collaborator's existing
   paid seat can host it. This is the largest fixed cost in the stack and one
-  more reason the code-CAD exit (§7) matters — CadQuery/build123d is free.
+  more reason the code-CAD exit (§7) matters - CadQuery/build123d is free.
 - **Buy, don't rent, the Mac:** used M1 mini beats MacStadium rental within
   ~3 months and doubles as the reconstruction worker later.
 - **No fixed-cost infrastructure before it's earned:** no Redis, no dedicated
-  queue service, no k8s — the Postgres-backed queue and free tiers carry the
+  queue service, no k8s - the Postgres-backed queue and free tiers carry the
   product to real order volume. Every paid upgrade in the table is triggered by
   revenue-linked volume, so costs scale *behind* income, not ahead of it.
-- **Storage is the sneaky variable cost** (meshes are 10–100 MB each): the
+- **Storage is the sneaky variable cost** (meshes are 10-100 MB each): the
   retention policy in §9.3 is a cost control as much as a privacy control.
   Compress meshes (Draco/zip) before upload.
 
@@ -378,25 +378,25 @@ Cost rules:
 
 ## 11. Roadmap
 
-**Phase 0 — prove the pipeline (current):**
+**Phase 0 - prove the pipeline (current):**
 real scan via EAS dev build on a LiDAR iPhone (or borrowed Mac for the interim) →
 extraction on real mesh → freeze the 25-variable JSON Schema with collaborator →
 Onshape API round-trip → hold a printed guard generated with zero manual CAD.
 *Everything else waits on this.*
 
-**Phase 1 — walking skeleton:** monorepo, Supabase (auth, DB, storage, RLS),
+**Phase 1 - walking skeleton:** monorepo, Supabase (auth, DB, storage, RLS),
 worker + queue with the state machine, capture native module in the app, admin
 page showing job states. One user can go scan → STL in production infrastructure.
 
-**Phase 2 — sellable:** Stripe, orders flow, shipping capture, fulfillment
+**Phase 2 - sellable:** Stripe, orders flow, shipping capture, fulfillment
 (manual admin path), Sentry + PostHog, measurement validation gates, golden-file
 CI suite.
 
-**Phase 3 — launch:** onboarding + scan-guidance UX (biggest quality lever),
+**Phase 3 - launch:** onboarding + scan-guidance UX (biggest quality lever),
 privacy policy + data deletion + minors review, App Store assets, web build of
 the product app (`app.zells.com`), re-order from stored measurements.
 
-**Phase 4 — expand:** Android (server-side reconstruction), print-partner API,
+**Phase 4 - expand:** Android (server-side reconstruction), print-partner API,
 code-CAD port when volume justifies it.
 
 ---
@@ -405,18 +405,18 @@ code-CAD port when volume justifies it.
 
 1. **Scan accuracy on real legs** (skin texture is low-feature; photogrammetry
    hates that). Mitigations: capture UX guidance; the parked **fiducial-marker
-   sleeve** idea is genuinely strong — it doubles as a product accessory and a
+   sleeve** idea is genuinely strong - it doubles as a product accessory and a
    capture-consistency fix. Validate accuracy vs. tape-measure ground truth on
    ~10 real legs before trusting the pipeline.
-2. **Onshape variable-name mismatch** — confirm names with collaborator and
+2. **Onshape variable-name mismatch** - confirm names with collaborator and
    freeze the schema before writing the integration.
-3. **Device floor** — LiDAR-only capture may exclude a large share of the target
+3. **Device floor** - LiDAR-only capture may exclude a large share of the target
    market; server-side reconstruction path (§5) is the hedge. Decide early.
-4. **Protective-equipment compliance** — soccer shin guards are safety gear
+4. **Protective-equipment compliance** - soccer shin guards are safety gear
    (NOCSAE ND090 in US school/college play, CE EN 13061 in the EU). A custom
    guard that isn't certified may be unusable in sanctioned matches. This is a
    business-model-level question; investigate before launch, not after.
-5. **Print material/process choice** (impact resistance vs. printability) —
+5. **Print material/process choice** (impact resistance vs. printability) -
    affects the parametric model's wall thickness assumptions; needs testing with
    the fulfillment partner.
-6. **Minors & consent** (§9.4) — legal review required pre-launch.
+6. **Minors & consent** (§9.4) - legal review required pre-launch.
