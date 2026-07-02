@@ -378,6 +378,8 @@ Cost rules:
 
 ## 11. Roadmap
 
+Dated, week-by-week execution plan for these phases: **`docs/ROADMAP.md`**.
+
 **Phase 0 - prove the pipeline (current):**
 real scan via EAS dev build on a LiDAR iPhone (or borrowed Mac for the interim) →
 extraction on real mesh → freeze the 25-variable JSON Schema with collaborator →
