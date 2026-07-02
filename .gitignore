@@ -7,6 +7,15 @@
 *.p12
 *.key
 *.mobileprovision
+# EAS build credentials (Apple/Android signing secrets)
+credentials.json
+# Android signing
+*.keystore
+*.jks
+# Generic secret stores
+secrets/
+*.secret
+service-account*.json
 
 # Node / JS
 node_modules/
@@ -29,6 +38,11 @@ android/app/build/
 *.ipa
 *.apk
 *.aab
+
+# Supabase CLI local artifacts (may contain access tokens / local creds)
+supabase/.temp/
+supabase/.branches/
+supabase/.env
 
 # Python (pipeline worker)
 __pycache__/
