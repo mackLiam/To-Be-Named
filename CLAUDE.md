@@ -59,8 +59,12 @@ docs/              Design docs (DESIGN.md is the source of truth)
 
 ## Git rules (strict)
 
-- Branches: feature branches off `develop`, merge back into `develop`; `main` only via PR.
-  Branch names: `type/short-description` (e.g. `feat/scan-upload`, `fix/onshape-units`).
+- Committing directly to `develop` is allowed (the remote's PR-only rule on `develop`
+  is bypassed intentionally). `main` is release-only and changes ONLY via PR from
+  `develop` — never commit or push to `main` directly.
+- Feature branches are optional, for larger or riskier work; name them
+  `type/short-description` (e.g. `feat/scan-upload`, `fix/onshape-units`) and merge
+  back into `develop`.
 - **Commit messages — Conventional Commits, always:**
   - Format: `type(scope): short summary` on line 1, blank line, then a longer body
     explaining what changed and why.
@@ -77,7 +81,7 @@ docs/              Design docs (DESIGN.md is the source of truth)
     ```
 - **Never add a Co-Authored-By line, "Generated with Claude" footer, or any AI
   attribution to commits, PRs, or code.** No exceptions.
-- Never commit directly to `main`. Never force-push shared branches.
+- Never force-push shared branches.
 
 ## Current phase
 
