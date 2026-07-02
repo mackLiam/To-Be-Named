@@ -1,0 +1,63 @@
+# Environment / secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Node / JS
+node_modules/
+.pnpm-store/
+dist/
+build/
+.turbo/
+.next/
+out/
+.vercel/
+*.tsbuildinfo
+
+# Expo / React Native
+.expo/
+.expo-shared/
+expo-env.d.ts
+ios/build/
+android/build/
+android/app/build/
+*.ipa
+*.apk
+*.aab
+
+# Python (pipeline worker)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Large binary artifacts — meshes/STLs live in object storage, not git
+# (small golden-file test fixtures are allowed via test fixture dirs)
+*.obj
+*.usdz
+*.stl
+*.ply
+!**/tests/fixtures/**
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs / misc
+*.log
+npm-debug.log*
+coverage/
+
+# Claude Code local settings (personal, not shared)
+.claude/settings.local.json
