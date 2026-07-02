@@ -61,6 +61,12 @@ docs/              Design docs (DESIGN.md is the source of truth)
 
 ## Git rules (strict)
 
+- **Git is pre-approved in this repo (explicit exception to the global rule).** This
+  is a personal repo: run non-destructive git commands (status, add, commit, push,
+  pull, fetch, rebase, branch, merge, checkout, stash) without asking first, in chat
+  or otherwise. When a task naturally ends in a commit, commit and push without
+  prompting. Destructive operations still require explicit approval every time:
+  force push, reset --hard, clean, filter-branch/filter-repo, deleting remote branches.
 - Committing directly to `develop` is allowed (the remote's PR-only rule on `develop`
   is bypassed intentionally). `main` is release-only and changes ONLY via PR from
   `develop` - never commit or push to `main` directly.
