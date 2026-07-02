@@ -1,0 +1,24 @@
+# Normalize line endings to LF in the repo regardless of OS.
+# Matters here: development happens across Windows and macOS.
+* text=auto eol=lf
+
+# Windows scripts keep CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files — never diff/normalize
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.obj binary
+*.usdz binary
+*.stl binary
+*.ply binary
+*.p8 binary
+*.p12 binary
