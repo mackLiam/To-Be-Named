@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zells.com/schemas/measurements-0.1.0-draft.json",
+  "title": "Zells shin measurements",
+  "$comment": "Variable names are DRAFT pending confirmation with the CAD collaborator against the Onshape model; do not build the Onshape integration against unconfirmed names. All values are millimeters.",
+  "type": "object",
+  "x-schema-version": "0.1.0-draft",
+  "additionalProperties": false,
+  "properties": {
+    "Leg_Length": {
+      "type": "number",
+      "minimum": 150,
+      "maximum": 600,
+      "description": "Total leg length from knee to ankle, in millimeters."
+    },
+    "S1_ISW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner shin width at slice S1 (20 percent of leg length), in millimeters."
+    },
+    "S1_ISD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner shin depth at slice S1 (20 percent of leg length), in millimeters."
+    },
+    "S1_ICW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner calf width at slice S1 (20 percent of leg length), in millimeters."
+    },
+    "S1_ICD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner calf depth at slice S1 (20 percent of leg length), in millimeters."
+    },
+    "S1_OW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Outer width at slice S1 (20 percent of leg length), in millimeters."
+    },
+    "S1_OD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Outer depth at slice S1 (20 percent of leg length), in millimeters."
+    },
+    "S2_ISW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner shin width at slice S2 (40 percent of leg length), in millimeters."
+    },
+    "S2_ISD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner shin depth at slice S2 (40 percent of leg length), in millimeters."
+    },
+    "S2_ICW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner calf width at slice S2 (40 percent of leg length), in millimeters."
+    },
+    "S2_ICD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner calf depth at slice S2 (40 percent of leg length), in millimeters."
+    },
+    "S2_OW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Outer width at slice S2 (40 percent of leg length), in millimeters."
+    },
+    "S2_OD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Outer depth at slice S2 (40 percent of leg length), in millimeters."
+    },
+    "S3_ISW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner shin width at slice S3 (60 percent of leg length), in millimeters."
+    },
+    "S3_ISD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner shin depth at slice S3 (60 percent of leg length), in millimeters."
+    },
+    "S3_ICW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner calf width at slice S3 (60 percent of leg length), in millimeters."
+    },
+    "S3_ICD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner calf depth at slice S3 (60 percent of leg length), in millimeters."
+    },
+    "S3_OW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Outer width at slice S3 (60 percent of leg length), in millimeters."
+    },
+    "S3_OD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Outer depth at slice S3 (60 percent of leg length), in millimeters."
+    },
+    "S4_ISW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner shin width at slice S4 (80 percent of leg length), in millimeters."
+    },
+    "S4_ISD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner shin depth at slice S4 (80 percent of leg length), in millimeters."
+    },
+    "S4_ICW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner calf width at slice S4 (80 percent of leg length), in millimeters."
+    },
+    "S4_ICD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Inner calf depth at slice S4 (80 percent of leg length), in millimeters."
+    },
+    "S4_OW": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Outer width at slice S4 (80 percent of leg length), in millimeters."
+    },
+    "S4_OD": {
+      "type": "number",
+      "minimum": 30,
+      "maximum": 220,
+      "description": "Outer depth at slice S4 (80 percent of leg length), in millimeters."
+    }
+  },
+  "required": [
+    "Leg_Length",
+    "S1_ISW",
+    "S1_ISD",
+    "S1_ICW",
+    "S1_ICD",
+    "S1_OW",
+    "S1_OD",
+    "S2_ISW",
+    "S2_ISD",
+    "S2_ICW",
+    "S2_ICD",
+    "S2_OW",
+    "S2_OD",
+    "S3_ISW",
+    "S3_ISD",
+    "S3_ICW",
+    "S3_ICD",
+    "S3_OW",
+    "S3_OD",
+    "S4_ISW",
+    "S4_ISD",
+    "S4_ICW",
+    "S4_ICD",
+    "S4_OW",
+    "S4_OD"
+  ]
+}

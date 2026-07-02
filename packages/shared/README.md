@@ -1,16 +1,66 @@
-# packages/shared - cross-cutting contracts
+# @zells/shared
 
-Single source of truth for anything two or more parts of the system must agree on:
+Single source of truth for anything two or more parts of the system must agree
+on, starting with the frozen 25-variable measurement contract described in
+`docs/DESIGN.md` (sections 6 and 8, gotcha 2).
 
-- **`measurements.schema.json`** - the frozen 25-variable measurement contract
-  (Leg_Length + S1-S4 × ISW/ISD/ICW/ICD/OW/OD). Versioned (`schema_version`).
-  The Python extractor, the TypeScript apps, and the Onshape client all validate
-  against this file. Variable names must match the Onshape model exactly -
-  confirm with the CAD collaborator before first freeze.
-- TypeScript types: measurement payload, order/pipeline state machine states,
-  API responses.
-- Design tokens: brand colors (white/orange/navy), font names (Outfit, Manrope).
+## The frozen contract
 
-Rule: if a value or name is used by both an app and the pipeline, it lives here.
-Units: all measurement values are **millimeters** everywhere in the system;
-meters exist only inside the pipeline's Onshape client.
+`Leg_Length` plus four cross-sections (S1 to S4, at 20, 40, 60, and 80 percent
+of leg length), each with six dimensions: `ISW`, `ISD`, `ICW`, `ICD`, `OW`,
+`OD`. That is 1 plus 24, 25 variables total. The names must match the Onshape
+parametric model exactly. The extraction script, the TypeScript types in this
+package, and the Onshape client all validate against the same JSON Schema file
+so the three cannot drift apart.
+
+**DRAFT WARNING:** the 25 variable names in this package are a draft, pending
+confirmation with the CAD collaborator against the actual Onshape model. Do
+not build the Onshape integration against these names until they are
+confirmed and the `$comment` / `x-schema-version` fields in the schema are
+updated to reflect a frozen, non-draft version.
+
+## Units
+
+All measurement values are **millimeters** everywhere in this schema and in
+every TypeScript type derived from it. Onshape itself stores everything in
+meters internally; the conversion to meters happens exactly once, inside the
+pipeline's Onshape client. Nothing outside that client should ever see meters.
+
+## Layout
+
+- `schema/measurements.schema.json` - the canonical JSON Schema (draft
+  2020-12). This is the cross-language source of truth: both this package and
+  the Python pipeline validate against this exact file, not a copy of it.
+- `src/measurements.ts` - `MEASUREMENT_KEYS`, `MeasurementKey`, and
+  `Measurements` (TypeScript types derived from the schema).
+- `src/validate.ts` - `validateMeasurements()`, which compiles and runs the
+  JSON Schema (via Ajv) against arbitrary input and returns either the typed,
+  validated measurements or a list of human-readable error strings.
+- `src/states.ts` - the pipeline step, scan status, and order status state
+  machines used across the app and the worker.
+
+## How the Python pipeline consumes this
+
+The Python pipeline does not import this TypeScript package. It reads the
+same schema file directly from its checked-out path in the monorepo:
+`packages/shared/schema/measurements.schema.json`. Loading that file with any
+JSON Schema draft 2020-12 validator (for example `jsonschema` in Python) gives
+the pipeline the identical validation rules as the TypeScript side, with no
+duplicated logic to keep in sync.
+
+## Running tests
+
+From this package directory:
+
+```
+pnpm test
+```
+
+Or from the repo root, as part of the full workspace test run:
+
+```
+pnpm -r test
+```
+
+The test suite includes an anti-drift check that fails if the JSON Schema
+file on disk ever diverges from what the TypeScript module loads at runtime.
