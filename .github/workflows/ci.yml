@@ -10,6 +10,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Placeholder
         run: echo "Add build/test/lint steps here once the project stack is set up."
