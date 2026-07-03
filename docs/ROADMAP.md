@@ -20,8 +20,9 @@ Built and tested:
 
 - **Monorepo:** pnpm workspaces + Turborepo, Makefile entry points, real CI
   (JS: build/typecheck/test/prettier; Python: ruff/pytest), Dependabot, PR template.
-- **`packages/shared`:** frozen 25-variable JSON Schema (0.1.0-draft, names NOT yet
-  confirmed with the CAD collaborator), TS types, state enums, Ajv validation, 8 tests.
+- **`packages/shared`:** frozen 25-variable JSON Schema (1.0.0 as of 2026-07-02,
+  names confirmed against the Onshape variable table), TS types, state enums,
+  Ajv validation, 8 tests.
 - **Supabase migrations:** full data model (profiles, scans, measurements, products,
   orders, pipeline_jobs, audit_log), RLS deny-by-default on every table,
   Postgres-backed job queue (claim/advance/complete/fail, SKIP LOCKED, backoff,
@@ -47,8 +48,11 @@ Everything in Month 1 exists to kill that unknown as fast as possible.
 
 Six things gate everything behind them. Keep them off the back burner at all costs:
 
-1. **Confirm the 25 variable names with the CAD collaborator** (blocks the real
-   Onshape integration; schema is 0.1.0-draft until then).
+1. **Confirm the 25 variable names with the CAD collaborator**: DONE
+   2026-07-02 (Onshape variable table screenshot; schema bumped to 1.0.0).
+   Residual: confirm the geometric meaning of each dimension in the model's
+   sketches and that the model regenerates across the schema's plausible
+   ranges (its current values are small placeholders).
 2. **EAS dev build with the Swift capture module on a physical LiDAR iPhone**
    (blocks every real scan).
 3. **One real scan measured with plausible values** (blocks trusting the extraction).
@@ -120,9 +124,10 @@ Track B - capture build:
 - Start the golden-file suite for real: check 2-3 real OBJs (small, anonymized,
   with consent) into `tests/fixtures/` with hand-verified expected values, wired
   into pytest and CI.
-- Incorporate the collaborator's variable-name answers: bump the schema to
-  1.0.0, update the TS types, extraction, and Onshape client together (the
-  anti-drift tests should force this).
+- Incorporate the collaborator's variable-name answers: DONE early
+  (2026-07-02): schema at 1.0.0, TS types, extraction, and Onshape client
+  updated together. Remaining for this week: walk the model's sketch geometry
+  with the collaborator to confirm each dimension's meaning.
 
 ### Week 4 (Jul 22-31): the round-trip and the print
 
@@ -422,9 +427,10 @@ Phase 4 should be.
    let it eat Month 1's weeks 3-4; extraction iteration can proceed on meshes
    from any scanning app (Polycam) in the meantime, since the pipeline starts
    at "OBJ in storage."
-2. **Collaborator latency on variable names.** Response: escalate week 1; the
-   schema freeze blocks the Onshape client. If truly stuck, build against
-   self-chosen names in a company-owned copy of the model and reconcile later.
+2. **Collaborator latency on variable names.** RESOLVED 2026-07-02: names
+   confirmed from the model's variable table, schema frozen at 1.0.0. The
+   residual risk is dimension semantics inside the model's sketches; walk
+   through them with the collaborator before the first real round-trip.
 3. **Accuracy is not good enough on real legs** (the existential risk).
    Response: it is scheduled early (weeks 3, 9) precisely so there is time for
    the fiducial sleeve or capture-UX pivots before launch commitments.
@@ -447,3 +453,11 @@ Update at each month boundary.
 
 - **2026-07-01:** Plan written. Repo state: scaffold complete (see §0), zero
   real scans, zero deployments.
+- **2026-07-02:** Critical-path item 1 closed: the 25 variable names and the
+  slice convention (20/40/60/80% of Leg_Length measured from the bottom of
+  the ankle; Leg_Length is ankle bottom to knee) confirmed against the
+  Onshape variable table. Schema bumped to 1.0.0 across TS, Python, and docs.
+  Extraction slice orientation fixed to match (S1 nearest the ankle;
+  EXTRACTION_VERSION 0.2.0). Dev environment verified end to end (pnpm via
+  corepack shim, all JS and Python suites green). New idea logged: S/M/L
+  standard-size presets derived from the parametric model (DESIGN.md §12.7).

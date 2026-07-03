@@ -7,17 +7,18 @@ on, starting with the frozen 25-variable measurement contract described in
 ## The frozen contract
 
 `Leg_Length` plus four cross-sections (S1 to S4, at 20, 40, 60, and 80 percent
-of leg length), each with six dimensions: `ISW`, `ISD`, `ICW`, `ICD`, `OW`,
-`OD`. That is 1 plus 24, 25 variables total. The names must match the Onshape
-parametric model exactly. The extraction script, the TypeScript types in this
-package, and the Onshape client all validate against the same JSON Schema file
-so the three cannot drift apart.
+of leg length measured up from the bottom of the ankle; `Leg_Length` runs from
+the bottom of the ankle to the knee), each with six dimensions: `ISW`, `ISD`,
+`ICW`, `ICD`, `OW`, `OD`. That is 1 plus 24, 25 variables total. The names
+must match the Onshape parametric model exactly. The extraction script, the
+TypeScript types in this package, and the Onshape client all validate against
+the same JSON Schema file so the three cannot drift apart.
 
-**DRAFT WARNING:** the 25 variable names in this package are a draft, pending
-confirmation with the CAD collaborator against the actual Onshape model. Do
-not build the Onshape integration against these names until they are
-confirmed and the `$comment` / `x-schema-version` fields in the schema are
-updated to reflect a frozen, non-draft version.
+**Status: CONFIRMED (schema 1.0.0).** The 25 variable names and the slice
+position convention were confirmed against the Onshape model's variable table
+on 2026-07-02. Any future rename requires a coordinated schema version bump
+across this package, the Python pipeline, and the Onshape model, never an ad
+hoc edit.
 
 ## Units
 

@@ -6,11 +6,12 @@ STL, and advances the job through the Postgres-backed pipeline queue. See
 `docs/DESIGN.md` sections 6, 7, and 9 for the full architecture and
 rationale, and the root `CLAUDE.md` for repo-wide conventions.
 
-**Status: DRAFT.** The 25 measurement names and the ISW/ISD/ICW/ICD/OW/OD
-geometric definitions used by `extraction/measure.py` are not yet confirmed
-with the CAD collaborator against the Onshape model (see the schema file's
-`$comment` and `docs/DESIGN.md` gotcha #2). Treat any measurement value
-produced by this worker as provisional until that confirmation lands.
+**Status:** the 25 variable names and slice positions are CONFIRMED against
+the Onshape model (2026-07-02, schema 1.0.0): slices at 20/40/60/80% of
+`Leg_Length` measured up from the bottom of the ankle. The ISW/ISD/ICW/ICD/
+OW/OD geometric definitions used by `extraction/measure.py` are still one
+documented interpretation pending a sketch-level walkthrough with the CAD
+collaborator; treat the six per-slice dimensions as provisional until then.
 
 ## What it does
 

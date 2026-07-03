@@ -1,13 +1,13 @@
 """Measurement extraction: PCA leg axis + four cross-section slices.
 
-DRAFT GEOMETRY DEFINITIONS. The exact ISW/ISD/ICW/ICD/OW/OD definitions below
-are NOT yet confirmed with the CAD collaborator against the Onshape model
-(same status as the variable names themselves -- see
-packages/shared/schema/measurements.schema.json's `$comment` and
-docs/DESIGN.md gotcha #2). This module encodes one reasonable, fully
-documented interpretation to unblock Phase 0 plumbing (queue, extraction,
-Onshape wiring), not a verified anatomical spec. Expect these definitions to
-change once the collaborator confirms.
+Variable NAMES and slice POSITIONS are confirmed against the Onshape model
+(2026-07-02, variable table: S1_ISW..S4_OD plus Leg_Length; slices at
+20/40/60/80% of Leg_Length measured from the bottom of the ankle, where
+Leg_Length runs from the bottom of the ankle to the knee). The exact
+ISW/ISD/ICW/ICD/OW/OD geometry definitions below are still an
+interpretation, not yet verified against the model's sketch geometry with
+the CAD collaborator; expect those definitions (not the names or positions)
+to be refined.
 
 Algorithm:
 
@@ -23,14 +23,16 @@ Algorithm:
    "depth" directions of each slice). The permutation used to build this
    frame is a cyclic permutation of the original right-handed PCA triple,
    so it stays a proper rotation (no mirroring introduced).
-4. Orient Z so the WIDER end of the mesh (larger combined X+Y extent among
-   vertices in the lowest/highest 10% of the Z range) sits at Z=0, and the
-   narrower end sits at Z=Leg_Length. We assume the wider end is proximal
-   (knee) and the narrower end is distal (ankle), which is anatomically
-   typical for a shin but not verified for any given input -- there is no
-   ground truth for "which end is which" in an unlabeled mesh.
-   **Consequently: S1 is nearest the wide/assumed-knee end, S4 nearest the
-   narrow/assumed-ankle end.**
+4. Orient Z so the NARROWER end of the mesh (smaller combined X+Y extent
+   among vertices in the lowest/highest 10% of the Z range) sits at Z=0,
+   and the wider end sits at Z=Leg_Length. We assume the narrower end is
+   distal (ankle) and the wider end is proximal (knee), which is
+   anatomically typical for a shin but not verified for any given input --
+   there is no ground truth for "which end is which" in an unlabeled mesh.
+   **Consequently: slice positions are measured up from the bottom of the
+   ankle, so S1 is nearest the ankle and S4 nearest the knee.** This
+   matches the Onshape model, whose default values grow from S1 to S4
+   (a shin widens toward the knee).
 5. At each slice fraction (S1=0.20, S2=0.40, S3=0.60, S4=0.80 of
    Leg_Length), cross-section the rotated mesh with the plane Z=const
    (`trimesh.Trimesh.section`) and project the resulting boundary onto X
@@ -69,7 +71,7 @@ logger = logging.getLogger(__name__)
 # output values, independent of the measurement schema version. Stored on
 # every measurements row (docs/DESIGN.md section 8) so re-extractions are
 # comparable rather than silently mixed with older results.
-EXTRACTION_VERSION = "0.1.0"
+EXTRACTION_VERSION = "0.2.0"
 
 SLICE_FRACTIONS: dict[str, float] = {"S1": 0.20, "S2": 0.40, "S3": 0.60, "S4": 0.80}
 
@@ -119,7 +121,7 @@ def _pca_rotation(vertices: np.ndarray) -> np.ndarray:
 
 
 def _orient_long_axis(rotated: np.ndarray) -> np.ndarray:
-    """Flip Z if needed so the wider end of the mesh sits at Z=0 (see step 4 above)."""
+    """Flip Z if needed so the narrower (assumed-ankle) end sits at Z=0 (see step 4 above)."""
     z = rotated[:, 2]
     z_min, z_max = float(z.min()), float(z.max())
     span = z_max - z_min
@@ -132,7 +134,7 @@ def _orient_long_axis(rotated: np.ndarray) -> np.ndarray:
             return 0.0
         return float((pts[:, 0].max() - pts[:, 0].min()) + (pts[:, 1].max() - pts[:, 1].min()))
 
-    if _combined_extent(low_mask) >= _combined_extent(high_mask):
+    if _combined_extent(low_mask) <= _combined_extent(high_mask):
         rotated[:, 2] = z - z_min
     else:
         rotated[:, 2] = z_max - z

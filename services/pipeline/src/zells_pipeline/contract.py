@@ -11,10 +11,9 @@ missing or malformed, and exposes:
   #7, driven entirely by the schema's `minimum`/`maximum` bounds so the
   ranges never drift out of sync with the schema file.
 
-As of writing the schema itself is DRAFT (see its `$comment`): names and
-ranges are pending confirmation with the CAD collaborator. This module does
-not encode that uncertainty further; it just enforces whatever the schema
-currently says.
+The schema is frozen at 1.0.0 (names confirmed against the Onshape model
+2026-07-02, see its `$comment`). This module does not restate the contract;
+it just enforces whatever the schema currently says.
 """
 
 from __future__ import annotations

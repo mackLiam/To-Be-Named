@@ -42,14 +42,15 @@ def test_inner_dims_sum_to_outer_width(frustum_mesh: trimesh.Trimesh) -> None:
         assert abs((isw + icw) - ow) < 1e-6
 
 
-def test_slice_ordering_s1_nearest_wide_end(frustum_mesh: trimesh.Trimesh) -> None:
-    """S1 (20%) sits nearest the wide (constructed knee-analog) end, S4 (80%)
-    nearest the narrow (ankle-analog) end -- see extraction/measure.py's module
-    docstring for the documented orientation convention."""
+def test_slice_ordering_s1_nearest_narrow_end(frustum_mesh: trimesh.Trimesh) -> None:
+    """S1 (20%) sits nearest the narrow (constructed ankle-analog) end, S4 (80%)
+    nearest the wide (knee-analog) end, matching the Onshape model where values
+    grow from S1 to S4 -- see extraction/measure.py's module docstring for the
+    documented orientation convention."""
     result = extract_measurements(frustum_mesh)
     v = result.values
-    assert v["S1_OW"] > v["S2_OW"] > v["S3_OW"] > v["S4_OW"]
-    assert v["S1_OD"] > v["S2_OD"] > v["S3_OD"] > v["S4_OD"]
+    assert v["S1_OW"] < v["S2_OW"] < v["S3_OW"] < v["S4_OW"]
+    assert v["S1_OD"] < v["S2_OD"] < v["S3_OD"] < v["S4_OD"]
 
 
 def test_meters_scale_mesh_triggers_rescale_flag(

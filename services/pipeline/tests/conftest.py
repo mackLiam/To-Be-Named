@@ -11,9 +11,9 @@ import pytest
 import trimesh
 
 # Constructed dimensions for the tapered frustum used to approximate a shin.
-# Wide end = knee-end analog, narrow end = ankle-end analog (see
-# extraction/measure.py module docstring for the wide/narrow orientation
-# convention this is designed to exercise).
+# Narrow end = ankle-end analog (slice origin, Z=0 after orientation), wide
+# end = knee-end analog (see extraction/measure.py module docstring for the
+# orientation convention this is designed to exercise).
 FRUSTUM_HEIGHT_MM = 400.0
 FRUSTUM_WIDE_RX_MM = 60.0
 FRUSTUM_WIDE_RY_MM = 45.0
@@ -60,9 +60,10 @@ def make_tapered_frustum(
 
 
 def expected_ellipse_radii(fraction: float) -> tuple[float, float]:
-    """Ground-truth (rx, ry) at height fraction `fraction` from the wide end."""
-    rx = FRUSTUM_WIDE_RX_MM + fraction * (FRUSTUM_NARROW_RX_MM - FRUSTUM_WIDE_RX_MM)
-    ry = FRUSTUM_WIDE_RY_MM + fraction * (FRUSTUM_NARROW_RY_MM - FRUSTUM_WIDE_RY_MM)
+    """Ground-truth (rx, ry) at height fraction `fraction` from the narrow
+    (ankle-analog) end, matching the extraction's slice-origin convention."""
+    rx = FRUSTUM_NARROW_RX_MM + fraction * (FRUSTUM_WIDE_RX_MM - FRUSTUM_NARROW_RX_MM)
+    ry = FRUSTUM_NARROW_RY_MM + fraction * (FRUSTUM_WIDE_RY_MM - FRUSTUM_NARROW_RY_MM)
     return rx, ry
 
 

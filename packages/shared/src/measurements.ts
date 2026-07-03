@@ -1,10 +1,11 @@
 // The frozen 25-variable measurement contract (DESIGN.md section 8, gotcha 2).
-// Names are DRAFT pending confirmation with the CAD collaborator against the
-// Onshape model. Do not rename ad hoc: this file, the JSON schema in
+// Names CONFIRMED 2026-07-02 against the Onshape model's variable table.
+// Slices S1-S4 sit at 20/40/60/80 percent of Leg_Length measured up from the
+// bottom of the ankle. Do not rename ad hoc: this file, the JSON schema in
 // ../schema/measurements.schema.json, the Python extraction script, and the
 // Onshape client must all agree on these exact names.
 
-export const SCHEMA_VERSION = '0.1.0-draft';
+export const SCHEMA_VERSION = '1.0.0';
 
 export const MEASUREMENT_KEYS = [
   'Leg_Length',

@@ -19,9 +19,16 @@ scan noise.
 
 ### The 25 variables
 
-- `Leg_Length` (1)
-- Four cross-sections S1-S4 at 20/40/60/80% of leg length, each with six
-  dimensions: `ISW`, `ISD`, `ICW`, `ICD`, `OW`, `OD` (24)
+- `Leg_Length` (1): bottom of the ankle to the knee
+- Four cross-sections S1-S4 at 20/40/60/80% of leg length measured up from
+  the bottom of the ankle (S1 nearest the ankle, S4 nearest the knee), each
+  with six dimensions: `ISW`, `ISD`, `ICW`, `ICD`, `OW`, `OD` (24)
+
+Names and slice positions CONFIRMED 2026-07-02 against the Onshape model's
+variable table (schema 1.0.0). The model's current values are placeholders
+(for example Leg_Length 250mm with S1_ISW 15mm); the geometric meaning of
+each dimension within the model's sketches still needs a walkthrough with
+the collaborator (see section 12).
 
 ---
 
@@ -213,10 +220,11 @@ Step details:
    internally regardless of display units - the worker owns a single
    canonical-units boundary (pipeline computes in mm, converts to meters exactly
    once, at the Onshape client). The 25 variable names must match the Onshape
-   model exactly - freeze them in a shared, versioned JSON Schema that the
+   model exactly - frozen in a shared, versioned JSON Schema that the
    extraction script, the TypeScript types, and the Onshape client all validate
-   against (this is the #1 integration risk; confirm names with collaborator
-   before building the client).
+   against. Names confirmed against the model's variable table 2026-07-02
+   (schema 1.0.0); the remaining integration risk is the geometric meaning of
+   each dimension inside the model's sketches, not the names.
 4. **Fulfillment:** initially manual (admin downloads STL, sends to print
    partner, marks shipped). Later: print partner API + webhook status updates.
 
@@ -382,9 +390,9 @@ Dated, week-by-week execution plan for these phases: **`docs/ROADMAP.md`**.
 
 **Phase 0 - prove the pipeline (current):**
 real scan via EAS dev build on a LiDAR iPhone (or borrowed Mac for the interim) →
-extraction on real mesh → freeze the 25-variable JSON Schema with collaborator →
-Onshape API round-trip → hold a printed guard generated with zero manual CAD.
-*Everything else waits on this.*
+extraction on real mesh → 25-variable JSON Schema frozen with collaborator
+(DONE 2026-07-02, schema 1.0.0) → Onshape API round-trip → hold a printed
+guard generated with zero manual CAD. *Everything else waits on this.*
 
 **Phase 1 - walking skeleton:** monorepo, Supabase (auth, DB, storage, RLS),
 worker + queue with the state machine, capture native module in the app, admin
@@ -410,8 +418,14 @@ code-CAD port when volume justifies it.
    sleeve** idea is genuinely strong - it doubles as a product accessory and a
    capture-consistency fix. Validate accuracy vs. tape-measure ground truth on
    ~10 real legs before trusting the pipeline.
-2. **Onshape variable-name mismatch** - confirm names with collaborator and
-   freeze the schema before writing the integration.
+2. **Onshape contract semantics** - names and slice positions confirmed
+   2026-07-02 (schema 1.0.0); remaining open questions before the round-trip:
+   (a) the geometric meaning of each of the six dimensions inside the model's
+   sketches (the extraction encodes one documented interpretation), and
+   (b) the model's current variable values are placeholders far below
+   human-plausible leg dimensions (for example S1_ISW 15mm against a schema
+   floor of 30mm), so verify the model regenerates cleanly across the
+   schema's full plausible ranges, not just near the placeholder values.
 3. **Device floor** - LiDAR-only capture may exclude a large share of the target
    market; server-side reconstruction path (§5) is the hedge. Decide early.
 4. **Protective-equipment compliance** - soccer shin guards are safety gear
@@ -422,3 +436,10 @@ code-CAD port when volume justifies it.
    affects the parametric model's wall thickness assumptions; needs testing with
    the fulfillment partner.
 6. **Minors & consent** (§9.4) - legal review required pre-launch.
+7. **Standard-size presets (idea, post-Phase 0)** - since the model is fully
+   parameterized, S/M/L stock sizes are nearly free: pick a preset
+   `Leg_Length` per size (fixed lengths or percentage steps around a base)
+   and scale the 24 slice dimensions from anthropometric averages or from
+   accumulated real-scan data. Gives a no-scan fallback product, a print
+   partner calibration article, and a way to sell before the scan UX is
+   perfect. Revisit once the scan-to-print path works.

@@ -28,8 +28,10 @@ docs/              Design docs (DESIGN.md is the source of truth)
 
 1. **Onshape stores everything in meters** regardless of display units. The pipeline
    computes in **mm** and converts to meters exactly once, in the Onshape client layer.
-2. **The 25-variable schema is a frozen contract**: `Leg_Length` + 4 slices (S1-S4 at
-   20/40/60/80% of leg length) × 6 dims (`ISW`,`ISD`,`ICW`,`ICD`,`OW`,`OD`). Names must
+2. **The 25-variable schema is a frozen contract (1.0.0, names confirmed
+   2026-07-02)**: `Leg_Length` (bottom of ankle to knee) + 4 slices (S1-S4 at
+   20/40/60/80% of leg length measured up from the bottom of the ankle, so S1 is
+   nearest the ankle) × 6 dims (`ISW`,`ISD`,`ICW`,`ICD`,`OW`,`OD`). Names must
    match the Onshape model exactly. Single source of truth: JSON Schema in
    `packages/shared` - extraction script, TS types, and Onshape client all validate
    against it. Never rename ad hoc.
@@ -119,4 +121,6 @@ or refactor. Not optional, not deferred to "later".
 
 Phase 0 - prove the pipeline (see DESIGN.md §11): real scan → extraction → Onshape →
 printed guard with zero manual CAD. Auth/payments deliberately deferred until this works.
-Open blocker: confirming the 25 variable names with the CAD collaborator.
+Variable names confirmed and schema frozen at 1.0.0 (2026-07-02). Open blockers:
+EAS dev build with the capture module on a LiDAR iPhone, dimension-semantics
+walkthrough with the CAD collaborator, Onshape API access/keys.
