@@ -1,22 +1,39 @@
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
 import { Body } from '../src/components/Body';
+import { Button } from '../src/components/Button';
 import { Heading } from '../src/components/Heading';
 import { Rule } from '../src/components/Rule';
 import { Screen } from '../src/components/Screen';
-import { spacing } from '../src/theme/tokens';
+import { getCaptureAvailability } from '../src/lib/nativeCapture';
+import type { CaptureAvailability } from '../src/lib/nativeCapture';
+import { colors, spacing } from '../src/theme/tokens';
 
 /**
- * Capture entry point stub. The real screen replaces this once the Swift
- * native module (config plugin wrapping ObjectCaptureSession /
- * PhotogrammetrySession) ships and is built into a dev client via EAS.
- *
- * TODO(capture): wire this screen to the native module once it exists.
- * It cannot be tested in Expo Go, only in an EAS dev-client build, on a
- * physical LiDAR iPhone. See docs/DESIGN.md section 5 ("Platform Strategy")
- * and CLAUDE.md gotcha 3.
+ * Pre-capture info screen and the availability gate in front of the guided
+ * flow (app/capture.tsx). Runs getCaptureAvailability() on mount: a supported
+ * device gets the start button, an unsupported one gets the reason. Capture
+ * itself still only runs inside the Zells dev client on a physical LiDAR
+ * iPhone, never in Expo Go (CLAUDE.md gotcha 3, docs/DESIGN.md section 5).
  */
 export default function CaptureInfoScreen() {
+  const router = useRouter();
+  const [availability, setAvailability] = useState<CaptureAvailability | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCaptureAvailability().then((result) => {
+      if (!cancelled) {
+        setAvailability(result);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <Screen>
       <Heading level="h1">Capture ships with the dev build.</Heading>
@@ -24,15 +41,47 @@ export default function CaptureInfoScreen() {
       <Body>
         The guided scan uses Apple&apos;s ObjectCaptureSession through a native module built
         specifically for Zells. It only runs inside the Zells dev client (an EAS build), never
-        inside Expo Go, and never in this placeholder screen yet.
+        inside Expo Go.
       </Body>
       <Rule />
-      <Heading level="h3">What happens here later</Heading>
+      {availability === null && (
+        <Body variant="bodySmall" color={colors.textSecondary}>
+          Checking this device for capture support...
+        </Body>
+      )}
+      {availability?.supported && (
+        <>
+          <Heading level="h3">This device is ready</Heading>
+          <View style={{ height: spacing.sm }} />
+          <Body variant="bodySmall">
+            Give yourself room to walk a full circle around the leg, then start the guided capture.
+          </Body>
+          <View style={{ height: spacing.md }} />
+          <Button onPress={() => router.push('/capture')}>Start capture</Button>
+        </>
+      )}
+      {availability !== null && !availability.supported && (
+        <>
+          <Heading level="h3">This device cannot capture</Heading>
+          <View style={{ height: spacing.sm }} />
+          <Body variant="bodySmall">
+            {availability.reason === 'platform'
+              ? 'Guided capture runs on iPhone only. Open Zells on a LiDAR iPhone (12 Pro or later Pro model) to scan; everything else works here.'
+              : 'This iPhone or build cannot run guided capture. It needs a LiDAR sensor, iOS 17 or later, and the Zells dev build.'}
+          </Body>
+          <View style={{ height: spacing.sm }} />
+          <Body variant="caption" color={colors.textTertiary}>
+            Reason code: {availability.reason}
+          </Body>
+        </>
+      )}
+      <Rule />
+      <Heading level="h3">What happens in a scan</Heading>
       <View style={{ height: spacing.sm }} />
       <Body variant="bodySmall">
-        This screen becomes the guided capture flow: walk around your leg once, the native module
-        reconstructs a 3D mesh on-device, and it uploads to your scan library automatically. No
-        manual export step, no separate app.
+        Walk around your leg once and the native module reconstructs a 3D mesh on-device. Uploading
+        the mesh to your scan library lands next; for now the flow ends with the finished files on
+        this phone.
       </Body>
     </Screen>
   );
