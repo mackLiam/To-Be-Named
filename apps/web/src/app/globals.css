@@ -1,0 +1,102 @@
+/*
+ * Zells web design tokens, mirrored from apps/app/src/theme/tokens.ts so the
+ * marketing site, the product app, and the admin panel read as one brand.
+ * Brand system: white, orange, navy. Nothing else as a brand color. Grays are
+ * navy-tinted neutrals, never pure gray. One radius value. Big type jumps.
+ *
+ * Font family variables (--font-display, --font-body) are injected by
+ * next/font in layout.tsx so the fonts are self-hosted, not fetched at runtime.
+ */
+
+:root {
+  /* Navy: the anchor. Ink, dark sections, primary text. */
+  --navy-900: #0b1f3a;
+  --navy-700: #48576b;
+  --navy-500: #798493;
+  --navy-300: #aab1ba;
+  --navy-100: #dadde1;
+  --navy-50: #f0f2f3;
+
+  /* Orange: the action color. Used sparingly. */
+  --orange-500: #ff6b1a;
+  --orange-600: #e85a0c;
+
+  --white: #ffffff;
+  --danger: #b3261e;
+
+  /* Semantic aliases. */
+  --bg: var(--white);
+  --surface-muted: var(--navy-50);
+  --text-primary: var(--navy-900);
+  --text-secondary: var(--navy-700);
+  --text-tertiary: var(--navy-500);
+  --border: var(--navy-100);
+  --action: var(--orange-500);
+  --action-pressed: var(--orange-600);
+
+  /* One radius, everywhere. Rectangles, not pills. */
+  --radius: 4px;
+
+  /* Uneven spacing scale (matches tokens.ts). */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 28px;
+  --space-xl: 48px;
+  --space-xxl: 72px;
+  --space-xxxl: 112px;
+
+  --font-display-stack: var(--font-display), system-ui, sans-serif;
+  --font-body-stack: var(--font-body), system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-body-stack);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display-stack);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--action);
+  outline-offset: 2px;
+}

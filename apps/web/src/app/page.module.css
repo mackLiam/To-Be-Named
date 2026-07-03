@@ -1,0 +1,248 @@
+/* Marketing placeholder. Editorial, not SaaS-template: asymmetric hero, big
+ * type jumps, rules instead of shadowed cards, orange used only as an accent. */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--navy-900);
+  color: var(--white);
+}
+
+.wordmark {
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 0.12em;
+}
+
+.status {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--navy-900);
+  background: var(--white);
+  padding: 6px 10px;
+  border-radius: var(--radius);
+}
+
+/* Hero: navy band, left-aligned, split into copy + flat geometry panel */
+.hero {
+  background: var(--navy-900);
+  color: var(--white);
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--space-xl);
+  align-items: center;
+  padding: var(--space-xxl) var(--space-lg) var(--space-xxxl);
+}
+
+.heroCopy {
+  max-width: 34ch;
+}
+
+.kicker {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--orange-500);
+  margin: 0 0 var(--space-md);
+}
+
+.headline {
+  font-weight: 800;
+  font-size: clamp(44px, 7vw, 84px);
+  line-height: 0.98;
+  margin: 0;
+}
+
+.headline .accent {
+  color: var(--orange-500);
+}
+
+.subhead {
+  font-family: var(--font-body-stack);
+  font-size: clamp(17px, 2.2vw, 21px);
+  line-height: 1.5;
+  color: var(--navy-100);
+  margin: var(--space-lg) 0 0;
+  max-width: 46ch;
+}
+
+/* Flat geometry echoing a shin guard contour: navy blocks + one orange strut.
+ * No gradients, no glow, no drop shadows. */
+.guard {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border: 2px solid var(--navy-500);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.guardShell {
+  position: absolute;
+  inset: 14% 30%;
+  background: var(--white);
+  border-radius: 40% 40% 46% 46% / 18% 18% 10% 10%;
+}
+
+.guardStrut {
+  position: absolute;
+  top: 16%;
+  bottom: 16%;
+  left: 50%;
+  width: 10px;
+  transform: translateX(-50%);
+  background: var(--orange-500);
+}
+
+.guardRib {
+  position: absolute;
+  left: 32%;
+  right: 32%;
+  height: 2px;
+  background: var(--navy-300);
+}
+
+/* Steps: editorial numbered rows separated by rules, not a card grid */
+.steps {
+  padding: var(--space-xxl) var(--space-lg);
+  max-width: 1000px;
+  width: 100%;
+}
+
+.sectionLabel {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: 0 0 var(--space-lg);
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: var(--space-lg);
+  align-items: start;
+  padding: var(--space-lg) 0;
+  border-top: 1px solid var(--border);
+}
+
+.step:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.stepNum {
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  font-size: 52px;
+  line-height: 1;
+  color: var(--orange-500);
+}
+
+.stepTitle {
+  font-weight: 700;
+  font-size: clamp(24px, 3vw, 34px);
+  margin: 0 0 var(--space-sm);
+}
+
+.stepBody {
+  font-family: var(--font-body-stack);
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 56ch;
+}
+
+/* Requirements: plain spec block, offset narrower, on muted surface */
+.requirements {
+  background: var(--surface-muted);
+  padding: var(--space-xxl) var(--space-lg);
+}
+
+.requirementsInner {
+  max-width: 720px;
+}
+
+.requirementsTitle {
+  font-weight: 700;
+  font-size: clamp(26px, 3.4vw, 40px);
+  margin: 0 0 var(--space-lg);
+}
+
+.specRow {
+  display: flex;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-body-stack);
+}
+
+.specTerm {
+  flex: 0 0 180px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.specDetail {
+  color: var(--text-secondary);
+}
+
+/* Footer */
+.footer {
+  margin-top: auto;
+  background: var(--navy-900);
+  color: var(--navy-300);
+  padding: var(--space-xl) var(--space-lg);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md) var(--space-xl);
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-body-stack);
+  font-size: 14px;
+}
+
+.footerNote {
+  max-width: 52ch;
+}
+
+@media (max-width: 860px) {
+  .hero {
+    grid-template-columns: 1fr;
+    gap: var(--space-xl);
+    padding: var(--space-xl) var(--space-lg) var(--space-xxl);
+  }
+  .guard {
+    max-width: 320px;
+  }
+  .step {
+    grid-template-columns: 60px 1fr;
+    gap: var(--space-md);
+  }
+  .stepNum {
+    font-size: 40px;
+  }
+  .specRow {
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+  .specTerm {
+    flex-basis: auto;
+  }
+}
