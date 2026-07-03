@@ -35,6 +35,7 @@ dev = [
 
 [project.scripts]
 zells-extract = "zells_pipeline.extract.cli:run"
+zells-retention = "zells_pipeline.jobs.retention:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -74,11 +74,33 @@ plumbing be exercised end to end without an Onshape account. `GET
 | `PIPELINE_MAX_MESH_MB` (`max_mesh_mb`) | no | Untrusted-upload size cap in MB. Defaults to 100. |
 | `MAX_VERTICES` (`max_vertices`) | no | Untrusted-mesh vertex count cap. Defaults to 2,000,000. |
 | `SCHEMA_PATH` | no | Path to the measurement JSON Schema. Defaults to the in-repo `packages/shared/schema/measurements.schema.json`; the Docker image sets this explicitly since its build context does not include the whole monorepo. |
+| `RETENTION_DAYS` | no | Days after a scan's pipeline job completes before its raw mesh is deleted. Defaults to 30. |
+| `RETENTION_BATCH_SIZE` | no | Max scans processed per retention sweep run. Defaults to 100. |
+| `RETENTION_DRY_RUN` | no | Defaults to `true` (safe by default). Must be explicitly set to `false` to let the sweep actually delete anything. |
 
 Note: this table documents the variables this service reads; the
 repo-root `.env.example` is out of scope for this change (see
 `src/zells_pipeline/config.py` for the authoritative field list and
 defaults).
+
+## Retention sweep
+
+`python -m zells_pipeline.jobs.retention` (also installed as the
+`zells-retention` console script) runs one batch of the raw-mesh retention
+sweep and exits: it fetches scans whose pipeline job completed more than
+`RETENTION_DAYS` ago and whose mesh hasn't been deleted yet (via the
+`get_meshes_pending_deletion` SQL helper, `supabase/migrations/0004_retention.sql`),
+deletes each mesh object from the `meshes` bucket, marks
+`scans.mesh_deleted_at`, and writes an `audit_log` row per deletion.
+Measurements are never touched -- only the raw mesh (docs/DESIGN.md section
+9.3).
+
+This is a standalone entry point rather than a thread inside the always-on
+worker (`main.py`'s `run_forever` loop): it's a daily-cadence batch
+maintenance task, not a queue consumer, so it's meant to be invoked by an
+external scheduler (a nightly cron / scheduled machine on the deployed
+worker) rather than polling continuously. `RETENTION_DRY_RUN` defaults to
+`true`; flip it to `false` only after checking a dry-run's log output.
 
 ## Docker
 

@@ -88,10 +88,12 @@ class JobStore(Protocol):
 
 
 class StorageClient(Protocol):
-    """Supabase Storage access needed by the worker loop."""
+    """Supabase Storage access needed by the worker loop and the retention sweep
+    (jobs/retention.py)."""
 
     def download(self, bucket: str, path: str) -> bytes: ...
     def upload(self, bucket: str, path: str, data: bytes, content_type: str) -> None: ...
+    def delete(self, bucket: str, path: str) -> None: ...
 
 
 @dataclass
@@ -356,4 +358,14 @@ class SupabaseStorageClient:
             content=data,
             headers={"Content-Type": content_type, "x-upsert": "true"},
         )
+        response.raise_for_status()
+
+    def delete(self, bucket: str, path: str) -> None:
+        """Delete one object. Idempotent: a 404 (already gone) is treated as
+        success, not an error, so the retention sweep can safely retry a
+        partially-completed deletion (storage removed, DB mark not yet
+        committed) without failing the item."""
+        response = self._client.delete(f"/object/{bucket}/{path}")
+        if response.status_code == 404:
+            return
         response.raise_for_status()

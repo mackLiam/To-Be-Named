@@ -3,10 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
+import pytest
 import trimesh
 
 from zells_pipeline.config import Settings
-from zells_pipeline.jobs.runner import Job, JobContext, handle_measuring, run_once
+from zells_pipeline.jobs.runner import (
+    Job,
+    JobContext,
+    SupabaseStorageClient,
+    handle_measuring,
+    run_once,
+)
 from zells_pipeline.onshape.client import OnshapeClient
 
 
@@ -145,3 +153,44 @@ def test_measure_step_idempotent_rerun_does_not_duplicate(frustum_mesh: trimesh.
     assert store.measurement_write_count == 2
     # Same (scan_id, extraction_version) key both times -> one row, not two.
     assert len(store.measurements) == 1
+
+
+def _storage_client_with_transport(handler) -> SupabaseStorageClient:  # noqa: ANN001
+    transport = httpx.MockTransport(handler)
+    http_client = httpx.Client(
+        transport=transport, base_url="https://example.supabase.co/storage/v1"
+    )
+    return SupabaseStorageClient(settings=Settings(), client=http_client)
+
+
+def test_storage_delete_treats_404_as_success() -> None:
+    """Used by the retention sweep (jobs/retention.py): an object already gone
+    (e.g. a prior sweep run deleted it but crashed before marking the DB row)
+    must not surface as an error on retry."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "DELETE"
+        return httpx.Response(404)
+
+    client = _storage_client_with_transport(handler)
+
+    client.delete("meshes", "user-1/scan.obj")  # must not raise
+
+
+def test_storage_delete_raises_on_real_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    client = _storage_client_with_transport(handler)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.delete("meshes", "user-1/scan.obj")
+
+
+def test_storage_delete_succeeds_on_200() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": "deleted"})
+
+    client = _storage_client_with_transport(handler)
+
+    client.delete("meshes", "user-1/scan.obj")  # must not raise

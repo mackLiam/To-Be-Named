@@ -96,6 +96,31 @@ class Settings(BaseSettings):
         ),
     )
 
+    # -- Retention (docs/DESIGN.md section 9.3, docs/ROADMAP.md week 8) -------
+    retention_days: int = Field(
+        default=30,
+        gt=0,
+        description="Days after the pipeline job completes before its raw mesh is deleted.",
+    )
+    retention_batch_size: int = Field(
+        default=100,
+        gt=0,
+        description="Max scans processed per retention sweep run.",
+    )
+    # Defaults to True (safe-by-default): unlike Onshape's dry_run, which is
+    # *derived* from whether credentials are configured, retention deletion
+    # is irreversible against sensitive body-scan data, so it stays an
+    # explicit opt-in field rather than something inferred from other
+    # settings. An operator must deliberately set RETENTION_DRY_RUN=false
+    # (after verifying sweep output) to let it actually delete anything.
+    retention_dry_run: bool = Field(
+        default=True,
+        description=(
+            "When true, the retention sweep logs what it would delete without touching "
+            "storage or the database. Must be explicitly set to false to delete anything."
+        ),
+    )
+
     @property
     def max_mesh_bytes(self) -> int:
         return self.max_mesh_mb * 1024 * 1024
