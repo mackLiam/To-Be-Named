@@ -7,7 +7,10 @@ import { defineConfig } from 'vitest/config';
 // logic that is cheap and valuable to unit test.
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts'],
+    // src/** covers app logic; modules/** covers local native modules' JS
+    // wrappers (e.g. modules/zells-capture), whose fallback and error-mapping
+    // logic is pure TypeScript and worth unit testing without a device.
+    include: ['src/**/*.test.ts', 'modules/**/*.test.ts'],
     environment: 'node',
   },
 });

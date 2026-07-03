@@ -24,6 +24,17 @@ const config: ExpoConfig = {
     // docs/DESIGN.md section 5. Enforced below via expo-build-properties;
     // the capture flow itself does its own device/OS gating at runtime
     // (src/lib/capture.ts) since older iPhones can still use every other tab.
+    infoPlist: {
+      // Guided capture (modules/zells-capture) drives the camera. iOS rejects
+      // the build / crashes at first camera use without a usage string.
+      NSCameraUsageDescription:
+        'Zells uses the camera to scan your leg and build a custom-fit shin guard. Scans stay on your device until you submit an order.',
+      // UNVERIFIED: whether ObjectCaptureSession requires a motion-usage string.
+      // Apple's guided capture leans on device motion for coaching; include it
+      // pre-emptively. Remove if a dev-client build proves it unnecessary.
+      NSMotionUsageDescription:
+        'Zells uses motion to guide you around your leg for an accurate scan.',
+    },
   },
   android: {
     package: 'com.zells.app',

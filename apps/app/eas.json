@@ -1,0 +1,52 @@
+{
+  // EAS Build / Submit configuration for the Zells product app.
+  // eas.json supports JSON-with-comments (EAS strips them). It is excluded from
+  // Prettier (.prettierignore) so these comments survive format:check.
+  //
+  // Phase 0 note: no builds have run yet. These are skeletons - fill in the
+  // real Apple team/app identifiers and build numbers when the first dev-client
+  // build is cut on a physical LiDAR iPhone (see README "Capture module").
+  "cli": {
+    "version": ">= 12.0.0",
+    // Never commit generated iOS/Android native dirs; EAS prebuilds them.
+    "appVersionSource": "remote"
+  },
+  "build": {
+    // Local iteration: installs the custom dev client (expo-dev-client) onto a
+    // registered device. This is the ONLY way to run the capture native module
+    // (CLAUDE.md gotcha 3) - Expo Go cannot load it.
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "ios": {
+        // Simulator cannot run ObjectCaptureSession (no LiDAR), so capture
+        // testing needs a real device build. A simulator build is still useful
+        // for the non-capture screens; flip "simulator" to true for that.
+        "simulator": false,
+        "resourceClass": "m-medium"
+      }
+    },
+    // Internal QA / TestFlight-style sharing of a release-like build.
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
+      }
+    },
+    // Store build. autoIncrement keeps build numbers monotonic.
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      }
+    }
+  },
+  "submit": {
+    // Filled in when we first submit to App Store Connect / Play Console.
+    "production": {}
+  }
+}

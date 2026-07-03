@@ -40,6 +40,73 @@ Simulator or Android emulator is enough to work on every screen except the actua
 capture flow, which is gated off on non-capable devices anyway
 (`src/lib/capture.ts`).
 
+## Capture module
+
+The guided scan lives in a **local Expo module** at `modules/zells-capture/`. It wraps
+Apple's `ObjectCaptureSession` (guided photo capture) and `PhotogrammetrySession`
+(on-device reconstruction), then converts the resulting USDZ to OBJ with ModelIO so the
+Python pipeline can consume it (CLAUDE.md gotcha 4). All files stay inside the app
+sandbox; the module adds no network or analytics calls (CLAUDE.md gotcha 5).
+
+Layout:
+
+```
+modules/zells-capture/
+  expo-module.config.json   Autolinking manifest (apple platform)
+  ZellsCapture.podspec       CocoaPods spec, iOS 17 minimum
+  package.json               Local module metadata (not a pnpm workspace package)
+  index.ts                   Public JS API (safe on every platform)
+  src/
+    types.ts                 Shared TS types (mirror the Swift Records/Events)
+    errors.ts                CaptureError + typed codes + mapNativeError
+    native.ts                requireOptionalNativeModule boundary (null when absent)
+    *.test.ts                Vitest: fallback + error mapping (no device needed)
+  ios/
+    ZellsCaptureModule.swift        Module definition (functions + events)
+    CaptureSessionController.swift   ObjectCaptureSession + SwiftUI hosting
+    ReconstructionController.swift   PhotogrammetrySession + USDZ->OBJ export
+    Records.swift                    Expo Record types
+    ZellsCaptureError.swift          Typed Swift exceptions -> JS error codes
+```
+
+JS entry points (see `src/lib/nativeCapture.ts` for the app-facing seam):
+
+- `isSupported()` - `ObjectCaptureSession.isSupported` (LiDAR + iOS 17). The LiDAR
+  truth source. Resolves `false` wherever the native module is absent.
+- `startCapture()`, `reconstruct(options)`, `cancel()` - reject with a typed
+  `CaptureUnavailableError` when the module is absent (web, Android, Simulator, Expo Go),
+  so nothing crashes off-device.
+- `addCaptureStateListener`, `addReconstructionProgressListener` - event subscriptions.
+
+The Swift compiles only inside an EAS dev-client build (there is no Swift toolchain in
+CI or this scaffold). The TypeScript wrapper is fully unit-tested with the native module
+mocked, so `pnpm --filter @zells/app test` covers the JS logic without a device.
+
+### Building the dev client (to run capture on-device)
+
+```
+eas build --profile development --platform ios   # see eas.json
+```
+
+Install the resulting dev client on a physical LiDAR iPhone (12 Pro or later Pro, iOS
+17+). The iOS Simulator has no LiDAR, so `isSupported()` is `false` there; use it only
+for the non-capture screens.
+
+### Unverified (on-device debugging TODO)
+
+The Swift was written without a compiler and is flagged throughout with searchable
+`UNVERIFIED:` comments. Grep before the first device session:
+
+```
+grep -rn "UNVERIFIED:" modules/zells-capture
+```
+
+Highest-risk items: exact `ObjectCaptureSession` / `PhotogrammetrySession` state and
+output enum cases, presenting the SwiftUI `ObjectCaptureView` from the RN view
+hierarchy, ModelIO USDZ->OBJ export fidelity, and whether Expo surfaces the Swift
+exception `code` strings unchanged (the JS `mapNativeError` has a keyword fallback if
+not).
+
 ## Environment variables
 
 Copy the repo-root `.env.example` to `.env` and fill in:

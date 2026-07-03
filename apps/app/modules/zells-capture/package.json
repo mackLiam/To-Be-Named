@@ -1,0 +1,10 @@
+{
+  "name": "zells-capture",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Expo module wrapping ObjectCaptureSession and PhotogrammetrySession (iOS 17+, LiDAR).",
+  "main": "index.ts",
+  "dependencies": {
+    "expo-modules-core": "*"
+  }
+}
