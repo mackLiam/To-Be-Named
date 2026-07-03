@@ -29,8 +29,10 @@ computes") so iOS, Android, and web converge on one pipeline.
 1. Onshape internal units are meters; pipeline computes in mm and converts exactly once
    at the Onshape client boundary.
 2. The 25-variable schema is a frozen, versioned contract (JSON Schema in
-   packages/shared) shared by the Python extractor, TypeScript types, and Onshape
-   client. No ad-hoc renames.
+   packages/shared, 1.0.0: names confirmed against the Onshape model 2026-07-02).
+   Leg_Length runs from the bottom of the ankle to the knee; slices S1-S4 sit at
+   20/40/60/80 percent of Leg_Length measured up from the ankle (S1 nearest the
+   ankle). No ad-hoc renames; renames require a coordinated version bump.
 3. Pipeline = explicit state machine in Postgres (captured → uploaded → measuring →
    measured → generating_cad → stl_ready → queued_for_print → printing → shipped, with
    failed(step, reason, retriable)). Every step idempotent by job_id.
