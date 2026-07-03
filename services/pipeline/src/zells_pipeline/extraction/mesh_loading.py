@@ -116,8 +116,7 @@ def load_mesh(path: str | Path, settings: Settings | None = None) -> trimesh.Tri
         raise
     except Exception as exc:
         raise MeshValidationError(
-            "Could not parse the uploaded mesh file. It may be corrupt or in an unsupported "
-            "format."
+            "Could not parse the uploaded mesh file. It may be corrupt or in an unsupported format."
         ) from exc
 
     if isinstance(loaded, trimesh.Scene):
