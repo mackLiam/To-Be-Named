@@ -1,0 +1,604 @@
+/*
+ * Admin panel styling. This is an internal ops tool: dense, fast, and
+ * keyboard-scannable beats marketing polish, but it still reads as Zells.
+ * Navy anchor, orange only where the eye must go, Outfit for headings and
+ * Manrope for body/UI. Rectangles at one radius, borders and color blocks for
+ * structure instead of drop shadows. No card grid, no gradients, no pills.
+ */
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+/* Top bar: solid navy band, like the marketing header, with a panel tag. */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--navy-900);
+  color: var(--white);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.wordmark {
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.12em;
+}
+
+.panelTag {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--navy-900);
+  background: var(--orange-500);
+  padding: 2px 8px;
+  border-radius: var(--radius);
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.navLink {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--navy-100);
+  text-decoration: none;
+  padding: 4px 2px;
+}
+
+.navLink:hover {
+  color: var(--white);
+}
+
+/* Fake-data warning: a loud navy-on-orange strip so it can never be mistaken
+ * for live production data. */
+.fakeBanner {
+  background: var(--orange-500);
+  color: var(--navy-900);
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: var(--space-sm) var(--space-lg);
+}
+
+.main {
+  flex: 1;
+  padding: var(--space-lg);
+  width: 100%;
+  max-width: 1180px;
+}
+
+/* Page heading block. */
+.pageHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  border-bottom: 2px solid var(--navy-900);
+  padding-bottom: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.title {
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  font-size: clamp(26px, 4vw, 40px);
+  line-height: 1;
+}
+
+.subtitle {
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.backLink {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  display: inline-block;
+  margin-bottom: var(--space-md);
+}
+
+.backLink:hover {
+  color: var(--action);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Status filter: a row of rectangular text toggles, not pills.              */
+/* ------------------------------------------------------------------------- */
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+  width: fit-content;
+  background: var(--surface-muted);
+}
+
+.filter {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.filter:hover {
+  color: var(--text-primary);
+}
+
+.filterActive {
+  background: var(--navy-900);
+  color: var(--white);
+}
+
+.filterActive:hover {
+  color: var(--white);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Data table: bordered rows, monospace ids, tabular numerals.              */
+/* ------------------------------------------------------------------------- */
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+}
+
+.table thead th {
+  text-align: left;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  background: var(--surface-muted);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table tbody td {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  color: var(--text-primary);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr:hover {
+  background: var(--navy-50);
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  letter-spacing: 0;
+}
+
+.idCell {
+  font-weight: 700;
+}
+
+.idLink {
+  color: var(--text-primary);
+  text-decoration: none;
+  border-bottom: 2px solid var(--orange-500);
+  padding-bottom: 1px;
+}
+
+.idLink:hover {
+  color: var(--action-pressed);
+}
+
+.muted {
+  color: var(--text-tertiary);
+}
+
+.errorText {
+  color: var(--text-secondary);
+  max-width: 40ch;
+}
+
+.emptyRow {
+  padding: var(--space-xl) var(--space-md);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-family: var(--font-body-stack);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Status badge: small rectangular text badge, never a pill. Tones map to    */
+/* navy / orange / danger with text contrast checked against each fill.      */
+/* ------------------------------------------------------------------------- */
+.badge {
+  display: inline-block;
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+/* neutral: pending. Navy outline on white. */
+.toneNeutral {
+  color: var(--navy-700);
+  background: var(--white);
+  border-color: var(--navy-300);
+}
+
+/* progress: running. Solid navy, white text. */
+.toneProgress {
+  color: var(--white);
+  background: var(--navy-900);
+}
+
+/* good: succeeded. Navy text on the muted navy tint. */
+.toneGood {
+  color: var(--navy-900);
+  background: var(--navy-50);
+  border-color: var(--navy-300);
+}
+
+/* warn: failed (retriable). Orange fill, navy text (contrast-safe). */
+.toneWarn {
+  color: var(--navy-900);
+  background: var(--orange-500);
+}
+
+/* bad: dead letter. Solid danger, white text. */
+.toneBad {
+  color: var(--white);
+  background: var(--danger);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Pagination.                                                               */
+/* ------------------------------------------------------------------------- */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.pageBtn {
+  font-weight: 700;
+  color: var(--navy-900);
+  text-decoration: none;
+  border: 1px solid var(--navy-300);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+}
+
+.pageBtn:hover {
+  border-color: var(--navy-900);
+}
+
+.pageBtnDisabled {
+  color: var(--navy-300);
+  border-color: var(--border);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Job detail.                                                               */
+/* ------------------------------------------------------------------------- */
+.detailHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.sectionLabel {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: var(--space-xl) 0 var(--space-sm);
+}
+
+.factGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.fact {
+  background: var(--white);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.factTerm {
+  font-family: var(--font-body-stack);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.factValue {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* Error payload: navy code block, no glow. */
+.errorPayload {
+  border-left: 3px solid var(--danger);
+  background: var(--surface-muted);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+}
+
+.errorMessage {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-sm);
+}
+
+.codeBlock {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--navy-100);
+  background: var(--navy-900);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.gateList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.gateRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+}
+
+.gateKey {
+  font-weight: 800;
+  font-family: var(--font-display-stack);
+  letter-spacing: 0.02em;
+}
+
+.gateDetail {
+  color: var(--text-secondary);
+}
+
+/* Measurement slices. */
+.sliceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-md);
+}
+
+.sliceCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.sliceHead {
+  background: var(--navy-900);
+  color: var(--white);
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.sliceName {
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+}
+
+.slicePos {
+  font-family: var(--font-body-stack);
+  font-size: 11px;
+  color: var(--navy-100);
+}
+
+.dimTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+}
+
+.dimTable td {
+  padding: 6px var(--space-md);
+  border-bottom: 1px solid var(--border);
+}
+
+.dimTable tr:last-child td {
+  border-bottom: none;
+}
+
+.dimName {
+  font-family: var(--font-display-stack);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+.dimValue {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.dimUnit {
+  font-weight: 400;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.dimMissing {
+  text-align: right;
+  color: var(--navy-300);
+}
+
+/* A tripped value: navy text on orange, matching the warn badge, so a failed
+ * gate is visible at a glance without relying on color alone (the gate range
+ * is spelled out too). */
+.dimBad {
+  background: var(--orange-500);
+}
+
+.dimBad .dimName,
+.dimBad .dimValue {
+  color: var(--navy-900);
+}
+
+.dimRange {
+  display: block;
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--navy-900);
+}
+
+.legLength {
+  border: 1px solid var(--navy-300);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.legLengthLabel {
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+
+.legLengthValue {
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  color: var(--orange-600);
+}
+
+/* Break-glass action. */
+.actionBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-top: var(--space-sm);
+}
+
+.downloadBtn {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--white);
+  background: var(--orange-500);
+  border: none;
+  border-radius: var(--radius);
+  padding: 10px 18px;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.downloadBtn:hover {
+  background: var(--action-pressed);
+}
+
+.actionNote {
+  font-family: var(--font-body-stack);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  max-width: 44ch;
+}
+
+@media (max-width: 720px) {
+  .main {
+    padding: var(--space-md);
+  }
+}
