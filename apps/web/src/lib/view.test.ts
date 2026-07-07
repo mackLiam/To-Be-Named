@@ -132,10 +132,7 @@ describe('groupMeasurements', () => {
   });
 
   it('surfaces gates whose key is not a known measurement variable', () => {
-    const grouped = groupMeasurements(
-      {},
-      [{ key: 'mystery_dim', value: 1, ok: false }],
-    );
+    const grouped = groupMeasurements({}, [{ key: 'mystery_dim', value: 1, ok: false }]);
     expect(grouped.unmatchedGates).toHaveLength(1);
     expect(grouped.unmatchedGates[0]!.key).toBe('mystery_dim');
   });

@@ -162,8 +162,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         </a>
         <p className={styles.actionNote}>
           Issues a short-lived signed URL server-side and writes an audit_log row before the
-          download. Use only when a customer or print handoff needs the file directly. Returns a
-          404 if this job has no STL artifact yet.
+          download. Use only when a customer or print handoff needs the file directly. Returns a 404
+          if this job has no STL artifact yet.
         </p>
       </div>
     </AdminShell>
