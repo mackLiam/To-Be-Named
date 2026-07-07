@@ -17,6 +17,10 @@ geometry always comes from the parametric model, which guarantees printability,
 consistent wall thickness, and consistent protective properties regardless of
 scan noise.
 
+One contract, many products: the same 25 measurements drive multiple guard
+models (a minimal Pro cut, a standard Club cut, an extended-coverage Junior
+Max) and, later, standard S/M/L presets. Product-line architecture: §7a.
+
 ### The 25 variables
 
 - `Leg_Length` (1): bottom of the ankle to the knee
@@ -266,6 +270,92 @@ constraints to design around:
   product is validated. The architecture already isolates this behind a single
   "CAD client" interface in the worker, so it's a swap, not a rewrite.
 
+**Implementation status (2026-07-06):** the provider layer exists. Descriptor +
+registry live in `services/pipeline/src/zells_pipeline/cad/` (Python) and
+`packages/shared/src/cad.ts` (TypeScript); `products.cad_model` added in
+migration `0006_cad_models.sql`; the worker resolves job -> order -> product
+descriptor with an env-driven Onshape default (degrading to `dry_run` without
+credentials) for product-less Phase 0 jobs. The two descriptor validators are
+one logical artifact: change them in the same commit. Full model-line design:
+§7a.
+
+---
+
+## 7a. Product Line: One Contract, Multiple Guard Models
+
+The measurement contract is singular and frozen; the product line is plural and
+open-ended. Every product Zells sells is a separate parametric CAD model that
+consumes the **same** 25-variable schema. New products never fork the contract;
+they only add a new model behind it. This is the second major payoff of the
+"scan is a measurement instrument, not a printable" decision in §1.
+
+### 7a.1 Planned model tiers
+
+Different players want different guards. Pros wear the smallest, lightest guard
+the rules allow; parents of young players want maximum coverage and visible
+protection. Both are the same pipeline with a different model at the end:
+
+| Tier (working name) | Coverage philosophy | Target buyer | Notes |
+|---|---|---|---|
+| **Zells Pro** | Minimal footprint: shortest legal shell, thinnest profile, lowest weight. Sits low on the shin. | Serious/adult players who cut down stock guards today | Coverage floor bounded by league rules (IFAB Law 4 requires "reasonable protection"; NOCSAE/EN 13061 define testable coverage zones, see §12.4). Do not undercut a certifiable minimum silently. |
+| **Zells Club** | Balanced coverage and weight. The default. | Most players | This is the collaborator's existing model; Phase 0-2 ship only this. |
+| **Zells Junior Max** | Extended coverage: shell runs higher toward the knee and wraps further around the calf; optional ankle-guard add-on. | Parents buying for kids/toddlers; safety is the purchase driver | Same 25 inputs; the model internally extends margins as functions of Leg_Length and slice dims. Youth leagues are also where certification matters most (§12.4). |
+
+Tier count and names are product decisions, not architecture: the architecture
+supports N models from day one.
+
+### 7a.2 How a product selects its model (the CAD descriptor)
+
+Each row in `products` carries a `cad_model` JSONB descriptor (contract shape in
+`packages/shared/src/cad.ts`, mirrored in the Python pipeline):
+
+- `provider`: registry key (`onshape` now; `cadquery` post-port, §7; `dry_run`
+  for credential-free pipeline tests).
+- `ref`: provider-specific address (Onshape: document_id / workspace_id /
+  element_id).
+- `variable_map`: optional mapping from schema names to that model's variable
+  names, for models whose internal naming drifted before the freeze. Absent
+  means identity mapping.
+- `schema_version`: which measurement schema version the model was built
+  against, so a future schema 2.x cannot be silently fed to a 1.x model.
+
+The Onshape client resolves the descriptor per job from the ordered product.
+Nothing about a specific document is hardcoded in the worker. Adding a model =
+inserting a product row + validating the new document regenerates across the
+schema's plausible ranges. Zero new pipeline code.
+
+### 7a.3 Sizing modes: custom-fit and standard presets
+
+Two sizing modes per product, both flowing through the identical pipeline:
+
+1. **Custom (primary):** the 25 values come from the customer's scan.
+2. **Preset S/M/L (§12.7):** a preset is nothing more than a canonical,
+   hand-curated 25-variable value set stored as data (per size, per model),
+   sourced initially from anthropometric tables and later refined from
+   accumulated real-scan distributions. Because inputs are fixed, preset STLs
+   are cacheable: generate once per (model, size, model-version), reuse
+   forever. Presets give: a no-scan fallback product (Android/older-iPhone
+   users before server-side reconstruction ships), a toddler path (scanning a
+   wiggling three-year-old may never be reliable; a Junior Max preset in
+   toddler sizes is the realistic product there), a print-partner calibration
+   article, and a sellable SKU before scan UX is perfected.
+
+### 7a.4 Per-model launch checklist
+
+Every new model (and every material/process change to an existing one) must
+pass before it becomes purchasable:
+
+1. Regeneration sweep: model regenerates cleanly across the schema's full
+   plausible ranges (automated sweep via the pipeline, not spot checks).
+2. Fit validation: printed on 3+ real scanned legs in the target segment,
+   fit feedback recorded in `docs/accuracy-log.md`.
+3. Print validation: test prints in the production material with the
+   fulfillment partner; wall thickness / impact behavior signed off (§12.5).
+4. Compliance position stated for the tier (§12.4): certified, certifiable,
+   or explicitly "training use" marketing.
+5. Catalog entry: product row with correct `cad_model` descriptor, pricing,
+   photos, and (if preset-capable) preset value sets.
+
 ---
 
 ## 8. Data Model (sketch)
@@ -277,7 +367,9 @@ scans          id, user_id, leg (L/R), status, mesh_path, capture_meta
                (device model, iOS version, capture duration), created_at
 measurements   id, scan_id, schema_version, values(jsonb: 25 vars),
                extraction_version, validated(bool), created_at
-products       id, name, base_price, active            -- guard models/styles
+products       id, name, base_price, active,
+               cad_model(jsonb: provider, ref, variable_map, schema_version)
+               -- guard models/styles; descriptor contract in §7a.2
 orders         id, user_id, product_id, scan_id_left, scan_id_right,
                status, stripe_payment_intent, amount, address(json), created_at
 pipeline_jobs  id, order_id, step, status, attempts, error, started_at,
@@ -406,7 +498,8 @@ CI suite.
 privacy policy + data deletion + minors review, App Store assets, web build of
 the product app (`app.zells.com`), re-order from stored measurements.
 
-**Phase 4 - expand:** Android (server-side reconstruction), print-partner API,
+**Phase 4 - expand:** product-line growth per §7a (Pro and Junior Max models,
+S/M/L presets), Android (server-side reconstruction), print-partner API,
 code-CAD port when volume justifies it.
 
 ---
@@ -436,10 +529,16 @@ code-CAD port when volume justifies it.
    affects the parametric model's wall thickness assumptions; needs testing with
    the fulfillment partner.
 6. **Minors & consent** (§9.4) - legal review required pre-launch.
-7. **Standard-size presets (idea, post-Phase 0)** - since the model is fully
-   parameterized, S/M/L stock sizes are nearly free: pick a preset
-   `Leg_Length` per size (fixed lengths or percentage steps around a base)
-   and scale the 24 slice dimensions from anthropometric averages or from
-   accumulated real-scan data. Gives a no-scan fallback product, a print
-   partner calibration article, and a way to sell before the scan UX is
-   perfect. Revisit once the scan-to-print path works.
+7. **Standard-size presets (adopted into the product-line plan, §7a.3)** -
+   since every model is fully parameterized, S/M/L stock sizes are nearly
+   free: pick a preset `Leg_Length` per size (fixed lengths or percentage
+   steps around a base) and scale the 24 slice dimensions from anthropometric
+   averages or from accumulated real-scan data. Gives a no-scan fallback
+   product, a toddler path, a print partner calibration article, and a way to
+   sell before the scan UX is perfect. Build after the scan-to-print path
+   works; sequencing in `docs/ROADMAP.md`.
+8. **Coverage floor for the Pro tier** - how small can a guard legally and
+   ethically be? IFAB Law 4 only says "reasonable protection"; NOCSAE/EN
+   13061 define coverage zones. The Pro model must not undercut a
+   certifiable minimum without an explicit, informed decision. Resolve
+   during the §12.4 compliance investigation, before the Pro model ships.
