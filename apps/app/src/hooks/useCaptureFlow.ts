@@ -10,6 +10,14 @@
  *   capturing|reconstructing -> ready       (user cancelled: not an error)
  *   capturing|reconstructing -> failed      (typed CaptureError)
  *   reconstructing -> done                  (OBJ + USDZ on disk)
+ *   done -> uploading -> uploaded           (upload deps present: save the scan)
+ *   uploading -> upload_failed              (upload rejected; retryUpload() retries)
+ *
+ * The upload leg is opt-in via CaptureFlowDeps.uploadScan: when it is absent
+ * (the default in unit tests, and any non-configured build) the machine stops at
+ * 'done' exactly as before, so existing behavior is preserved. When present (the
+ * real deps built by defaultCaptureFlowDeps) a successful reconstruction flows
+ * on through the upload path.
  *
  * The machine lives in {@link CaptureFlowController}, a plain class with every
  * module call injected through {@link CaptureFlowDeps}, so all transitions are
@@ -43,13 +51,33 @@ import type {
 } from '../../modules/zells-capture';
 import { getCaptureAvailability } from '../lib/nativeCapture';
 import type { CaptureAvailability, CaptureUnavailableReason } from '../lib/nativeCapture';
+import { asUploadError, newScanId, uploadScan } from '../lib/upload';
+import type { Leg, UploadError, UploadScanParams, UploadScanResult } from '../lib/upload';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
 export type CaptureFlowPhase =
-  'checking' | 'unsupported' | 'ready' | 'capturing' | 'reconstructing' | 'done' | 'failed';
+  | 'checking'
+  | 'unsupported'
+  | 'ready'
+  | 'capturing'
+  | 'reconstructing'
+  | 'done'
+  | 'uploading'
+  | 'uploaded'
+  | 'upload_failed'
+  | 'failed';
+
+/** Device/OS context stamped onto the scan's capture_meta. Gathered by the
+ * screen (which already imports react-native) and injected, so this module and
+ * its node tests never statically import react-native. */
+export interface CaptureMetaEnv {
+  platform: string;
+  osVersion: string;
+  deviceModel: string | null;
+}
 
 export interface CaptureFlowState {
   phase: CaptureFlowPhase;
@@ -63,10 +91,14 @@ export interface CaptureFlowState {
   progressStage: string | null;
   /** Result of the guided capture, once startCapture resolves. */
   capture: CaptureResult | null;
-  /** Result of the reconstruction; set in the 'done' phase. */
+  /** Result of the reconstruction; set from the 'done' phase onward. */
   result: ReconstructResult | null;
-  /** Typed error; set only in the 'failed' phase. */
+  /** Typed capture error; set only in the 'failed' phase. */
   error: CaptureError | null;
+  /** Typed upload error; set only in the 'upload_failed' phase. */
+  uploadError: UploadError | null;
+  /** Id of the saved scan; set in the 'uploaded' phase (used to route to it). */
+  scanId: string | null;
 }
 
 export const INITIAL_CAPTURE_FLOW_STATE: CaptureFlowState = {
@@ -78,10 +110,18 @@ export const INITIAL_CAPTURE_FLOW_STATE: CaptureFlowState = {
   capture: null,
   result: null,
   error: null,
+  uploadError: null,
+  scanId: null,
 };
 
-/** Phases from which start() may (re)enter the capture pipeline. */
-const STARTABLE_PHASES: readonly CaptureFlowPhase[] = ['ready', 'failed', 'done'];
+/** Phases from which start() may (re)enter the capture pipeline (i.e. rescan). */
+const STARTABLE_PHASES: readonly CaptureFlowPhase[] = [
+  'ready',
+  'failed',
+  'done',
+  'uploaded',
+  'upload_failed',
+];
 
 // ---------------------------------------------------------------------------
 // Error copy
@@ -127,10 +167,20 @@ export interface CaptureFlowDeps {
   addReconstructionProgressListener(
     listener: (event: ReconstructionProgressEvent) => void,
   ): EventSubscription;
+  /**
+   * Upload a completed scan (mesh -> storage, scan row, measure job). Optional:
+   * when omitted the machine stops at 'done' and never enters the upload leg.
+   * Injected so tests can drive upload states without a backend.
+   */
+  uploadScan?: (params: UploadScanParams) => Promise<UploadScanResult>;
+  /** Gather device/OS context for capture_meta. Optional; injected by the
+   * screen so this module never imports react-native. */
+  captureEnv?: () => CaptureMetaEnv;
 }
 
-/** The real module wired into the deps shape. */
-export function defaultCaptureFlowDeps(): CaptureFlowDeps {
+/** The real module wired into the deps shape. captureEnv is supplied by the
+ * screen (capture.tsx), which already imports react-native. */
+export function defaultCaptureFlowDeps(captureEnv?: () => CaptureMetaEnv): CaptureFlowDeps {
   return {
     getAvailability: getCaptureAvailability,
     startCapture,
@@ -138,6 +188,8 @@ export function defaultCaptureFlowDeps(): CaptureFlowDeps {
     cancel: cancelCapture,
     addCaptureStateListener,
     addReconstructionProgressListener,
+    uploadScan,
+    captureEnv,
   };
 }
 
@@ -152,16 +204,31 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+export interface CaptureFlowOptions {
+  /** Which leg the scan is of. Defaults to 'L' until a leg picker exists. */
+  leg?: Leg;
+}
+
 export class CaptureFlowController {
   private state: CaptureFlowState = INITIAL_CAPTURE_FLOW_STATE;
   private disposed = false;
   private listenersAttached = false;
   private subscriptions: EventSubscription[] = [];
+  private readonly leg: Leg;
+  /** Wall-clock start of the current capture, for capture_meta duration. */
+  private captureStartedAt: number | null = null;
+  /** Reconstruction result of the current attempt, so retryUpload can reuse it. */
+  private lastResult: ReconstructResult | null = null;
+  /** Scan id reused across upload retries so a partial failure is idempotent. */
+  private uploadScanId: string | null = null;
 
   constructor(
     private readonly deps: CaptureFlowDeps,
     private readonly onChange: (state: CaptureFlowState) => void,
-  ) {}
+    options: CaptureFlowOptions = {},
+  ) {
+    this.leg = options.leg ?? 'L';
+  }
 
   getState(): CaptureFlowState {
     return this.state;
@@ -198,6 +265,11 @@ export class CaptureFlowController {
       return;
     }
     this.attachListeners();
+    this.captureStartedAt = Date.now();
+    // A rescan starts a fresh scan: drop the previous attempt's upload identity
+    // so we never overwrite an already-saved scan with a new capture.
+    this.uploadScanId = null;
+    this.lastResult = null;
     this.patch({
       phase: 'capturing',
       captureState: 'initializing',
@@ -206,6 +278,8 @@ export class CaptureFlowController {
       capture: null,
       result: null,
       error: null,
+      uploadError: null,
+      scanId: null,
     });
 
     let capture: CaptureResult;
@@ -232,7 +306,82 @@ export class CaptureFlowController {
     if (this.disposed) {
       return;
     }
+    this.lastResult = result;
     this.patch({ phase: 'done', result, progress: 1 });
+
+    // Upload leg is opt-in (deps.uploadScan). When absent, the machine stops at
+    // 'done' (prior behavior). When present, save the scan.
+    if (this.deps.uploadScan && !this.disposed) {
+      await this.runUpload(result);
+    }
+  }
+
+  /**
+   * Retry only the upload after an upload failure, reusing the same scan id so
+   * the storage object, scan row, and job are not duplicated. A full rescan is
+   * still available via start().
+   */
+  async retryUpload(): Promise<void> {
+    if (this.disposed || this.state.phase !== 'upload_failed' || !this.lastResult) {
+      return;
+    }
+    await this.runUpload(this.lastResult);
+  }
+
+  /** Upload the reconstructed mesh: done -> uploading -> uploaded | upload_failed. */
+  private async runUpload(result: ReconstructResult): Promise<void> {
+    if (this.disposed || !this.deps.uploadScan) {
+      return;
+    }
+    // Allocate the scan id once and reuse it across retries: a retry then
+    // overwrites the same object, upserts the same row, and returns the same
+    // active job instead of orphaning a partially-uploaded scan.
+    if (!this.uploadScanId) {
+      this.uploadScanId = newScanId();
+    }
+    this.patch({ phase: 'uploading', uploadError: null });
+    let uploaded: UploadScanResult;
+    try {
+      uploaded = await this.deps.uploadScan({
+        localFileUri: result.objPath,
+        leg: this.leg,
+        captureMeta: this.buildCaptureMeta(result),
+        scanId: this.uploadScanId,
+      });
+    } catch (error) {
+      if (this.disposed) {
+        return;
+      }
+      this.patch({ phase: 'upload_failed', uploadError: asUploadError(error) });
+      return;
+    }
+    if (this.disposed) {
+      return;
+    }
+    this.uploadScanId = uploaded.scanId;
+    this.patch({ phase: 'uploaded', scanId: uploaded.scanId, uploadError: null });
+  }
+
+  /** Assemble capture_meta from what the flow knows plus injected device env.
+   * Never geometry: just session/device/timing context (CLAUDE.md gotcha 5). */
+  private buildCaptureMeta(result: ReconstructResult): Record<string, unknown> {
+    const meta: Record<string, unknown> = {
+      sessionId: result.sessionId,
+      imageCount: result.imageCount,
+      detail: result.detail,
+    };
+    if (this.captureStartedAt != null) {
+      meta.captureDurationMs = Date.now() - this.captureStartedAt;
+    }
+    if (this.deps.captureEnv) {
+      const env = this.deps.captureEnv();
+      meta.platform = env.platform;
+      meta.osVersion = env.osVersion;
+      if (env.deviceModel) {
+        meta.deviceModel = env.deviceModel;
+      }
+    }
+    return meta;
   }
 
   /**
@@ -303,24 +452,40 @@ export class CaptureFlowController {
 
 export interface UseCaptureFlowResult {
   state: CaptureFlowState;
-  /** Start the capture pipeline (or retry / scan again). */
+  /** Start the capture pipeline (or rescan from a terminal phase). */
   start: () => void;
+  /** Retry only the upload after an upload failure (no rescan). */
+  retryUpload: () => void;
+}
+
+export interface UseCaptureFlowOptions {
+  /** Which leg the scan is of. Defaults to 'L'. */
+  leg?: Leg;
+  /** Device/OS context for capture_meta (screen-provided; keeps react-native
+   * out of this module's import graph). */
+  captureEnv?: () => CaptureMetaEnv;
+  /** Override deps (tests / non-default wiring). When set, captureEnv is ignored
+   * (pass it inside deps instead). */
+  deps?: CaptureFlowDeps;
 }
 
 /**
  * Drive the capture flow for a screen. Checks availability on mount, exposes
- * start(), and cleans up (listeners + native cancel) on unmount.
+ * start() and retryUpload(), and cleans up (listeners + native cancel) on
+ * unmount.
  */
-export function useCaptureFlow(deps?: CaptureFlowDeps): UseCaptureFlowResult {
+export function useCaptureFlow(options: UseCaptureFlowOptions = {}): UseCaptureFlowResult {
   const [state, setState] = useState<CaptureFlowState>(INITIAL_CAPTURE_FLOW_STATE);
   const controllerRef = useRef<CaptureFlowController | null>(null);
-  // Deps are captured once on mount, matching the controller's lifetime.
-  const depsRef = useRef(deps);
+  // Options are captured once on mount, matching the controller's lifetime.
+  const optionsRef = useRef(options);
 
   useEffect(() => {
+    const { deps, captureEnv, leg } = optionsRef.current;
     const controller = new CaptureFlowController(
-      depsRef.current ?? defaultCaptureFlowDeps(),
+      deps ?? defaultCaptureFlowDeps(captureEnv),
       setState,
+      { leg },
     );
     controllerRef.current = controller;
     void controller.initialize();
@@ -334,5 +499,9 @@ export function useCaptureFlow(deps?: CaptureFlowDeps): UseCaptureFlowResult {
     void controllerRef.current?.start();
   }, []);
 
-  return { state, start };
+  const retryUpload = useCallback(() => {
+    void controllerRef.current?.retryUpload();
+  }, []);
+
+  return { state, start, retryUpload };
 }

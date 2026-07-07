@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { Body } from '../src/components/Body';
 import { Button } from '../src/components/Button';
@@ -7,9 +8,22 @@ import { Heading } from '../src/components/Heading';
 import { Rule } from '../src/components/Rule';
 import { Screen } from '../src/components/Screen';
 import { captureErrorMessage, useCaptureFlow } from '../src/hooks/useCaptureFlow';
-import type { CaptureFlowState } from '../src/hooks/useCaptureFlow';
+import type { CaptureFlowState, CaptureMetaEnv } from '../src/hooks/useCaptureFlow';
+import { uploadErrorMessage } from '../src/lib/upload';
 import type { CaptureState } from '../modules/zells-capture';
 import { colors, radius, spacing } from '../src/theme/tokens';
+
+/** Device/OS context stamped onto the scan. Built here (not in useCaptureFlow)
+ * so react-native stays out of that module's node-test import graph. Platform
+ * exposes OS and version; a precise device model needs a native module we have
+ * not added yet, so it is left null for now. */
+function readCaptureEnv(): CaptureMetaEnv {
+  return {
+    platform: Platform.OS,
+    osVersion: String(Platform.Version ?? ''),
+    deviceModel: null,
+  };
+}
 
 /**
  * The guided capture flow (ROADMAP.md week 2). Deliberately a lab tool:
@@ -22,7 +36,15 @@ import { colors, radius, spacing } from '../src/theme/tokens';
  */
 export default function CaptureScreen() {
   const router = useRouter();
-  const { state, start } = useCaptureFlow();
+  const { state, start, retryUpload } = useCaptureFlow({ leg: 'L', captureEnv: readCaptureEnv });
+
+  // On a successful upload the scan lives in the library; send the user there.
+  // replace() so the back button does not land them on a finished capture.
+  useEffect(() => {
+    if (state.phase === 'uploaded') {
+      router.replace('/(tabs)/scans');
+    }
+  }, [state.phase, router]);
 
   return (
     <Screen>
@@ -31,7 +53,13 @@ export default function CaptureScreen() {
       {state.phase === 'ready' && <ReadySection onStart={start} />}
       {state.phase === 'capturing' && <CapturingSection state={state} />}
       {state.phase === 'reconstructing' && <ReconstructingSection state={state} />}
-      {state.phase === 'done' && <DoneSection state={state} onRestart={start} />}
+      {(state.phase === 'done' || state.phase === 'uploading') && (
+        <UploadingSection state={state} />
+      )}
+      {state.phase === 'uploaded' && <UploadedSection />}
+      {state.phase === 'upload_failed' && (
+        <UploadFailedSection state={state} onRetry={retryUpload} onRescan={start} />
+      )}
       {state.phase === 'failed' && <FailedSection state={state} onRetry={start} />}
     </Screen>
   );
@@ -150,36 +178,75 @@ function ReconstructingSection({ state }: { state: CaptureFlowState }) {
   );
 }
 
-function DoneSection({ state, onRestart }: { state: CaptureFlowState; onRestart: () => void }) {
+/**
+ * Reconstruction finished; the mesh is being saved to the scan library. Covers
+ * both the transient 'done' phase and the 'uploading' phase so there is no
+ * flicker between them.
+ */
+function UploadingSection({ state }: { state: CaptureFlowState }) {
   const result = state.result;
   return (
     <>
-      <Heading level="h1">Scan complete.</Heading>
+      <Heading level="h1">Saving your scan.</Heading>
       <View style={{ height: spacing.md }} />
-      <Body>The mesh is on this phone, ready for the measurement pipeline.</Body>
+      <Body>
+        The mesh is built. Uploading it to your scan library and queuing it for measurement. Keep
+        the app open.
+      </Body>
       <Rule />
       {result && (
         <>
           <InfoRow label="Session" value={result.sessionId} />
           <InfoRow label="Images used" value={String(result.imageCount)} />
           <InfoRow label="Detail level" value={result.detail} />
-          <InfoRow label="OBJ file" value={result.objPath} />
-          <InfoRow label="USDZ file" value={result.usdzPath} />
         </>
       )}
-      {/*
-        TODO(month-2): upload hooks in here. Send result.objPath to the scan
-        library (private bucket, signed upload URL) and create the scan row;
-        until then the flow deliberately ends at this summary (ROADMAP.md:
-        week 2 is capture only, upload is month 2).
-      */}
-      <Rule />
-      <Body variant="bodySmall" color={colors.textSecondary}>
-        Upload to your scan library is not wired up yet. For now, pull the OBJ off the device and
-        run it through the extraction pipeline by hand.
+    </>
+  );
+}
+
+/** Brief success state shown before the router redirects to the Scans tab. */
+function UploadedSection() {
+  return (
+    <>
+      <Heading level="h1">Scan saved.</Heading>
+      <View style={{ height: spacing.md }} />
+      <Body>Taking you to your scan library.</Body>
+    </>
+  );
+}
+
+function UploadFailedSection({
+  state,
+  onRetry,
+  onRescan,
+}: {
+  state: CaptureFlowState;
+  onRetry: () => void;
+  onRescan: () => void;
+}) {
+  return (
+    <>
+      <Heading level="h1">The scan did not save.</Heading>
+      <View style={{ height: spacing.md }} />
+      <Body>
+        {state.uploadError
+          ? uploadErrorMessage(state.uploadError)
+          : 'Something went wrong saving the scan.'}
       </Body>
+      {state.uploadError && (
+        <>
+          <View style={{ height: spacing.sm }} />
+          <Body variant="caption" color={colors.textTertiary}>
+            Error code: {state.uploadError.code}
+          </Body>
+        </>
+      )}
       <View style={{ height: spacing.lg }} />
-      <Button variant="outline" onPress={onRestart}>
+      {/* Retry uploads the same mesh (no rescan): idempotent, reuses the scan id. */}
+      <Button onPress={onRetry}>Retry upload</Button>
+      <View style={{ height: spacing.sm }} />
+      <Button variant="outline" onPress={onRescan}>
         Scan again
       </Button>
     </>

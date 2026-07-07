@@ -24,6 +24,8 @@ vi.mock('../lib/nativeCapture', () => ({
 
 import { CaptureError } from '../../modules/zells-capture';
 import type { CaptureResult, ReconstructResult } from '../../modules/zells-capture';
+import { UploadError } from '../lib/upload';
+import type { UploadScanParams, UploadScanResult } from '../lib/upload';
 import {
   CAPTURE_ERROR_MESSAGES,
   CaptureFlowController,
@@ -31,6 +33,18 @@ import {
   type CaptureFlowDeps,
   type CaptureFlowState,
 } from './useCaptureFlow';
+
+const UPLOAD_RESULT: UploadScanResult = {
+  scanId: 'scan-1',
+  meshPath: 'user-1/scan-1.obj',
+  jobId: 'job-1',
+  fake: false,
+};
+
+/** A typed uploadScan mock so calls[].scanId etc. are inspectable. */
+function uploadMock() {
+  return vi.fn((_params: UploadScanParams) => Promise.resolve(UPLOAD_RESULT));
+}
 
 const CAPTURE_RESULT: CaptureResult = {
   sessionId: 'session-1',
@@ -434,6 +448,111 @@ describe('dispose (unmount)', () => {
     expect(stateSub.remove).toHaveBeenCalledTimes(1);
     captureCall.reject(new CaptureError('ERR_CAPTURE_CANCELLED', 'cancelled'));
     await flush();
+  });
+});
+
+describe('upload leg', () => {
+  it('with no uploadScan dep, stops at done (upload leg is opt-in, prior behavior)', async () => {
+    const { deps } = makeDeps();
+    const { controller, phases } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(controller.getState().phase).toBe('done');
+    expect(phases()).toEqual(['checking', 'ready', 'capturing', 'reconstructing', 'done']);
+  });
+
+  it('done -> uploading -> uploaded, calling uploadScan with the obj path and default leg L', async () => {
+    const uploadScan = uploadMock();
+    const { deps } = makeDeps({ uploadScan });
+    const { controller, phases } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+
+    expect(controller.getState().phase).toBe('uploaded');
+    expect(controller.getState().scanId).toBe('scan-1');
+    expect(uploadScan).toHaveBeenCalledTimes(1);
+    const arg = uploadScan.mock.calls[0]?.[0];
+    expect(arg?.localFileUri).toBe(RECONSTRUCT_RESULT.objPath);
+    expect(arg?.leg).toBe('L');
+    expect(arg?.scanId).toBeTruthy();
+    expect(arg?.captureMeta).toMatchObject({
+      sessionId: 'session-1',
+      imageCount: 42,
+      detail: 'reduced',
+    });
+    expect(phases()).toContain('uploading');
+    expect(phases()).toContain('uploaded');
+  });
+
+  it('passes the configured leg to uploadScan', async () => {
+    const uploadScan = uploadMock();
+    const { deps } = makeDeps({ uploadScan });
+    const controller = new CaptureFlowController(deps, () => {}, { leg: 'R' });
+    await controller.initialize();
+    await controller.start();
+    const arg = uploadScan.mock.calls[0]?.[0];
+    expect(arg?.leg).toBe('R');
+  });
+
+  it('merges injected captureEnv (and a duration) into capture_meta', async () => {
+    const uploadScan = uploadMock();
+    const captureEnv = () => ({ platform: 'ios', osVersion: '17.5', deviceModel: 'iPhone15,2' });
+    const { deps } = makeDeps({ uploadScan, captureEnv });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    const meta = uploadScan.mock.calls[0]?.[0]?.captureMeta;
+    expect(meta).toMatchObject({
+      platform: 'ios',
+      osVersion: '17.5',
+      deviceModel: 'iPhone15,2',
+      sessionId: 'session-1',
+    });
+    expect(meta).toHaveProperty('captureDurationMs');
+  });
+
+  it('upload failure -> upload_failed; retryUpload reuses the scan id and reaches uploaded', async () => {
+    const uploadScan = uploadMock()
+      .mockRejectedValueOnce(new UploadError('ERR_UPLOAD_STORAGE', 'boom'))
+      .mockResolvedValueOnce(UPLOAD_RESULT);
+    const { deps } = makeDeps({ uploadScan });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+
+    expect(controller.getState().phase).toBe('upload_failed');
+    expect(controller.getState().uploadError).toBeInstanceOf(UploadError);
+    expect(controller.getState().uploadError?.code).toBe('ERR_UPLOAD_STORAGE');
+    const firstScanId = uploadScan.mock.calls[0]?.[0]?.scanId;
+
+    await controller.retryUpload();
+    expect(controller.getState().phase).toBe('uploaded');
+    expect(controller.getState().uploadError).toBeNull();
+    const secondScanId = uploadScan.mock.calls[1]?.[0]?.scanId;
+    expect(secondScanId).toBe(firstScanId);
+    expect(uploadScan).toHaveBeenCalledTimes(2);
+  });
+
+  it('retryUpload is a no-op when not in upload_failed', async () => {
+    const uploadScan = uploadMock();
+    const { deps } = makeDeps({ uploadScan });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.retryUpload();
+    expect(uploadScan).not.toHaveBeenCalled();
+  });
+
+  it('rescan after a successful upload allocates a fresh scan id', async () => {
+    const uploadScan = uploadMock();
+    const { deps } = makeDeps({ uploadScan });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    const firstId = uploadScan.mock.calls[0]?.[0]?.scanId;
+    await controller.start();
+    const secondId = uploadScan.mock.calls[1]?.[0]?.scanId;
+    expect(firstId).toBeTruthy();
+    expect(secondId).not.toBe(firstId);
   });
 });
 
