@@ -31,12 +31,14 @@ from typing import Any, Protocol
 
 import httpx
 
+from zells_pipeline.cad.dispatch import CadDispatcher
+from zells_pipeline.cad.model import DescriptorError
+from zells_pipeline.cad.providers import ProviderNotFoundError
 from zells_pipeline.config import Settings, get_settings
 from zells_pipeline.contract import SCHEMA_VERSION, validate_measurements
 from zells_pipeline.extraction.measure import EXTRACTION_VERSION, extract_measurements
 from zells_pipeline.extraction.mesh_loading import MeshValidationError, load_mesh
 from zells_pipeline.jobs.states import guard_transition
-from zells_pipeline.onshape.client import OnshapeClient
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +82,7 @@ class JobStore(Protocol):
         validated: bool,
     ) -> None: ...
     def get_measurements(self, scan_id: str, extraction_version: str) -> dict[str, float]: ...
+    def get_cad_model(self, job: Job) -> dict[str, Any] | None: ...
     def advance(
         self, job_id: str, next_step: str, artifacts: dict[str, Any] | None = None
     ) -> None: ...
@@ -100,7 +103,7 @@ class StorageClient(Protocol):
 class JobContext:
     store: JobStore
     storage: StorageClient
-    onshape: OnshapeClient
+    cad: CadDispatcher
 
 
 def handle_measuring(job: Job, ctx: JobContext) -> None:
@@ -141,16 +144,21 @@ def handle_measuring(job: Job, ctx: JobContext) -> None:
 
 
 def handle_generating_cad(job: Job, ctx: JobContext) -> None:
-    """CAD step: push variables to Onshape, export STL, upload it, advance the job.
+    """CAD step: resolve the product's CAD model, generate STL, upload it, advance.
+
+    The CAD model descriptor comes from the ordered product (job -> order ->
+    product.cad_model); when the job has no order or the product carries no
+    descriptor, the dispatcher falls back to the env-configured default model.
+    A malformed descriptor or unknown provider fails the job non-retriably
+    (see _NON_RETRIABLE_ERRORS) rather than looping.
 
     Idempotent: the STL is uploaded with upsert semantics to a path derived
     from `scan_id`/`job_id`, so a re-run overwrites the same object.
     """
     values = ctx.store.get_measurements(job.scan_id, EXTRACTION_VERSION)
+    cad_model = ctx.store.get_cad_model(job)
 
-    ctx.onshape.set_variables(job.id, values)
-    ctx.onshape.trigger_regeneration(job.id)
-    stl_bytes = ctx.onshape.export_stl(job.id)
+    stl_bytes = ctx.cad.run(job.id, values, cad_model)
 
     stl_path = f"{job.scan_id}/{job.id}.stl"
     ctx.storage.upload("stls", stl_path, stl_bytes, content_type="model/stl")
@@ -169,6 +177,10 @@ STEP_HANDLERS: dict[str, Any] = {
 _NON_RETRIABLE_ERRORS: tuple[type[Exception], ...] = (
     MeshValidationError,
     GateViolationError,
+    # A bad CAD model descriptor or an unknown provider name will never
+    # succeed on retry: fail the job for admin triage, don't loop.
+    DescriptorError,
+    ProviderNotFoundError,
 )
 
 
@@ -294,6 +306,28 @@ class PostgresJobStore:
             row = cur.fetchone()
         if row is None:
             raise LookupError(f"no measurements for scan {scan_id} at version {extraction_version}")
+        return dict(row[0])
+
+    def get_cad_model(self, job: Job) -> dict[str, Any] | None:
+        """Resolve the CAD model descriptor for a job via job -> order -> product.
+
+        Returns None when the job has no order or the ordered product has no
+        cad_model; the dispatcher then falls back to the env default model.
+        """
+        if job.order_id is None:
+            return None
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "select p.cad_model "
+                "from public.pipeline_jobs j "
+                "join public.orders o on o.id = j.order_id "
+                "join public.products p on p.id = o.product_id "
+                "where j.id = %s",
+                (job.id,),
+            )
+            row = cur.fetchone()
+        if row is None or row[0] is None:
+            return None
         return dict(row[0])
 
     def advance(self, job_id: str, next_step: str, artifacts: dict[str, Any] | None = None) -> None:

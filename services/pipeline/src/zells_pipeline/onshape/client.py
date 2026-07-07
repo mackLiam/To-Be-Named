@@ -16,6 +16,7 @@ exercised end to end without an Onshape account.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -33,6 +34,21 @@ _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 class OnshapeError(RuntimeError):
     """Raised when an Onshape API call fails after exhausting retries."""
+
+
+@dataclass(frozen=True)
+class OnshapeRef:
+    """Identifies the specific Onshape document/workspace/element a client targets.
+
+    Pulled out of Settings so a single worker can drive many different
+    parametric models (one per guard design) instead of the one document
+    baked into env config: each CAD model descriptor (docs/DESIGN.md
+    section 7) carries its own ref, resolved into this at generate time.
+    """
+
+    document_id: str
+    workspace_id: str
+    element_id: str
 
 
 def mm_to_m(values: dict[str, float]) -> dict[str, float]:
@@ -67,9 +83,22 @@ class OnshapeClient:
     which matters when diagnosing a stuck or double-run job).
     """
 
-    def __init__(self, settings: Settings | None = None, client: httpx.Client | None = None):
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        client: httpx.Client | None = None,
+        ref: OnshapeRef | None = None,
+    ):
         self._settings = settings or get_settings()
         self.dry_run = self._settings.dry_run
+        # Default the ref to the env-configured document so existing callers
+        # (and the default-model fallback) keep working; per-model callers
+        # pass an explicit ref built from their descriptor.
+        self._ref = ref or OnshapeRef(
+            document_id=self._settings.onshape_document_id,
+            workspace_id=self._settings.onshape_workspace_id,
+            element_id=self._settings.onshape_element_id,
+        )
         self._client = client or httpx.Client(
             base_url=self._settings.onshape_base_url,
             timeout=REQUEST_TIMEOUT_SECONDS,
@@ -94,10 +123,10 @@ class OnshapeClient:
 
     @property
     def _variables_path(self) -> str:
-        s = self._settings
+        r = self._ref
         return (
-            f"/api/v6/variables/d/{s.onshape_document_id}/w/{s.onshape_workspace_id}"
-            f"/e/{s.onshape_element_id}/variables"
+            f"/api/v6/variables/d/{r.document_id}/w/{r.workspace_id}"
+            f"/e/{r.element_id}/variables"
         )
 
     @retry(
@@ -111,22 +140,34 @@ class OnshapeClient:
         response.raise_for_status()
         return response
 
-    def set_variables(self, job_id: str, values_mm: dict[str, float]) -> None:
+    def set_variables(
+        self,
+        job_id: str,
+        values_mm: dict[str, float],
+        variable_map: dict[str, str] | None = None,
+    ) -> None:
         """Push the 25 measurement variables to the Onshape part studio.
 
         Converts mm to meters here (and only here). Validates that every
-        schema-defined variable name is present before sending, since a
-        silent name mismatch is the #1 integration risk called out in
+        schema-defined variable name is present in the input before sending,
+        since a silent name mismatch is the #1 integration risk called out in
         docs/DESIGN.md section 6.
+
+        `variable_map` (schema-name -> model-variable-name) is applied only to
+        the outgoing payload names, right at this boundary, so a model whose
+        Onshape variable table uses different identifiers than the 25 schema
+        names can still be driven. The input `values_mm` is always keyed by
+        the canonical schema names; unmapped names pass through unchanged.
         """
         missing = set(MEASUREMENT_KEYS) - values_mm.keys()
         if missing:
             raise OnshapeError(f"set_variables missing required variables: {sorted(missing)}")
 
+        mapping = variable_map or {}
         values_m = mm_to_m(values_mm)
         payload = {
             "items": [
-                {"type": "LENGTH", "name": name, "value": value, "unit": "meter"}
+                {"type": "LENGTH", "name": mapping.get(name, name), "value": value, "unit": "meter"}
                 for name, value in values_m.items()
             ]
         }
@@ -155,10 +196,10 @@ class OnshapeClient:
             logger.info("[DRY_RUN] job=%s would trigger Onshape regeneration", job_id)
             return "dry-run-translation-id"
 
-        s = self._settings
+        r = self._ref
         path = (
-            f"/api/v6/partstudios/d/{s.onshape_document_id}/w/{s.onshape_workspace_id}"
-            f"/e/{s.onshape_element_id}/translations"
+            f"/api/v6/partstudios/d/{r.document_id}/w/{r.workspace_id}"
+            f"/e/{r.element_id}/translations"
         )
         try:
             response = self._request("POST", path, json={"formatName": "STL"})
@@ -198,10 +239,10 @@ class OnshapeClient:
             logger.info("[DRY_RUN] job=%s would export STL from Onshape", job_id)
             return b"solid dry_run\nendsolid dry_run\n"
 
-        s = self._settings
+        r = self._ref
         path = (
-            f"/api/v6/partstudios/d/{s.onshape_document_id}/w/{s.onshape_workspace_id}"
-            f"/e/{s.onshape_element_id}/stl"
+            f"/api/v6/partstudios/d/{r.document_id}/w/{r.workspace_id}"
+            f"/e/{r.element_id}/stl"
         )
         try:
             response = self._request("GET", path, params={"mode": "binary"})

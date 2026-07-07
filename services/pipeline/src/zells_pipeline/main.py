@@ -18,6 +18,7 @@ import threading
 import uvicorn
 
 from zells_pipeline.api import app
+from zells_pipeline.cad.dispatch import CadDispatcher
 from zells_pipeline.config import get_settings
 from zells_pipeline.jobs.runner import (
     JobContext,
@@ -25,7 +26,6 @@ from zells_pipeline.jobs.runner import (
     SupabaseStorageClient,
     run_forever,
 )
-from zells_pipeline.onshape.client import OnshapeClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def start_worker_thread() -> threading.Thread:
     ctx = JobContext(
         store=PostgresJobStore(settings),
         storage=SupabaseStorageClient(settings),
-        onshape=OnshapeClient(settings),
+        cad=CadDispatcher(settings=settings),
     )
     thread = threading.Thread(
         target=run_forever, args=(_worker_id(), ctx), daemon=True, name="pipeline-worker"

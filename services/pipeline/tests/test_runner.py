@@ -7,15 +7,16 @@ import httpx
 import pytest
 import trimesh
 
+from zells_pipeline.cad.dispatch import CadDispatcher
 from zells_pipeline.config import Settings
 from zells_pipeline.jobs.runner import (
     Job,
     JobContext,
     SupabaseStorageClient,
+    handle_generating_cad,
     handle_measuring,
     run_once,
 )
-from zells_pipeline.onshape.client import OnshapeClient
 
 
 class FakeJobStore:
@@ -25,6 +26,9 @@ class FakeJobStore:
         self.jobs: list[Job] = []
         self.scans: dict[str, str] = {}
         self.measurements: dict[tuple[str, str], dict[str, float]] = {}
+        # Per-job CAD model descriptor dicts; a missing entry means None
+        # (dispatcher falls back to the env default model).
+        self.cad_models: dict[str, dict[str, Any] | None] = {}
         self.measurement_write_count = 0
         self.advanced: list[tuple[str, str, dict[str, Any] | None]] = []
         self.completed: list[tuple[str, dict[str, Any] | None]] = []
@@ -51,6 +55,9 @@ class FakeJobStore:
     def get_measurements(self, scan_id: str, extraction_version: str) -> dict[str, float]:
         return self.measurements[(scan_id, extraction_version)]
 
+    def get_cad_model(self, job: Job) -> dict[str, Any] | None:
+        return self.cad_models.get(job.id)
+
     def advance(self, job_id: str, next_step: str, artifacts: dict[str, Any] | None = None) -> None:
         self.advanced.append((job_id, next_step, artifacts))
 
@@ -75,8 +82,10 @@ class FakeStorageClient:
         self.uploaded[(bucket, path)] = data
 
 
-def _dry_run_onshape() -> OnshapeClient:
-    return OnshapeClient(settings=Settings())
+def _dry_run_cad() -> CadDispatcher:
+    # Settings() has no Onshape credentials -> dry_run -> the default
+    # descriptor uses the dry-run provider (canned STL, no network).
+    return CadDispatcher(settings=Settings())
 
 
 def _frustum_obj_bytes(frustum_mesh: trimesh.Trimesh) -> bytes:
@@ -107,7 +116,7 @@ def test_failing_handler_marks_job_failed_and_loop_continues(
         _measuring_job("job-bad", "scan-bad"),
         _measuring_job("job-good", "scan-good"),
     ]
-    ctx = JobContext(store=store, storage=storage, onshape=_dry_run_onshape())
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
 
     claimed = run_once("worker-1", ctx, limit=2)
 
@@ -129,7 +138,7 @@ def test_gate_violation_fails_job_as_non_retriable(frustum_mesh: trimesh.Trimesh
     storage = FakeStorageClient(files={("meshes", "scan.obj"): _frustum_obj_bytes(huge_mesh)})
     store.scans = {"scan-1": "scan.obj"}
     store.jobs = [_measuring_job("job-1", "scan-1")]
-    ctx = JobContext(store=store, storage=storage, onshape=_dry_run_onshape())
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
 
     run_once("worker-1", ctx, limit=1)
 
@@ -145,7 +154,7 @@ def test_measure_step_idempotent_rerun_does_not_duplicate(frustum_mesh: trimesh.
     storage = FakeStorageClient(files={("meshes", "scan.obj"): _frustum_obj_bytes(frustum_mesh)})
     store.scans = {"scan-1": "scan.obj"}
     job = _measuring_job("job-1", "scan-1")
-    ctx = JobContext(store=store, storage=storage, onshape=_dry_run_onshape())
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
 
     handle_measuring(job, ctx)
     handle_measuring(job, ctx)  # simulate a re-run after a crash before the job's status advanced
@@ -153,6 +162,84 @@ def test_measure_step_idempotent_rerun_does_not_duplicate(frustum_mesh: trimesh.
     assert store.measurement_write_count == 2
     # Same (scan_id, extraction_version) key both times -> one row, not two.
     assert len(store.measurements) == 1
+
+
+def _cad_job(job_id: str, scan_id: str, order_id: str | None) -> Job:
+    return Job(
+        id=job_id,
+        scan_id=scan_id,
+        order_id=order_id,
+        step="generating_cad",
+        status="running",
+        attempts=1,
+        max_attempts=3,
+    )
+
+
+def _seed_measurements(store: FakeJobStore, scan_id: str) -> None:
+    from zells_pipeline.contract import MEASUREMENT_KEYS
+    from zells_pipeline.extraction.measure import EXTRACTION_VERSION
+
+    store.measurements[(scan_id, EXTRACTION_VERSION)] = {key: 100.0 for key in MEASUREMENT_KEYS}
+
+
+def test_generating_cad_with_per_product_descriptor_uploads_and_advances() -> None:
+    store = FakeJobStore()
+    storage = FakeStorageClient()
+    _seed_measurements(store, "scan-1")
+    job = _cad_job("job-1", "scan-1", order_id="order-1")
+    store.cad_models["job-1"] = {
+        "provider": "dry_run",
+        "schema_version": "1.0.0",
+        "ref": {},
+        "variable_map": None,
+    }
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
+
+    handle_generating_cad(job, ctx)
+
+    assert ("stls", "scan-1/job-1.stl") in storage.uploaded
+    assert store.advanced == [("job-1", "stl_ready", {"stl_path": "scan-1/job-1.stl"})]
+
+
+def test_generating_cad_falls_back_to_default_descriptor() -> None:
+    store = FakeJobStore()
+    storage = FakeStorageClient()
+    _seed_measurements(store, "scan-1")
+    # No order and no cad_model registered -> get_cad_model returns None ->
+    # dispatcher builds the env default descriptor (dry-run, no creds).
+    job = _cad_job("job-1", "scan-1", order_id=None)
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
+
+    handle_generating_cad(job, ctx)
+
+    assert ("stls", "scan-1/job-1.stl") in storage.uploaded
+    assert store.advanced[0][1] == "stl_ready"
+
+
+def test_generating_cad_bad_descriptor_fails_non_retriable() -> None:
+    store = FakeJobStore()
+    storage = FakeStorageClient()
+    _seed_measurements(store, "scan-1")
+    job = _cad_job("job-1", "scan-1", order_id="order-1")
+    # Unknown provider name: parses fine as a descriptor, but the registry
+    # has no implementation -> ProviderNotFoundError -> non-retriable.
+    store.cad_models["job-1"] = {
+        "provider": "does-not-exist",
+        "schema_version": "1.0.0",
+        "ref": {},
+        "variable_map": None,
+    }
+    store.jobs = [job]
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
+
+    run_once("worker-1", ctx, limit=1)
+
+    assert len(store.failed) == 1
+    failed_job_id, _error, retriable = store.failed[0]
+    assert failed_job_id == "job-1"
+    assert retriable is False
+    assert not store.advanced
 
 
 def _storage_client_with_transport(handler) -> SupabaseStorageClient:  # noqa: ANN001
