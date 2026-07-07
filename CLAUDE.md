@@ -117,6 +117,67 @@ or refactor. Not optional, not deferred to "later".
   attribution to commits, PRs, or code.** No exceptions.
 - Never force-push shared branches.
 
+## Reasoning playbook (read this; it is how the codebase was built)
+
+Distilled decision heuristics from the sessions that built this repo. Apply them
+to new work; they explain why the code looks the way it does. Per-package depth
+lives in services/pipeline/CLAUDE.md, packages/shared/CLAUDE.md,
+apps/app/CLAUDE.md, apps/web/CLAUDE.md - read the one for the area you touch.
+
+1. **Contract first, implementations second.** When two languages or services
+   share a data shape (the 25 variables, CAD descriptors, state enums), freeze
+   the exact JSON shape before writing either side, write validators on BOTH
+   sides, and change them only in lockstep. Most cross-service bugs here are
+   shape drift; this kills them at the boundary.
+2. **One boundary per lossy conversion.** Units (mm to meters), naming
+   (schema names to model variable names), trust (client claims to RLS-checked
+   facts) each convert in exactly one named place. If a conversion appears in
+   a second place, that is the bug, even if both copies are currently correct.
+3. **Seams are Protocols sized to the caller's needs.** External systems
+   (Postgres, storage, CAD backends) sit behind small interfaces defined by
+   what the caller uses, not by what the vendor offers. Production impl lives
+   next to the interface; tests use fakes; no test needs credentials. If code
+   is hard to test, move the seam instead of mocking deeper.
+4. **Decide retriability where the error is raised.** Every failure is typed
+   at the raise site as "same input will never succeed" (non-retriable, dead
+   letter, user-facing reason) or "presumed transient" (backoff retry). Catch
+   sites stay generic: fail the job, never the worker.
+5. **Safety defaults scale with reversibility.** Reversible risk may infer
+   safe mode from context (Onshape dry-run when creds absent). Irreversible
+   risk (deleting scan data) defaults OFF and requires an explicit operator
+   flag to arm. Never infer permission to destroy.
+6. **Idempotency by construction.** Derive write keys from job/scan ids, use
+   upserts, treat already-done (404 on delete, existing row) as success. Do
+   not write "check if already ran" code; write code where re-running lands in
+   the same state.
+7. **Pure core, thin shell.** Geometry, validation, pagination, formatting:
+   pure functions, heavily tested. IO wrappers: so thin that reading them is
+   the review. When a component or handler grows logic, extract it down.
+8. **Comments state constraints, not narration.** Write a comment only for
+   what the code cannot say: why a bound exists, what invariant a caller must
+   hold, which document froze a decision. Cite DESIGN.md sections.
+9. **Where truth lives.** Architecture and its rationale: docs/DESIGN.md
+   (update it in the same change that changes a decision). Sequencing and exit
+   gates: docs/ROADMAP.md (do not start next month early if this month's gate
+   is red). Contract: packages/shared. Everything else is implementation.
+10. **Verification standard.** A change is done when the owning package's CI
+    commands (see .github/workflows/ci.yml and Makefile) pass locally and the
+    change includes its tests. Report failures verbatim; never claim green
+    without running.
+
+### Orchestrating subagents in this repo
+
+- Split work along workspace boundaries (pipeline / web / app / shared); they
+  rarely conflict. State explicitly in each prompt which paths are off-limits.
+- Pin shared contracts verbatim in every prompt that touches them; parallel
+  agents drift unless the exact JSON shape is in front of both.
+- Reserve migration numbers explicitly per agent (two agents both creating
+  0006 is the predictable collision).
+- Agents leave changes uncommitted; the orchestrator reviews, runs the full
+  test suite, and commits per logical scope with Conventional Commits.
+- UI work goes to (or gets reviewed by) zells-designer; architecture-touching
+  work gets sanity-checked against DESIGN.md, via zells-architect when in doubt.
+
 ## Current phase
 
 Phase 0 - prove the pipeline (see DESIGN.md §11): real scan → extraction → Onshape →
