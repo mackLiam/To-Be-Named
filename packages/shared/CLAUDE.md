@@ -56,3 +56,19 @@ CAD descriptors). They are one logical artifact:
 
 Consumers must always write and check schema_version rather than assuming;
 that is what makes the eventual 1.1.0 survivable.
+
+## Subagent brief (when you are delegated work here)
+
+- You are editing the treaty between three codebases. Assume a parallel
+  agent may be mirroring your change in services/pipeline: implement exactly
+  the contract pinned in your prompt, and if it seems wrong, report the
+  needed deviation back instead of deciding it yourself.
+- Never touch schema/measurements.schema.json unless your prompt explicitly
+  reserves a schema version bump for you. There is no such thing as a small
+  edit to that file.
+- Anything you export becomes API for three consumers; name and type it as
+  carefully as the schema itself. No convenience helpers "while you are
+  here".
+- Verify before returning (from repo root):
+  `pnpm --filter @zells/shared build && pnpm --filter @zells/shared typecheck && pnpm --filter @zells/shared test && pnpm format:check`
+  Return the output verbatim. Leave all changes uncommitted.

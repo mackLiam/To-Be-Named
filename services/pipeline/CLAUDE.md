@@ -130,3 +130,21 @@ must require an explicit operator decision.
   read in a browser.
 - Concurrency against Onshape stays at 1-2 until measured latency says
   otherwise (rate limits are per account).
+
+## Subagent brief (when you are delegated work here)
+
+- The five load-bearing invariants above are your review rubric; violating
+  any of them is a rejected diff. In particular: mm everywhere except inside
+  the CAD provider, retriability decided at the raise site with a typed
+  exception, write keys derived from job/scan ids.
+- New IO dependency: define the small Protocol first, then the production
+  impl, then the test fake. If you cannot test your change without
+  credentials, restructure it until you can; do not mock deeper.
+- If your change requires the TS mirror in packages/shared to move, do not
+  edit it unless your prompt includes those paths; return the exact required
+  TS change instead so the orchestrator can run it as a lockstep change.
+- Never put a secret or mesh contents in an exception message; errors land
+  in pipeline_jobs.error and are read in a browser.
+- Verify before returning:
+  `cd services/pipeline && .venv/bin/ruff check . && .venv/bin/pytest`
+  Return the output verbatim. Leave all changes uncommitted.

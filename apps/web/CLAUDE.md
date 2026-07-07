@@ -45,3 +45,19 @@ Zells-branded (navy/orange accents, Outfit headings, Manrope body), still no
 emojis and no em/en dashes. Marketing pages follow the brand fully and get
 zells-designer review before shipping. Avoid the generic AI-dashboard look:
 no gradient stat cards, no icon noise, tables with real information density.
+
+## Subagent brief (when you are delegated work here)
+
+- Logic layer first: write the src/lib function and its Vitest tests, then
+  the thin page or route handler over it. A page growing conditionals is
+  your cue to extract downward before returning.
+- Never blur the two Supabase clients: supabase-server.ts for
+  viewer-scoped access, supabase-admin.ts server-only for privileged access.
+  Every /admin surface checks authorization server-side via admin-auth.ts
+  and writes audit_log on privileged actions.
+- Preserve the fake-data fallback (fake.ts) on every new page; all pages
+  must render and build with no env vars.
+- All reads paginated or bounded; no unbounded queries into admin tables.
+- Verify before returning (from repo root):
+  `pnpm --filter @zells/web build && pnpm --filter @zells/web typecheck && pnpm --filter @zells/web test && pnpm format:check`
+  Return the output verbatim. Leave all changes uncommitted.

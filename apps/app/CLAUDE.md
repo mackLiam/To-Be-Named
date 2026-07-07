@@ -73,3 +73,18 @@ cached outside the app sandbox, signed URLs are requested at use time and
 never persisted, and any new screen showing scan data must come from the
 user's own RLS-scoped session (no service keys exist in this codebase, and
 nothing but EXPO_PUBLIC_* values ever may appear in it).
+
+## Subagent brief (when you are delegated work here)
+
+- Data access through hooks; logic as pure functions in src/lib with Vitest
+  tests; screens stay layout plus hook calls. Preserve the fake-data
+  fallback on every new data path (the screen must render with no env vars).
+- Never import the native module outside the gated path in src/lib/capture.ts;
+  the web bundle must not touch it. Capture-related code cannot be verified
+  on a simulator; say so in your return instead of claiming device behavior.
+- UI uses tokens from src/theme/tokens.ts only (no raw hex, no ad hoc
+  spacing) and will get zells-designer review; build to that bar.
+- State enums come from @zells/shared; a string-literal status is a bug.
+- Verify before returning (from repo root):
+  `pnpm --filter @zells/app typecheck && pnpm --filter @zells/app test && pnpm format:check`
+  Return the output verbatim. Leave all changes uncommitted.
