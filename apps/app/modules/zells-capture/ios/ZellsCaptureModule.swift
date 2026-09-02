@@ -21,9 +21,10 @@ import RealityKit
  CaptureSessionController and ReconstructionController. Everything that touches
  UIKit/SwiftUI presentation must run on the main actor.
 
- UNVERIFIED (whole file): Swift cannot be compiled in this scaffold environment
- (no EAS build yet). Treat every API call as best-effort until it is built and
- run on a physical LiDAR iPhone. Individual risk points are flagged inline.
+ Compiles against the iOS 26.5 SDK (checked 2026-09-02). Runtime behavior on a
+ physical LiDAR iPhone is still unverified: no device build has run yet, and the
+ Simulator cannot exercise capture (ObjectCaptureSession.isSupported is false
+ there). Remaining runtime risks are flagged inline.
 */
 public class ZellsCaptureModule: Module {
   // Retained across the async call so cancel() can reach an in-flight session.
@@ -36,10 +37,12 @@ public class ZellsCaptureModule: Module {
     // Event names must match modules/zells-capture/src/types.ts CaptureEventsMap.
     Events("onCaptureStateChange", "onReconstructionProgress")
 
-    // Synchronous check. JS treats this as the LiDAR truth source.
-    Function("isSupported") { () -> Bool in
+    // ObjectCaptureSession.isSupported is main-actor isolated (RealityKit
+    // _RealityKit_SwiftUI.swiftinterface), so this cannot be a synchronous
+    // Function: Expo runs those on the JS thread. The JS wrapper awaits it.
+    AsyncFunction("isSupported") { () async -> Bool in
       if #available(iOS 17.0, *) {
-        return ObjectCaptureSession.isSupported
+        return await MainActor.run { ObjectCaptureSession.isSupported }
       }
       return false
     }
@@ -51,13 +54,19 @@ public class ZellsCaptureModule: Module {
     // controller. Confirm this is the right controller to present from inside
     // an Expo Router / React Native screen, and that dismissal is handled.
     AsyncFunction("startCapture") { (promise: Promise) in
-      guard #available(iOS 17.0, *), ObjectCaptureSession.isSupported else {
+      guard #available(iOS 17.0, *) else {
         promise.reject(CaptureUnsupportedException())
         return
       }
 
-      DispatchQueue.main.async { [weak self] in
+      // The session, its state stream, and the presentation all live on the
+      // main actor, so the whole setup runs there rather than hopping per call.
+      Task { @MainActor [weak self] in
         guard let self else { return }
+        guard ObjectCaptureSession.isSupported else {
+          promise.reject(CaptureUnsupportedException())
+          return
+        }
         let controller = CaptureSessionController(
           onStateChange: { [weak self] event in
             self?.sendEvent("onCaptureStateChange", event)
@@ -84,12 +93,16 @@ public class ZellsCaptureModule: Module {
       controller.run(options: options, promise: promise)
     }
 
-    // Cancel whichever session is active.
+    // Cancel whichever session is active. The capture controller is main-actor
+    // isolated (it owns UI); the reconstruction controller is not.
     AsyncFunction("cancel") { () in
-      self.captureController?.cancel()
       self.reconstructionController?.cancel()
-      self.captureController = nil
       self.reconstructionController = nil
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        self.captureController?.cancel()
+        self.captureController = nil
+      }
     }
   }
 }

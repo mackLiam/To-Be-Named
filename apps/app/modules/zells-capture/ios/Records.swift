@@ -11,9 +11,9 @@ import ExpoModulesCore
 internal struct ReconstructOptions: Record {
   init() {}
 
-  /// 'reduced' | 'medium' | 'full' | 'raw'. Defaults to 'reduced': the
-  /// measurement pipeline does not need hero-quality geometry, and lower
-  /// detail is faster on-device and produces smaller files.
+  /// Always 'reduced': iOS exposes only PhotogrammetrySession.Request.Detail
+  /// .reduced (see ReconstructionController). Kept as a field so widening the
+  /// TS DetailLevel union later does not change the record shape.
   @Field var detail: String = "reduced"
 
   /// Absolute path to a specific capture session directory. Empty => use the

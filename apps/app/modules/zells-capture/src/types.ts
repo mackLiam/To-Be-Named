@@ -14,12 +14,13 @@ import type { EventSubscription } from 'expo-modules-core';
  * Reconstruction detail level, mapped 1:1 to
  * PhotogrammetrySession.Request.Detail on the Swift side.
  *
- * The Python measurement pipeline only needs enough fidelity to extract the
- * 25-variable schema (Leg_Length + 4 slices x 6 dims), not a hero-quality
- * render, so 'reduced' or 'medium' is the sensible default: faster on-device
- * and smaller files. Higher levels are exposed for experimentation.
+ * iOS ships exactly one case, `.reduced` (RealityFoundation.swiftinterface,
+ * iOS 26.5 SDK); medium/full/raw are macOS-only. This is not a limitation
+ * worth papering over: the measurement pipeline only needs enough fidelity for
+ * the 25-variable schema (Leg_Length + 4 slices x 6 dims), not a hero render.
+ * Widen this union only when a platform actually offers another level.
  */
-export type DetailLevel = 'reduced' | 'medium' | 'full' | 'raw';
+export type DetailLevel = 'reduced';
 
 /**
  * Lifecycle states surfaced from the guided ObjectCaptureSession. These mirror
@@ -107,9 +108,11 @@ export type CaptureEventName = keyof CaptureEventsMap;
 export interface ZellsCaptureNativeModule {
   /**
    * Whether ObjectCaptureSession.isSupported on this device (LiDAR + iOS 17+).
-   * Synchronous on the Swift side. This is the app's LiDAR truth source.
+   * Async because the SDK property is main-actor isolated, so the Swift side
+   * has to hop to the main actor to read it. This is the app's LiDAR truth
+   * source.
    */
-  isSupported(): boolean;
+  isSupported(): Promise<boolean>;
   startCapture(): Promise<CaptureResult>;
   reconstruct(options: ReconstructOptions): Promise<ReconstructResult>;
   cancel(): Promise<void>;

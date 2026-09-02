@@ -12,6 +12,7 @@ import SwiftUI
  directory. Nothing is written to shared/App Group/temporary-public locations.
 */
 @available(iOS 17.0, *)
+@MainActor
 final class CaptureSessionController: NSObject {
   private let onStateChange: ([String: Any]) -> Void
   private var session: ObjectCaptureSession?
@@ -35,7 +36,6 @@ final class CaptureSessionController: NSObject {
   }
 
   /// Create the session and present the guided capture UI.
-  @MainActor
   func start(promise: Promise) {
     self.promise = promise
 
@@ -58,22 +58,18 @@ final class CaptureSessionController: NSObject {
     configuration.checkpointDirectory = sessionDir.appendingPathComponent("checkpoint", isDirectory: true)
     session.start(imagesDirectory: imagesDir, configuration: configuration)
 
-    // UNVERIFIED: observing session state. ObjectCaptureSession exposes an
-    // async `stateUpdates` sequence (and `userCompletedScanPassUpdates`, etc.).
-    // Wire a Task that maps Apple's CaptureState cases onto our string states
-    // and detects completion/cancellation to resolve/reject the promise. The
-    // mapping below is a sketch; verify the exact enum cases on-device.
+    // CaptureState cases mapped 1:1 from the SDK (initializing, ready,
+    // detecting, capturing, finishing, completed, failed(Error)) onto the
+    // string states in modules/zells-capture/src/types.ts.
     observeState(session)
 
     presentCaptureView(for: session)
   }
 
-  @available(iOS 17.0, *)
   private func observeState(_ session: ObjectCaptureSession) {
-    Task { [weak self] in
+    Task { @MainActor [weak self] in
       guard let self else { return }
       for await state in session.stateUpdates {
-        // UNVERIFIED: exact CaptureState case names. Adjust to the SDK.
         switch state {
         case .initializing:
           self.emit(state: "initializing")
@@ -88,8 +84,8 @@ final class CaptureSessionController: NSObject {
         case .completed:
           self.emit(state: "completed")
           await self.finish(success: true)
-        case .failed:
-          self.emit(state: "failed")
+        case .failed(let error):
+          self.emit(state: "failed", message: error.localizedDescription)
           await self.finish(success: false)
         @unknown default:
           break
@@ -98,7 +94,6 @@ final class CaptureSessionController: NSObject {
     }
   }
 
-  @MainActor
   private func presentCaptureView(for session: ObjectCaptureSession) {
     // UNVERIFIED: hosting a SwiftUI ObjectCaptureView from RN. We wrap it in a
     // UIHostingController and present it modally over the key window's root VC.
@@ -118,7 +113,6 @@ final class CaptureSessionController: NSObject {
   }
 
   /// Resolve or reject the JS promise and tear down the UI.
-  @MainActor
   private func finish(success: Bool) async {
     await dismiss()
 
@@ -148,7 +142,7 @@ final class CaptureSessionController: NSObject {
 
   func cancel() {
     session?.cancel()
-    Task { @MainActor [weak self] in
+    Task { [weak self] in
       guard let self else { return }
       await self.dismiss()
       self.promise?.reject(CaptureCancelledException())
@@ -156,7 +150,6 @@ final class CaptureSessionController: NSObject {
     }
   }
 
-  @MainActor
   private func dismiss() async {
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
       guard let hosting = hostingController else {
@@ -170,14 +163,17 @@ final class CaptureSessionController: NSObject {
     hostingController = nil
   }
 
-  private func emit(state: String) {
-    onStateChange(["state": state])
+  private func emit(state: String, message: String? = nil) {
+    var payload: [String: Any] = ["state": state]
+    if let message {
+      payload["message"] = message
+    }
+    onStateChange(payload)
   }
 
   /// Walk from the key window's root to the top-most presented controller.
   /// UNVERIFIED: multi-scene handling. Fine for a single-window app; revisit if
   /// the app ever supports multiple UIWindowScenes.
-  @MainActor
   private static func topViewController() -> UIViewController? {
     let scenes = UIApplication.shared.connectedScenes
     let windowScene = scenes.first { $0.activationState == .foregroundActive } as? UIWindowScene

@@ -41,7 +41,12 @@ final class ReconstructionController {
     let usdzURL = sessionRoot.appendingPathComponent("model.usdz")
     let objURL = sessionRoot.appendingPathComponent("model.obj")
 
-    let detail = Self.detailLevel(from: options.detail)
+    // iOS ships exactly one detail level: PhotogrammetrySession.Request.Detail
+    // has only `.reduced` (RealityFoundation.swiftinterface, iOS 26.5 SDK);
+    // medium/full/raw are macOS-only. That is why TS DetailLevel is 'reduced'
+    // alone and options.detail is not consulted here.
+    let detail = PhotogrammetrySession.Request.Detail.reduced
+    let detailName = "reduced"
 
     do {
       // UNVERIFIED: PhotogrammetrySession initializer. On iOS the input is a
@@ -69,39 +74,47 @@ final class ReconstructionController {
           return
         }
 
-        // UNVERIFIED: exact Output case names/associated values. Map:
-        //   .requestProgress(_, fractionComplete) -> onProgress
-        //   .processingComplete -> convert + resolve
-        //   .requestError / .processingCancelled -> reject
-        for await output in session.outputs {
-          switch output {
-          case .requestProgress(_, let fraction):
-            self.onProgress(["fraction": fraction, "stage": "processing"])
-          case .processingComplete:
-            self.onProgress(["fraction": 1.0, "stage": "complete"])
-            do {
-              try self.convertUSDZToOBJ(usdz: usdzURL, obj: objURL)
-            } catch {
-              promise.reject(ExportFailedException(error.localizedDescription))
+        // PhotogrammetrySession.Outputs is a throwing AsyncSequence, so a
+        // stream failure has to be caught here rather than ending the loop
+        // silently and leaving the JS promise pending forever.
+        do {
+          for try await output in session.outputs {
+            switch output {
+            case .requestProgress(_, let fraction):
+              self.onProgress(["fraction": fraction, "stage": "processing"])
+            case .processingComplete:
+              self.onProgress(["fraction": 1.0, "stage": "complete"])
+              do {
+                try self.convertUSDZToOBJ(usdz: usdzURL, obj: objURL)
+              } catch {
+                promise.reject(ExportFailedException(error.localizedDescription))
+                return
+              }
+              promise.resolve([
+                "sessionId": sessionId,
+                "usdzPath": usdzURL.path,
+                "objPath": objURL.path,
+                // The level actually used, not the one requested: iOS exposes
+                // only .reduced (see detailLevel).
+                "detail": detailName,
+                "imageCount": imageCount,
+              ])
               return
+            case .requestError(_, let error):
+              promise.reject(ReconstructionFailedException(error.localizedDescription))
+              return
+            case .processingCancelled:
+              promise.reject(CaptureCancelledException())
+              return
+            default:
+              break
             }
-            promise.resolve([
-              "sessionId": sessionId,
-              "usdzPath": usdzURL.path,
-              "objPath": objURL.path,
-              "detail": options.detail,
-              "imageCount": imageCount,
-            ])
-            return
-          case .requestError(_, let error):
-            promise.reject(ReconstructionFailedException(error.localizedDescription))
-            return
-          case .processingCancelled:
-            promise.reject(CaptureCancelledException())
-            return
-          default:
-            break
           }
+          // The stream ended without a terminal output: nothing else will
+          // settle the promise, so fail rather than hang.
+          promise.reject(ReconstructionFailedException("reconstruction ended without producing a model"))
+        } catch {
+          promise.reject(ReconstructionFailedException(error.localizedDescription))
         }
       }
     } catch {
@@ -126,15 +139,6 @@ final class ReconstructionController {
     }
     let asset = MDLAsset(url: usdz)
     try asset.export(to: obj)
-  }
-
-  private static func detailLevel(from raw: String) -> PhotogrammetrySession.Request.Detail {
-    switch raw {
-    case "medium": return .medium
-    case "full": return .full
-    case "raw": return .raw
-    default: return .reduced
-    }
   }
 
   /// Most recently modified subdirectory of `captures/`.

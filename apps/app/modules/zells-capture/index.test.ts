@@ -65,7 +65,7 @@ describe('when the native module is absent (web / Android / Simulator / Expo Go)
 
 describe('when the native module is present', () => {
   const makeNative = (over: Partial<ZellsCaptureNativeModule> = {}): ZellsCaptureNativeModule => ({
-    isSupported: vi.fn(() => true),
+    isSupported: vi.fn(async () => true),
     startCapture: vi.fn(async () => ({ sessionId: 's1', imageDir: '/d', imageCount: 42 })),
     reconstruct: vi.fn(async () => ({
       sessionId: 's1',
@@ -80,16 +80,16 @@ describe('when the native module is present', () => {
   });
 
   it('isSupported returns the native boolean', async () => {
-    mocks.native = makeNative({ isSupported: vi.fn(() => true) });
+    mocks.native = makeNative({ isSupported: vi.fn(async () => true) });
     await expect(capture.isSupported()).resolves.toBe(true);
 
-    mocks.native = makeNative({ isSupported: vi.fn(() => false) });
+    mocks.native = makeNative({ isSupported: vi.fn(async () => false) });
     await expect(capture.isSupported()).resolves.toBe(false);
   });
 
   it('isSupported swallows a native throw into false', async () => {
     mocks.native = makeNative({
-      isSupported: vi.fn(() => {
+      isSupported: vi.fn(async () => {
         throw new Error('bridge exploded');
       }),
     });
@@ -119,8 +119,8 @@ describe('when the native module is present', () => {
   it('reconstruct forwards options and resolves the native result', async () => {
     const native = makeNative();
     mocks.native = native;
-    const result = await capture.reconstruct({ detail: 'medium' });
-    expect(native.reconstruct).toHaveBeenCalledWith({ detail: 'medium' });
+    const result = await capture.reconstruct({ detail: 'reduced' });
+    expect(native.reconstruct).toHaveBeenCalledWith({ detail: 'reduced' });
     expect(result.objPath).toBe('/d/model.obj');
   });
 

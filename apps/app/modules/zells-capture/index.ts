@@ -56,9 +56,9 @@ export async function isSupported(): Promise<boolean> {
     return false;
   }
   try {
-    // isSupported is a synchronous native Function; wrap in async for a uniform
-    // API and to swallow any bridge error into a plain false.
-    return Boolean(ZellsCaptureNative.isSupported());
+    // Native side is an AsyncFunction (the SDK property is main-actor
+    // isolated); any bridge error collapses into a plain false.
+    return Boolean(await ZellsCaptureNative.isSupported());
   } catch {
     return false;
   }
