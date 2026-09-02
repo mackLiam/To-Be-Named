@@ -39,14 +39,17 @@ export default function ShopScreen() {
 
       {products.map((product) => (
         <View key={product.id}>
-          {product.imageUrl && (
+          {product.image && (
             <Image
               accessibilityIgnoresInvertColors
               alt={product.name}
-              source={{ uri: product.imageUrl }}
+              source={product.image}
               style={{
+                // Explicit height, not aspectRatio: a bundled asset brings its
+                // own intrinsic height into the style, and with both set yoga
+                // ignores aspectRatio.
                 width: '100%',
-                aspectRatio: 16 / 9,
+                height: 190,
                 borderRadius: radius,
                 backgroundColor: colors.surfaceMuted,
                 marginBottom: spacing.md,
