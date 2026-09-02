@@ -1,11 +1,15 @@
 require 'json'
 
-# Podspec for the local ZellsCapture Expo module. Expo autolinking discovers
-# this via expo-module.config.json and includes it in the generated Podfile when
-# the iOS project is prebuilt (expo prebuild / EAS build). It is never built in
-# this scaffold environment; it compiles first inside an EAS dev-client build.
+# Podspec for the local ZellsCapture Expo module.
+#
+# This file MUST live in ios/, not in the package root: expo-modules-autolinking
+# only looks for podspecs one directory level down (listFilesInDirectories in
+# expo-modules-autolinking), so a root-level podspec resolves to no pods, the
+# module is dropped from the generated ExpoModulesProvider, and
+# requireNativeModule('ZellsCapture') returns null at runtime even though
+# CocoaPods compiled the code.
 
-package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
+package = JSON.parse(File.read(File.join(__dir__, '..', 'package.json')))
 
 Pod::Spec.new do |s|
   s.name           = 'ZellsCapture'
@@ -31,5 +35,5 @@ Pod::Spec.new do |s|
     'SWIFT_COMPILATION_MODE' => 'wholemodule',
   }
 
-  s.source_files = 'ios/**/*.{h,m,mm,swift}'
+  s.source_files = '**/*.{h,m,mm,swift}'
 end
