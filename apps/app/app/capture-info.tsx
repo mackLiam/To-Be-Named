@@ -79,9 +79,9 @@ export default function CaptureInfoScreen() {
       <Heading level="h3">What happens in a scan</Heading>
       <View style={{ height: spacing.sm }} />
       <Body variant="bodySmall">
-        Walk around your leg once and the native module reconstructs a 3D mesh on-device. Uploading
-        the mesh to your scan library lands next; for now the flow ends with the finished files on
-        this phone.
+        Walk around your leg once and the native module reconstructs a 3D mesh on-device. The mesh
+        then uploads to your private scan library and is queued for measurement, and you land back
+        in the library when it is saved.
       </Body>
     </Screen>
   );
