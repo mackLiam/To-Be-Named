@@ -5,7 +5,8 @@ import { getSupabaseClient, hasSupabaseConfig } from './supabase';
 /**
  * Data-layer stubs for the product surface (scans, orders, products). Phase
  * 0/1: no backend schema is final yet, so every function is safe to call with
- * zero configuration - it returns an empty list rather than throwing. Once
+ * zero configuration - with no Supabase env vars it returns the demo rows
+ * below rather than throwing. Once
  * Supabase tables exist (docs/DESIGN.md section 8), the real query replaces
  * the stub inside each function; call sites (hooks in src/hooks/) do not
  * change.
@@ -35,9 +36,60 @@ export interface Product {
   priceCents: number;
 }
 
+/**
+ * Demo rows for USE_FAKE_DATA mode, so every list screen renders populated in
+ * a zero-backend dev build. Prices and the guard name mirror
+ * supabase/seed.sql; ids are fixed strings, not uuids, because nothing here
+ * is ever written back. Real rows replace these the moment
+ * EXPO_PUBLIC_SUPABASE_* are set.
+ */
+const DEMO_PRODUCTS: Product[] = [
+  {
+    id: 'demo-custom-guard',
+    name: 'Zells Custom Shin Guard',
+    description: 'Printed to your scan. One piece, vented shell, no strap gap at the ankle.',
+    priceCents: 8900,
+  },
+  {
+    id: 'demo-custom-guard-pair',
+    name: 'Zells Custom Shin Guard (pair)',
+    description: 'Both legs scanned separately, so the left is not a mirror of the right.',
+    priceCents: 16900,
+  },
+  {
+    id: 'demo-keeper-guard',
+    name: 'Zells Keeper Guard',
+    description: 'Taller shell and a softer liner for goalkeepers taking shots at close range.',
+    priceCents: 10900,
+  },
+];
+
+const DEMO_SCANS: Scan[] = [
+  { id: 'demo-scan-1', leg: 'right', status: 'ready', createdAt: '2026-08-28T17:12:00.000Z' },
+  { id: 'demo-scan-2', leg: 'left', status: 'processing', createdAt: '2026-08-28T17:04:00.000Z' },
+  { id: 'demo-scan-3', leg: 'left', status: 'failed', createdAt: '2026-08-21T09:41:00.000Z' },
+];
+
+const DEMO_ORDERS: Order[] = [
+  {
+    id: 'demo-order-1',
+    productName: 'Zells Custom Shin Guard (pair)',
+    status: 'in_production',
+    totalCents: 16900,
+    createdAt: '2026-08-29T10:02:00.000Z',
+  },
+  {
+    id: 'demo-order-2',
+    productName: 'Zells Custom Shin Guard',
+    status: 'delivered',
+    totalCents: 8900,
+    createdAt: '2026-07-14T15:37:00.000Z',
+  },
+];
+
 export async function listScans(): Promise<Scan[]> {
   if (USE_FAKE_DATA) {
-    return [];
+    return DEMO_SCANS;
   }
   const { data, error } = await getSupabaseClient()
     .from('scans')
@@ -56,7 +108,7 @@ export async function listScans(): Promise<Scan[]> {
 
 export async function listOrders(): Promise<Order[]> {
   if (USE_FAKE_DATA) {
-    return [];
+    return DEMO_ORDERS;
   }
   const { data, error } = await getSupabaseClient()
     .from('orders')
@@ -76,7 +128,7 @@ export async function listOrders(): Promise<Order[]> {
 
 export async function listProducts(): Promise<Product[]> {
   if (USE_FAKE_DATA) {
-    return [];
+    return DEMO_PRODUCTS;
   }
   const { data, error } = await getSupabaseClient()
     .from('products')

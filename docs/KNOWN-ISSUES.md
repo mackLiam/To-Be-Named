@@ -12,6 +12,19 @@ finishing a task checks this file for anything its change closes.
 
 ## Open
 
+### 2026-09-02: products/orders column names, app read side vs DB
+
+- `listProducts` in `apps/app/src/lib/api.ts` selects `description,
+  price_cents`; `public.products` has neither (`base_price_cents`, no
+  description column). `listOrders` selects `product_name, total_cents`;
+  `public.orders` has `amount_cents` and only a `product_id` FK.
+- Harmless while the app runs on demo rows; both list screens error the
+  moment real backend rows appear.
+- Close by: reconciling the read side with `supabase/migrations/0001_schema.sql`
+  (join products for the name, decide whether products needs a description
+  column) alongside the leg-naming fix below, before the hosted Supabase
+  wiring (roadmap week 5).
+
 ### 2026-07-06: leg naming mismatch, app read side vs DB
 
 - `apps/app/src/lib/api.ts` and `app/(tabs)/scans.tsx` model leg as

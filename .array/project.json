@@ -1,0 +1,16 @@
+{
+  "createdAt" : "2026-08-11T13:22:15Z",
+  "defaultLaunchProfileId" : "shell",
+  "editorPreference" : "auto",
+  "id" : "295C3FE6-59FC-49D4-BB72-ABBB57A1D495",
+  "name" : "To-Be-Named",
+  "rootPath" : "/Users/liam/Documents/personal/To-Be-Named",
+  "schemaVersion" : 2,
+  "settings" : {
+    "browserStoragePolicy" : "perProject",
+    "defaultBrowserProfileId" : "B0000000-0000-4000-8000-000000000001",
+    "restorePolicy" : "restoreDescriptors",
+    "terminalClosePolicy" : "askWhenRunning"
+  },
+  "updatedAt" : "2026-08-11T13:22:15Z"
+}
