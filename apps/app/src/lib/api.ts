@@ -34,6 +34,9 @@ export interface Product {
   name: string;
   description: string;
   priceCents: number;
+  // Absent for real rows until the products table carries imagery; screens
+  // must render without it.
+  imageUrl?: string;
 }
 
 /**
@@ -43,24 +46,30 @@ export interface Product {
  * is ever written back. Real rows replace these the moment
  * EXPO_PUBLIC_SUPABASE_* are set.
  */
+// Remote Unsplash stills, deliberately not committed as assets: they exist
+// only to fill the demo cards, and real product photography replaces them
+// (see the imageUrl note on Product).
 const DEMO_PRODUCTS: Product[] = [
   {
     id: 'demo-custom-guard',
     name: 'Zells Custom Shin Guard',
     description: 'Printed to your scan. One piece, vented shell, no strap gap at the ankle.',
     priceCents: 8900,
+    imageUrl: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=1200&q=70',
   },
   {
     id: 'demo-custom-guard-pair',
     name: 'Zells Custom Shin Guard (pair)',
     description: 'Both legs scanned separately, so the left is not a mirror of the right.',
     priceCents: 16900,
+    imageUrl: 'https://images.unsplash.com/photo-1560272564-c83b66b1ad12?w=1200&q=70',
   },
   {
     id: 'demo-keeper-guard',
     name: 'Zells Keeper Guard',
     description: 'Taller shell and a softer liner for goalkeepers taking shots at close range.',
     priceCents: 10900,
+    imageUrl: 'https://images.unsplash.com/photo-1517927033932-b3d18e61fb3a?w=1200&q=70',
   },
 ];
 

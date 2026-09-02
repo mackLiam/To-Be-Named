@@ -24,5 +24,6 @@ describe('data-layer stubs (no backend configured)', () => {
     const products = await listProducts();
     expect(products.length).toBeGreaterThan(0);
     expect(products.every((product) => product.name && product.priceCents > 0)).toBe(true);
+    expect(products.every((product) => product.imageUrl?.startsWith('https://'))).toBe(true);
   });
 });

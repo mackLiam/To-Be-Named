@@ -1,11 +1,11 @@
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
 import { Heading } from '../../src/components/Heading';
 import { Rule } from '../../src/components/Rule';
 import { Screen } from '../../src/components/Screen';
 import { useProducts } from '../../src/hooks/useProducts';
-import { colors, spacing } from '../../src/theme/tokens';
+import { colors, radius, spacing } from '../../src/theme/tokens';
 
 export default function ShopScreen() {
   const { data: products, loading, error } = useProducts();
@@ -39,6 +39,20 @@ export default function ShopScreen() {
 
       {products.map((product) => (
         <View key={product.id}>
+          {product.imageUrl && (
+            <Image
+              accessibilityIgnoresInvertColors
+              alt={product.name}
+              source={{ uri: product.imageUrl }}
+              style={{
+                width: '100%',
+                aspectRatio: 16 / 9,
+                borderRadius: radius,
+                backgroundColor: colors.surfaceMuted,
+                marginBottom: spacing.md,
+              }}
+            />
+          )}
           <Body variant="bodyStrong">{product.name}</Body>
           <Body color={colors.textSecondary} variant="bodySmall">
             {product.description}
