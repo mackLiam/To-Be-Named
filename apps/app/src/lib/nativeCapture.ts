@@ -12,7 +12,10 @@
 
 import { Platform } from 'react-native';
 
-import { isSupported as nativeIsSupported } from '../../modules/zells-capture';
+import {
+  isNativeModuleAvailable,
+  isSupported as nativeIsSupported,
+} from '../../modules/zells-capture';
 import { isCaptureSupported } from './capture';
 
 export interface CaptureAvailability {
@@ -26,7 +29,14 @@ export type CaptureUnavailableReason =
   | 'ok'
   /** Not iOS (web / Android). */
   | 'platform'
-  /** iOS, but no LiDAR / iOS < 17 / module not linked. */
+  /**
+   * iOS, but the capture native module is not in this binary: Expo Go, or a
+   * build where autolinking dropped it. Kept separate from 'device' because
+   * this one is a build problem we can fix, not a hardware limit, and a shared
+   * reason code made a real autolinking regression look like an old iPhone.
+   */
+  | 'module'
+  /** iOS with the module linked, but no LiDAR or iOS < 17. */
   | 'device';
 
 /**
@@ -37,9 +47,13 @@ export type CaptureUnavailableReason =
 export function resolveCaptureAvailability(
   platform: string,
   nativeSupported: boolean,
+  moduleLinked = true,
 ): CaptureAvailability {
   if (!isCaptureSupported(platform)) {
     return { supported: false, reason: 'platform' };
+  }
+  if (!moduleLinked) {
+    return { supported: false, reason: 'module' };
   }
   if (!nativeSupported) {
     return { supported: false, reason: 'device' };
@@ -53,5 +67,5 @@ export function resolveCaptureAvailability(
  */
 export async function getCaptureAvailability(): Promise<CaptureAvailability> {
   const nativeSupported = await nativeIsSupported();
-  return resolveCaptureAvailability(Platform.OS, nativeSupported);
+  return resolveCaptureAvailability(Platform.OS, nativeSupported, isNativeModuleAvailable());
 }

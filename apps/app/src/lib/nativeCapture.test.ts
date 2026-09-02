@@ -7,10 +7,23 @@ describe('resolveCaptureAvailability (pure)', () => {
     expect(resolveCaptureAvailability('ios', true)).toEqual({ supported: true, reason: 'ok' });
   });
 
-  it('blocks on iOS when the device is not capable (no LiDAR / iOS < 17 / no module)', () => {
+  it('blocks on iOS when the device is not capable (no LiDAR / iOS < 17)', () => {
     expect(resolveCaptureAvailability('ios', false)).toEqual({
       supported: false,
       reason: 'device',
+    });
+  });
+
+  it('reports a missing native module separately from an incapable device', () => {
+    expect(resolveCaptureAvailability('ios', false, false)).toEqual({
+      supported: false,
+      reason: 'module',
+    });
+    // Module missing wins even if the native layer somehow claims support: a
+    // module that is not linked cannot have answered truthfully.
+    expect(resolveCaptureAvailability('ios', true, false)).toEqual({
+      supported: false,
+      reason: 'module',
     });
   });
 
@@ -31,6 +44,7 @@ describe('resolveCaptureAvailability (pure)', () => {
 const mocks = vi.hoisted(() => ({
   os: 'ios' as string,
   nativeSupported: true as boolean,
+  moduleLinked: true as boolean,
 }));
 
 vi.mock('react-native', () => ({
@@ -43,6 +57,7 @@ vi.mock('react-native', () => ({
 
 vi.mock('../../modules/zells-capture', () => ({
   isSupported: vi.fn(async () => mocks.nativeSupported),
+  isNativeModuleAvailable: vi.fn(() => mocks.moduleLinked),
 }));
 
 import { getCaptureAvailability } from './nativeCapture';
@@ -50,6 +65,7 @@ import { getCaptureAvailability } from './nativeCapture';
 afterEach(() => {
   mocks.os = 'ios';
   mocks.nativeSupported = true;
+  mocks.moduleLinked = true;
 });
 
 describe('getCaptureAvailability (wired)', () => {
@@ -65,6 +81,16 @@ describe('getCaptureAvailability (wired)', () => {
     await expect(getCaptureAvailability()).resolves.toEqual({
       supported: false,
       reason: 'device',
+    });
+  });
+
+  it('module-blocked on iOS when the native module is not linked (Expo Go)', async () => {
+    mocks.os = 'ios';
+    mocks.moduleLinked = false;
+    mocks.nativeSupported = false;
+    await expect(getCaptureAvailability()).resolves.toEqual({
+      supported: false,
+      reason: 'module',
     });
   });
 

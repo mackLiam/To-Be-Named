@@ -86,15 +86,20 @@ function CheckingSection() {
  * tab and capture-info: an unsupported device gets told why and what works
  * instead, never a dead end.
  */
-const UNSUPPORTED_COPY: Record<'platform' | 'device', string> = {
+const UNSUPPORTED_COPY: Record<'platform' | 'module' | 'device', string> = {
   platform:
     'Guided capture runs on iPhone only. Your scan library, orders, and shop work the same on this device once a scan exists.',
+  module:
+    'This build does not include the capture module. Open Zells in the dev client (an EAS or local dev build), not Expo Go.',
   device:
-    'This iPhone or build cannot run guided capture. It needs a LiDAR sensor (iPhone 12 Pro or later Pro model), iOS 17 or later, and the Zells dev build, not Expo Go.',
+    'This iPhone cannot run guided capture. It needs a LiDAR sensor (iPhone 12 Pro or later Pro model) and iOS 17 or later.',
 };
 
 function UnsupportedSection({ state, onBack }: { state: CaptureFlowState; onBack: () => void }) {
-  const reason = state.unavailableReason === 'platform' ? 'platform' : 'device';
+  const reason =
+    state.unavailableReason === 'platform' || state.unavailableReason === 'module'
+      ? state.unavailableReason
+      : 'device';
   return (
     <>
       <Heading level="h1">Capture is not available here.</Heading>

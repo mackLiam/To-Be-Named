@@ -18,6 +18,18 @@ import { colors, spacing } from '../src/theme/tokens';
  * itself still only runs inside the Zells dev client on a physical LiDAR
  * iPhone, never in Expo Go (CLAUDE.md gotcha 3, docs/DESIGN.md section 5).
  */
+/** Copy per unavailability reason. 'module' is a build problem (Expo Go, or
+ * autolinking dropped the module); 'device' is a hardware limit. */
+const UNAVAILABLE_COPY: Record<CaptureAvailability['reason'], string> = {
+  ok: '',
+  platform:
+    'Guided capture runs on iPhone only. Open Zells on a LiDAR iPhone (12 Pro or later Pro model) to scan; everything else works here.',
+  module:
+    'This build does not include the capture module. Open Zells in the dev client (an EAS or local dev build), not Expo Go.',
+  device:
+    'This iPhone cannot run guided capture. It needs a LiDAR sensor (12 Pro or later Pro model) and iOS 17 or later.',
+};
+
 export default function CaptureInfoScreen() {
   const router = useRouter();
   const [availability, setAvailability] = useState<CaptureAvailability | null>(null);
@@ -64,11 +76,7 @@ export default function CaptureInfoScreen() {
         <>
           <Heading level="h3">This device cannot capture</Heading>
           <View style={{ height: spacing.sm }} />
-          <Body variant="bodySmall">
-            {availability.reason === 'platform'
-              ? 'Guided capture runs on iPhone only. Open Zells on a LiDAR iPhone (12 Pro or later Pro model) to scan; everything else works here.'
-              : 'This iPhone or build cannot run guided capture. It needs a LiDAR sensor, iOS 17 or later, and the Zells dev build.'}
-          </Body>
+          <Body variant="bodySmall">{UNAVAILABLE_COPY[availability.reason]}</Body>
           <View style={{ height: spacing.sm }} />
           <Body variant="caption" color={colors.textTertiary}>
             Reason code: {availability.reason}
