@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -14,6 +17,7 @@ jobs:
   js:
     name: JS / TS
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -29,8 +33,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build, typecheck, test
-        run: pnpm turbo run build typecheck test
+      - name: Build, typecheck, lint, test
+        run: pnpm turbo run build typecheck lint test
 
       - name: Format check
         run: pnpm format:check
@@ -38,6 +42,7 @@ jobs:
   python:
     name: Python (pipeline)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: services/pipeline
@@ -58,3 +63,43 @@ jobs:
 
       - name: Test (pytest)
         run: pytest
+
+  gitleaks:
+    # The repo is public, so a pushed secret is leaked the moment it lands.
+    # Scans only the commits this push or PR adds, never full history, so it
+    # stays fast and cannot fail on old commits.
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the diff range needs the base commit
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan new commits
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            RANGE="${PR_BASE}..${PR_HEAD}"
+          elif [ -z "${PUSH_BEFORE:-}" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # New branch: no previous tip to diff against, scan the tip commit.
+            RANGE="-1 ${PUSH_AFTER}"
+          else
+            RANGE="${PUSH_BEFORE}..${PUSH_AFTER}"
+          fi
+          echo "Scanning: ${RANGE}"
+          gitleaks git . --log-opts="--no-merges ${RANGE}" --redact --verbose --no-banner
