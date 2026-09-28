@@ -1,9 +1,9 @@
 /*
  * Admin panel styling. This is an internal ops tool: dense, fast, and
- * keyboard-scannable beats marketing polish, but it still reads as Zells.
- * Navy anchor, orange only where the eye must go, Outfit for headings and
- * Manrope for body/UI. Rectangles at one radius, borders and color blocks for
- * structure instead of drop shadows. No card grid, no gradients, no pills.
+ * keyboard-scannable beats marketing polish, but it still reads as FORMS.
+ * Stud brown anchor on the yellow field, brick only where the eye must go,
+ * Outfit for headings and Manrope for body/UI. Rectangles at one radius,
+ * borders and color blocks for structure instead of drop shadows. No card grid, no gradients, no pills.
  */
 
 .shell {
@@ -13,28 +13,26 @@
   background: var(--bg);
 }
 
-/* Top bar: solid navy band, like the marketing header, with a panel tag. */
+/* Top bar: solid brown band, like the marketing header, with a panel tag. */
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-lg);
   padding: var(--space-sm) var(--space-lg);
-  background: var(--navy-900);
-  color: var(--white);
+  background: var(--brown-900);
+  color: var(--yellow);
 }
 
 .brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-sm);
 }
 
 .wordmark {
-  font-family: var(--font-display-stack);
-  font-weight: 800;
-  font-size: 20px;
-  letter-spacing: 0.12em;
+  height: 18px;
+  width: auto;
 }
 
 .panelTag {
@@ -43,8 +41,8 @@
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--navy-900);
-  background: var(--orange-500);
+  color: var(--on-action);
+  background: var(--action);
   padding: 2px 8px;
   border-radius: var(--radius);
 }
@@ -59,20 +57,20 @@
   font-weight: 700;
   font-size: 13px;
   letter-spacing: 0.04em;
-  color: var(--navy-100);
+  color: var(--on-dark-muted);
   text-decoration: none;
   padding: 4px 2px;
 }
 
 .navLink:hover {
-  color: var(--white);
+  color: var(--on-dark);
 }
 
-/* Fake-data warning: a loud navy-on-orange strip so it can never be mistaken
+/* Fake-data warning: a loud yellow-on-brick strip so it can never be mistaken
  * for live production data. */
 .fakeBanner {
-  background: var(--orange-500);
-  color: var(--navy-900);
+  background: var(--action);
+  color: var(--on-action);
   font-family: var(--font-body-stack);
   font-weight: 700;
   font-size: 13px;
@@ -94,7 +92,7 @@
   justify-content: space-between;
   gap: var(--space-md);
   flex-wrap: wrap;
-  border-bottom: 2px solid var(--navy-900);
+  border-bottom: 2px solid var(--brown-900);
   padding-bottom: var(--space-sm);
   margin-bottom: var(--space-md);
 }
@@ -159,12 +157,12 @@
 }
 
 .filterActive {
-  background: var(--navy-900);
-  color: var(--white);
+  background: var(--brown-900);
+  color: var(--yellow);
 }
 
 .filterActive:hover {
-  color: var(--white);
+  color: var(--yellow);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -208,7 +206,7 @@
 }
 
 .table tbody tr:hover {
-  background: var(--navy-50);
+  background: var(--brown-50);
 }
 
 .mono {
@@ -224,7 +222,7 @@
 .idLink {
   color: var(--text-primary);
   text-decoration: none;
-  border-bottom: 2px solid var(--orange-500);
+  border-bottom: 2px solid var(--action);
   padding-bottom: 1px;
 }
 
@@ -250,7 +248,7 @@
 
 /* ------------------------------------------------------------------------- */
 /* Status badge: small rectangular text badge, never a pill. Tones map to    */
-/* navy / orange / danger with text contrast checked against each fill.      */
+/* brown / brick / danger with text contrast checked against each fill.      */
 /* ------------------------------------------------------------------------- */
 .badge {
   display: inline-block;
@@ -265,35 +263,35 @@
   border: 1px solid transparent;
 }
 
-/* neutral: pending. Navy outline on white. */
+/* neutral: pending. Brown outline on yellow. */
 .toneNeutral {
-  color: var(--navy-700);
-  background: var(--white);
-  border-color: var(--navy-300);
+  color: var(--brown-700);
+  background: var(--yellow);
+  border-color: var(--brown-300);
 }
 
-/* progress: running. Solid navy, white text. */
+/* progress: running. Solid brown, yellow text. */
 .toneProgress {
-  color: var(--white);
-  background: var(--navy-900);
+  color: var(--yellow);
+  background: var(--brown-900);
 }
 
-/* good: succeeded. Navy text on the muted navy tint. */
+/* good: succeeded. Brown text on the muted brown tint. */
 .toneGood {
-  color: var(--navy-900);
-  background: var(--navy-50);
-  border-color: var(--navy-300);
+  color: var(--brown-900);
+  background: var(--brown-50);
+  border-color: var(--brown-300);
 }
 
-/* warn: failed (retriable). Orange fill, navy text (contrast-safe). */
+/* warn: failed (retriable). Action brick fill, yellow text (4.7:1). */
 .toneWarn {
-  color: var(--navy-900);
-  background: var(--orange-500);
+  color: var(--on-action);
+  background: var(--action);
 }
 
-/* bad: dead letter. Solid danger, white text. */
+/* bad: dead letter. Solid danger, yellow text (6.8:1). */
 .toneBad {
-  color: var(--white);
+  color: var(--yellow);
   background: var(--danger);
 }
 
@@ -312,19 +310,19 @@
 
 .pageBtn {
   font-weight: 700;
-  color: var(--navy-900);
+  color: var(--brown-900);
   text-decoration: none;
-  border: 1px solid var(--navy-300);
+  border: 1px solid var(--brown-300);
   border-radius: var(--radius);
   padding: 6px 14px;
 }
 
 .pageBtn:hover {
-  border-color: var(--navy-900);
+  border-color: var(--brown-900);
 }
 
 .pageBtnDisabled {
-  color: var(--navy-300);
+  color: var(--brown-300);
   border-color: var(--border);
   pointer-events: none;
 }
@@ -360,7 +358,7 @@
 }
 
 .fact {
-  background: var(--white);
+  background: var(--yellow);
   padding: var(--space-sm) var(--space-md);
 }
 
@@ -381,7 +379,7 @@
   word-break: break-all;
 }
 
-/* Error payload: navy code block, no glow. */
+/* Error payload: brown code block, no glow. */
 .errorPayload {
   border-left: 3px solid var(--danger);
   background: var(--surface-muted);
@@ -401,8 +399,8 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--navy-100);
-  background: var(--navy-900);
+  color: var(--on-dark-muted);
+  background: var(--surface-dark);
   border-radius: var(--radius);
   padding: var(--space-md);
   margin: 0;
@@ -454,8 +452,8 @@
 }
 
 .sliceHead {
-  background: var(--navy-900);
-  color: var(--white);
+  background: var(--brown-900);
+  color: var(--yellow);
   padding: var(--space-sm) var(--space-md);
   display: flex;
   align-items: baseline;
@@ -473,7 +471,7 @@
 .slicePos {
   font-family: var(--font-body-stack);
   font-size: 11px;
-  color: var(--navy-100);
+  color: var(--brown-100);
 }
 
 .dimTable {
@@ -514,19 +512,20 @@
 
 .dimMissing {
   text-align: right;
-  color: var(--navy-300);
+  color: var(--disabled);
 }
 
-/* A tripped value: navy text on orange, matching the warn badge, so a failed
+/* A tripped value: yellow text on action brick, matching the warn badge, so a failed
  * gate is visible at a glance without relying on color alone (the gate range
  * is spelled out too). */
 .dimBad {
-  background: var(--orange-500);
+  background: var(--action);
 }
 
 .dimBad .dimName,
-.dimBad .dimValue {
-  color: var(--navy-900);
+.dimBad .dimValue,
+.dimBad .dimRange {
+  color: var(--on-action);
 }
 
 .dimRange {
@@ -536,11 +535,11 @@
   font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--navy-900);
+  color: var(--brown-900);
 }
 
 .legLength {
-  border: 1px solid var(--navy-300);
+  border: 1px solid var(--brown-300);
   border-radius: var(--radius);
   padding: var(--space-md);
   display: flex;
@@ -561,7 +560,7 @@
   font-weight: 800;
   font-size: 28px;
   font-variant-numeric: tabular-nums;
-  color: var(--orange-600);
+  color: var(--brick-500);
 }
 
 /* Break-glass action. */
@@ -577,8 +576,8 @@
   font-family: var(--font-body-stack);
   font-weight: 700;
   font-size: 14px;
-  color: var(--white);
-  background: var(--orange-500);
+  color: var(--on-action);
+  background: var(--action);
   border: none;
   border-radius: var(--radius);
   padding: 10px 18px;

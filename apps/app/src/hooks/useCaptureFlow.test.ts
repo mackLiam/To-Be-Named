@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 // them because every call goes through injected CaptureFlowDeps. The error
 // classes are re-exported from the module's pure errors.ts, so importActual
 // keeps the real CaptureError / mapNativeError the controller relies on.
-vi.mock('../../modules/zells-capture', async () => {
-  const errors = await vi.importActual('../../modules/zells-capture/src/errors');
+vi.mock('../../modules/forms-capture', async () => {
+  const errors = await vi.importActual('../../modules/forms-capture/src/errors');
   return {
     ...errors,
     isSupported: vi.fn(async () => false),
@@ -22,8 +22,8 @@ vi.mock('../lib/nativeCapture', () => ({
   getCaptureAvailability: vi.fn(),
 }));
 
-import { CaptureError } from '../../modules/zells-capture';
-import type { CaptureResult, ReconstructResult } from '../../modules/zells-capture';
+import { CaptureError } from '../../modules/forms-capture';
+import type { CaptureResult, ReconstructResult } from '../../modules/forms-capture';
 import { UploadError } from '../lib/upload';
 import type { UploadScanParams, UploadScanResult } from '../lib/upload';
 import {

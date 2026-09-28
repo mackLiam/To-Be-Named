@@ -1,10 +1,10 @@
 /**
- * Public type surface for the Zells capture native module.
+ * Public type surface for the FORMS capture native module.
  *
  * The module wraps Apple's ObjectCaptureSession (guided photo capture) and
  * PhotogrammetrySession (on-device 3D reconstruction). See docs/DESIGN.md
  * section 5 and CLAUDE.md gotcha 3. These types are the contract between the
- * Swift side (apps/app/modules/zells-capture/ios) and the JS wrapper
+ * Swift side (apps/app/modules/forms-capture/ios) and the JS wrapper
  * (index.ts); keep them in sync with the Swift Records and Events.
  */
 
@@ -105,7 +105,7 @@ export type CaptureEventName = keyof CaptureEventsMap;
  * capable iOS build (custom dev client / EAS); null everywhere else. The JS
  * wrapper in index.ts is the only place that should touch this directly.
  */
-export interface ZellsCaptureNativeModule {
+export interface FormsCaptureNativeModule {
   /**
    * Whether ObjectCaptureSession.isSupported on this device (LiDAR + iOS 17+).
    * Async because the SDK property is main-actor isolated, so the Swift side

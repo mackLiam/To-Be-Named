@@ -5,7 +5,7 @@
  * it is unit tested. Nothing in this file does IO.
  */
 
-import { MEASUREMENT_KEYS, type MeasurementKey } from '@zells/shared';
+import { MEASUREMENT_KEYS, type MeasurementKey } from '@forms/shared';
 
 import type { GateResult, JobError } from './types';
 
@@ -22,7 +22,7 @@ export interface StatusMeta {
 
 /**
  * Queue status -> human label + a tone the UI maps to a small text badge.
- * Tones are semantic, not colors: the CSS decides the exact navy/orange/danger
+ * Tones are semantic, not colors: the CSS decides the exact brown/brick/danger
  * treatment so contrast stays a single decision.
  */
 export const JOB_STATUS_META: Record<string, StatusMeta> = {

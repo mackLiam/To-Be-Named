@@ -55,7 +55,7 @@ vi.mock('react-native', () => ({
   },
 }));
 
-vi.mock('../../modules/zells-capture', () => ({
+vi.mock('../../modules/forms-capture', () => ({
   isSupported: vi.fn(async () => mocks.nativeSupported),
   isNativeModuleAvailable: vi.fn(() => mocks.moduleLinked),
 }));

@@ -60,7 +60,7 @@ final class CaptureSessionController: NSObject {
 
     // CaptureState cases mapped 1:1 from the SDK (initializing, ready,
     // detecting, capturing, finishing, completed, failed(Error)) onto the
-    // string states in modules/zells-capture/src/types.ts.
+    // string states in modules/forms-capture/src/types.ts.
     observeState(session)
 
     presentCaptureView(for: session)

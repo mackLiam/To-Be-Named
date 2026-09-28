@@ -1,4 +1,4 @@
-# Zells - System Design Document
+# FORMS - System Design Document
 
 **Status:** Draft v1 · **Date:** 2026-07-01 · **Author:** Liam Mackenzie (with Claude)
 
@@ -6,7 +6,7 @@
 
 ## 1. Product Summary
 
-Zells sells custom-fit, 3D-printed soccer shin guards. A user scans their leg with
+FORMS sells custom-fit, 3D-printed soccer shin guards. A user scans their leg with
 their phone; the app extracts 25 measurements from the reconstructed mesh; those
 measurements drive a parametric CAD model that generates a print-ready STL; the
 guard is printed and shipped. The core value proposition is a **fully automated
@@ -271,7 +271,7 @@ constraints to design around:
   "CAD client" interface in the worker, so it's a swap, not a rewrite.
 
 **Implementation status (2026-07-06):** the provider layer exists. Descriptor +
-registry live in `services/pipeline/src/zells_pipeline/cad/` (Python) and
+registry live in `services/pipeline/src/forms_pipeline/cad/` (Python) and
 `packages/shared/src/cad.ts` (TypeScript); `products.cad_model` added in
 migration `0006_cad_models.sql`; the worker resolves job -> order -> product
 descriptor with an env-driven Onshape default (degrading to `dry_run` without
@@ -284,7 +284,7 @@ one logical artifact: change them in the same commit. Full model-line design:
 ## 7a. Product Line: One Contract, Multiple Guard Models
 
 The measurement contract is singular and frozen; the product line is plural and
-open-ended. Every product Zells sells is a separate parametric CAD model that
+open-ended. Every product FORMS sells is a separate parametric CAD model that
 consumes the **same** 25-variable schema. New products never fork the contract;
 they only add a new model behind it. This is the second major payoff of the
 "scan is a measurement instrument, not a printable" decision in §1.
@@ -297,9 +297,9 @@ protection. Both are the same pipeline with a different model at the end:
 
 | Tier (working name) | Coverage philosophy | Target buyer | Notes |
 |---|---|---|---|
-| **Zells Pro** | Minimal footprint: shortest legal shell, thinnest profile, lowest weight. Sits low on the shin. | Serious/adult players who cut down stock guards today | Coverage floor bounded by league rules (IFAB Law 4 requires "reasonable protection"; NOCSAE/EN 13061 define testable coverage zones, see §12.4). Do not undercut a certifiable minimum silently. |
-| **Zells Club** | Balanced coverage and weight. The default. | Most players | This is the collaborator's existing model; Phase 0-2 ship only this. |
-| **Zells Junior Max** | Extended coverage: shell runs higher toward the knee and wraps further around the calf; optional ankle-guard add-on. | Parents buying for kids/toddlers; safety is the purchase driver | Same 25 inputs; the model internally extends margins as functions of Leg_Length and slice dims. Youth leagues are also where certification matters most (§12.4). |
+| **FORMS Pro** | Minimal footprint: shortest legal shell, thinnest profile, lowest weight. Sits low on the shin. | Serious/adult players who cut down stock guards today | Coverage floor bounded by league rules (IFAB Law 4 requires "reasonable protection"; NOCSAE/EN 13061 define testable coverage zones, see §12.4). Do not undercut a certifiable minimum silently. |
+| **FORMS Club** | Balanced coverage and weight. The default. | Most players | This is the collaborator's existing model; Phase 0-2 ship only this. |
+| **FORMS Junior Max** | Extended coverage: shell runs higher toward the knee and wraps further around the calf; optional ankle-guard add-on. | Parents buying for kids/toddlers; safety is the purchase driver | Same 25 inputs; the model internally extends margins as functions of Leg_Length and slice dims. Youth leagues are also where certification matters most (§12.4). |
 
 Tier count and names are product decisions, not architecture: the architecture
 supports N models from day one.

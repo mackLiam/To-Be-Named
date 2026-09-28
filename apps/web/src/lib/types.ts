@@ -1,4 +1,4 @@
-import type { MeasurementKey } from '@zells/shared';
+import type { MeasurementKey } from '@forms/shared';
 
 // Row shapes mirror the columns in supabase/migrations/0001_schema.sql exactly.
 

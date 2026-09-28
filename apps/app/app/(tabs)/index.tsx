@@ -1,6 +1,8 @@
 import { useRouter } from 'expo-router';
 import { Platform, View } from 'react-native';
 
+import { BRAND_NAME } from '@forms/shared/brand';
+
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
@@ -12,7 +14,7 @@ import { colors, spacing } from '../../src/theme/tokens';
 const DEVICE_REQUIREMENTS = [
   'iPhone 12 Pro or later Pro model (LiDAR sensor required)',
   'iOS 17 or later',
-  'A dev-build install of Zells, not the App Store build yet (Phase 0)',
+  `A dev-build install of ${BRAND_NAME}, not the App Store build yet (Phase 0)`,
 ];
 
 export default function ScanScreen() {

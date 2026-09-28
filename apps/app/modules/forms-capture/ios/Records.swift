@@ -4,7 +4,7 @@ import ExpoModulesCore
  Argument/return records shared across the module.
 
  Expo `Record` types marshal to/from the JS objects defined in
- modules/zells-capture/src/types.ts. Field names must match the TS interfaces.
+ modules/forms-capture/src/types.ts. Field names must match the TS interfaces.
 */
 
 /// Mirrors the TS `ReconstructOptions`.

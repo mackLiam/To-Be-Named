@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import { BRAND_NAME } from '@forms/shared/brand';
+
 import styles from './admin.module.css';
 
 /**
@@ -13,7 +15,12 @@ export function AdminShell({ fake, children }: { fake: boolean; children: React.
     <div className={styles.shell}>
       <header className={styles.topbar}>
         <div className={styles.brand}>
-          <span className={styles.wordmark}>ZELLS</span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- static SVG wordmark, nothing to optimize */}
+          <img
+            src="/brand/wordmark-reverse-for-brown.svg"
+            alt={BRAND_NAME}
+            className={styles.wordmark}
+          />
           <span className={styles.panelTag}>Admin</span>
         </div>
         <nav className={styles.nav}>

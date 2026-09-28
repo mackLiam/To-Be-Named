@@ -15,7 +15,7 @@ import { Platform } from 'react-native';
 import {
   isNativeModuleAvailable,
   isSupported as nativeIsSupported,
-} from '../../modules/zells-capture';
+} from '../../modules/forms-capture';
 import { isCaptureSupported } from './capture';
 
 export interface CaptureAvailability {

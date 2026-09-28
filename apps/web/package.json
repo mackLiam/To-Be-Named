@@ -1,5 +1,5 @@
 {
-  "name": "@zells/web",
+  "name": "@forms/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -13,7 +13,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.110.0",
-    "@zells/shared": "workspace:*",
+    "@forms/shared": "workspace:*",
     "next": "^15.1.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",

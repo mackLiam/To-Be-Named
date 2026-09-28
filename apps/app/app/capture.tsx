@@ -2,6 +2,8 @@ import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
+import { BRAND_NAME } from '@forms/shared/brand';
+
 import { Body } from '../src/components/Body';
 import { Button } from '../src/components/Button';
 import { Heading } from '../src/components/Heading';
@@ -10,7 +12,7 @@ import { Screen } from '../src/components/Screen';
 import { captureErrorMessage, useCaptureFlow } from '../src/hooks/useCaptureFlow';
 import type { CaptureFlowState, CaptureMetaEnv } from '../src/hooks/useCaptureFlow';
 import { uploadErrorMessage } from '../src/lib/upload';
-import type { CaptureState } from '../modules/zells-capture';
+import type { CaptureState } from '../modules/forms-capture';
 import { colors, radius, spacing } from '../src/theme/tokens';
 
 /** Device/OS context stamped onto the scan. Built here (not in useCaptureFlow)
@@ -89,8 +91,7 @@ function CheckingSection() {
 const UNSUPPORTED_COPY: Record<'platform' | 'module' | 'device', string> = {
   platform:
     'Guided capture runs on iPhone only. Your scan library, orders, and shop work the same on this device once a scan exists.',
-  module:
-    'This build does not include the capture module. Open Zells in the dev client (an EAS or local dev build), not Expo Go.',
+  module: `This build does not include the capture module. Open ${BRAND_NAME} in the dev client (an EAS or local dev build), not Expo Go.`,
   device:
     'This iPhone cannot run guided capture. It needs a LiDAR sensor (iPhone 12 Pro or later Pro model) and iOS 17 or later.',
 };
@@ -283,7 +284,7 @@ function FailedSection({ state, onRetry }: { state: CaptureFlowState; onRetry: (
 // ---------------------------------------------------------------------------
 
 /**
- * Determinate reconstruction progress: a flat orange fill on a navy-tinted
+ * Determinate reconstruction progress: a flat brick fill on a brown-tinted
  * track. Color block, not shadow or glow (banned looks #5 and #9); the one
  * shared radius token, not a pill (banned look #3).
  */
@@ -312,7 +313,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   progressTrack: {
     height: 10,
-    backgroundColor: colors.navy[100],
+    backgroundColor: colors.border,
     borderRadius: radius,
     overflow: 'hidden',
   },

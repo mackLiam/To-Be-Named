@@ -31,6 +31,8 @@
 import type { EventSubscription } from 'expo-modules-core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { BRAND_NAME } from '@forms/shared/brand';
+
 import {
   addCaptureStateListener,
   addReconstructionProgressListener,
@@ -39,7 +41,7 @@ import {
   mapNativeError,
   reconstruct,
   startCapture,
-} from '../../modules/zells-capture';
+} from '../../modules/forms-capture';
 import type {
   CaptureErrorCode,
   CaptureResult,
@@ -48,7 +50,7 @@ import type {
   ReconstructionProgressEvent,
   ReconstructOptions,
   ReconstructResult,
-} from '../../modules/zells-capture';
+} from '../../modules/forms-capture';
 import { getCaptureAvailability } from '../lib/nativeCapture';
 import type { CaptureAvailability, CaptureUnavailableReason } from '../lib/nativeCapture';
 import { asUploadError, newScanId, uploadScan } from '../lib/upload';
@@ -132,8 +134,7 @@ const STARTABLE_PHASES: readonly CaptureFlowPhase[] = [
  * the phone (often a parent scanning a kid's leg), not for a developer.
  */
 export const CAPTURE_ERROR_MESSAGES: Record<CaptureErrorCode, string> = {
-  ERR_CAPTURE_UNAVAILABLE:
-    'Capture is not available in this build. Use the Zells dev build on a LiDAR iPhone.',
+  ERR_CAPTURE_UNAVAILABLE: `Capture is not available in this build. Use the ${BRAND_NAME} dev build on a LiDAR iPhone.`,
   ERR_CAPTURE_UNSUPPORTED_DEVICE:
     'This iPhone cannot run guided capture. It needs a LiDAR sensor and iOS 17 or later.',
   ERR_CAPTURE_CANCELLED: 'The capture was cancelled before it finished.',

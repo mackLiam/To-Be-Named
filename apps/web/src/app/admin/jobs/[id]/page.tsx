@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { BRAND_NAME } from '@forms/shared/brand';
+
 import styles from '../../admin.module.css';
 import { AdminShell } from '../../AdminShell';
 import { StatusBadge } from '../../StatusBadge';
@@ -10,7 +12,7 @@ import { getTriage } from '@/lib/data';
 import { formatDateTime, groupMeasurements, shortId } from '@/lib/view';
 
 export const metadata: Metadata = {
-  title: 'Job detail - Zells admin',
+  title: `Job detail - ${BRAND_NAME} admin`,
   robots: { index: false, follow: false },
 };
 

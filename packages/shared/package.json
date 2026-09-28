@@ -1,5 +1,5 @@
 {
-  "name": "@zells/shared",
+  "name": "@forms/shared",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./brand": {
+      "types": "./dist/brand.d.ts",
+      "default": "./dist/brand.js"
     },
     "./schema/measurements.schema.json": "./schema/measurements.schema.json"
   },

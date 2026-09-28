@@ -41,9 +41,9 @@ starts growing conditionals, extract them down into lib.
 ## Design notes
 
 Admin is an internal tool: dense tables, fast scanning, no decoration. Still
-Zells-branded (navy/orange accents, Outfit headings, Manrope body), still no
+FORMS-branded (brick/brown accents on yellow, Outfit headings, Manrope body), still no
 emojis and no em/en dashes. Marketing pages follow the brand fully and get
-zells-designer review before shipping. Avoid the generic AI-dashboard look:
+forms-designer review before shipping. Avoid the generic AI-dashboard look:
 no gradient stat cards, no icon noise, tables with real information density.
 
 ## Subagent brief (when you are delegated work here)
@@ -59,5 +59,5 @@ no gradient stat cards, no icon noise, tables with real information density.
   must render and build with no env vars.
 - All reads paginated or bounded; no unbounded queries into admin tables.
 - Verify before returning (from repo root):
-  `pnpm --filter @zells/web build && pnpm --filter @zells/web typecheck && pnpm --filter @zells/web test && pnpm format:check`
+  `pnpm --filter @forms/web build && pnpm --filter @forms/web typecheck && pnpm --filter @forms/web test && pnpm format:check`
   Return the output verbatim. Leave all changes uncommitted.

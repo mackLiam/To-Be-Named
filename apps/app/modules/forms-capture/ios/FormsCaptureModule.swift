@@ -2,7 +2,7 @@ import ExpoModulesCore
 import RealityKit
 
 /*
- ZellsCapture native module.
+ FormsCapture native module.
 
  Wraps Apple's guided object capture (ObjectCaptureSession) and on-device
  photogrammetry (PhotogrammetrySession), both RealityKit APIs available on
@@ -26,15 +26,15 @@ import RealityKit
  Simulator cannot exercise capture (ObjectCaptureSession.isSupported is false
  there). Remaining runtime risks are flagged inline.
 */
-public class ZellsCaptureModule: Module {
+public class FormsCaptureModule: Module {
   // Retained across the async call so cancel() can reach an in-flight session.
   private var captureController: CaptureSessionController?
   private var reconstructionController: ReconstructionController?
 
   public func definition() -> ModuleDefinition {
-    Name("ZellsCapture")
+    Name("FormsCapture")
 
-    // Event names must match modules/zells-capture/src/types.ts CaptureEventsMap.
+    // Event names must match modules/forms-capture/src/types.ts CaptureEventsMap.
     Events("onCaptureStateChange", "onReconstructionProgress")
 
     // ObjectCaptureSession.isSupported is main-actor isolated (RealityKit

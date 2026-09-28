@@ -1,4 +1,4 @@
-# Zells
+# FORMS
 
 Custom-fit, 3D-printed soccer shin guards. Phone scan → measurement extraction →
 parametric CAD → print-ready STL, fully automated (no manual CAD per customer).
@@ -53,7 +53,11 @@ docs/              Design docs (DESIGN.md is the source of truth)
 ## Conventions
 
 - TypeScript everywhere in JS-land; shared types live in `packages/shared`, never duplicated.
-- Branding: white/orange/navy; fonts Outfit + Manrope.
+- Branding: product name FORMS (working name; single source is `BRAND_NAME` in
+  packages/shared/src/brand.ts, read by apps/app, apps/web, and app.config.ts).
+  Palette: card yellow #EDD27A (background), brick red #B0362C (brand/wordmark;
+  action fills use brick 600 #9E352B for AA), stud brown #3A2E26 (text, dark
+  surfaces), bright brick #E0513F (on brown only). Fonts Outfit + Manrope.
 - Secrets: `.env` (gitignored). Template: `.env.example` - keep it updated when adding vars.
 - Mesh/STL binaries never in git (gitignored) except small test fixtures under `tests/fixtures/`.
 - **No emojis. Anywhere.** Not in code, comments, docs, READMEs, commit messages, UI copy,
@@ -207,7 +211,7 @@ Write the plan down before any edit:
 - Tests that will ship with the change, including failure paths.
 - Security checklist items the change triggers.
 - Any DESIGN.md decision this changes: then DESIGN.md changes in the same
-  commit series, and zells-architect sanity-checks the plan first.
+  commit series, and forms-architect sanity-checks the plan first.
 
 Schema or CAD-descriptor changes are lockstep both-sides changes: plan the
 TS and Python sides together before touching either.
@@ -244,7 +248,7 @@ Every subagent prompt contains all seven parts, every time:
    migration numbers other than the reserved one, no scope creep "while I
    was in there".
 
-UI work goes to (or gets reviewed by) zells-designer before shipping.
+UI work goes to (or gets reviewed by) forms-designer before shipping.
 
 ### Step 4 - review what comes back (adversarial, in order)
 
@@ -266,7 +270,7 @@ Large misses: reject and re-prompt with the gap named. Small deltas: hand-fix.
 | Scope | Commands (from repo root) |
 |---|---|
 | All JS/TS | `pnpm turbo run build typecheck test` then `pnpm format:check` |
-| One JS package | `pnpm --filter @zells/shared build`, `... typecheck`, `... test` (same pattern for `@zells/app`, `@zells/web`; app has no build script) |
+| One JS package | `pnpm --filter @forms/shared build`, `... typecheck`, `... test` (same pattern for `@forms/app`, `@forms/web`; app has no build script) |
 | Pipeline | `cd services/pipeline && .venv/bin/ruff check . && .venv/bin/pytest` |
 | Everything | `make lint typecheck test` |
 

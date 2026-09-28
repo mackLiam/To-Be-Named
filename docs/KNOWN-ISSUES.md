@@ -33,7 +33,7 @@ finishing a task checks this file for anything its change closes.
 - Harmless while the app runs on fake data; breaks the Scans list the moment
   real backend rows appear.
 - Close by: reconciling the read side to `'L' | 'R'` (promote the `Leg` type
-  from `upload.ts` into `@zells/shared` while at it), before the hosted
+  from `upload.ts` into `@forms/shared` while at it), before the hosted
   Supabase wiring (roadmap week 5).
 
 ### 2026-07-06: no leg picker in capture flow
@@ -58,7 +58,7 @@ finishing a task checks this file for anything its change closes.
 - `deviceModel` is null (needs expo-device or native surface);
   platform/osVersion come from injected env; native module does not yet
   report imageCount/detail from real hardware.
-- Close by: extend zells-capture records once the EAS dev build runs on a
+- Close by: extend forms-capture records once the EAS dev build runs on a
   physical iPhone.
 
 ### 2026-07-06: migrations verified against local Postgres only

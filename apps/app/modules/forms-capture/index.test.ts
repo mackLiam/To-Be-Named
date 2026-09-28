@@ -1,19 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CaptureError, CaptureUnavailableError } from './src/errors';
-import type { ZellsCaptureNativeModule } from './src/types';
+import type { FormsCaptureNativeModule } from './src/types';
 
 // A mutable holder so each test can flip the native module between "absent"
 // (null) and a fake implementation. Hoisted so the vi.mock factory below can
 // close over it (vi.mock is hoisted above imports).
 const mocks = vi.hoisted(() => ({
-  native: null as ZellsCaptureNativeModule | null,
+  native: null as FormsCaptureNativeModule | null,
 }));
 
 // Mock the single boundary file. The public wrapper (index.ts) is then a pure
-// function of `ZellsCaptureNative`, and no native runtime is needed.
+// function of `FormsCaptureNative`, and no native runtime is needed.
 vi.mock('./src/native', () => ({
-  get ZellsCaptureNative() {
+  get FormsCaptureNative() {
     return mocks.native;
   },
 }));
@@ -64,7 +64,7 @@ describe('when the native module is absent (web / Android / Simulator / Expo Go)
 });
 
 describe('when the native module is present', () => {
-  const makeNative = (over: Partial<ZellsCaptureNativeModule> = {}): ZellsCaptureNativeModule => ({
+  const makeNative = (over: Partial<FormsCaptureNativeModule> = {}): FormsCaptureNativeModule => ({
     isSupported: vi.fn(async () => true),
     startCapture: vi.fn(async () => ({ sessionId: 's1', imageDir: '/d', imageCount: 42 })),
     reconstruct: vi.fn(async () => ({

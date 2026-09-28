@@ -19,7 +19,7 @@ pipeline instead: the app never interprets geometry.
   `isCaptureSupported()` style gate in src/lib/capture.ts; other platforms get
   the "scan on your iPhone, it appears here" state. Never conditionally import
   the native module at top level of a shared file; web bundles must not touch it.
-- modules/zells-capture is the only Swift in the repo. Its TS surface
+- modules/forms-capture is the only Swift in the repo. Its TS surface
   (src/types.ts, src/native.ts, src/errors.ts) is typed and unit-tested even
   though the Swift side needs a physical device: keep the boundary such that
   everything except the actual ObjectCaptureSession calls is testable on CI.
@@ -40,7 +40,7 @@ pipeline instead: the app never interprets geometry.
   access; screens in app/ are layout plus hook calls. Business logic that
   needs testing lives in src/lib as pure functions, tested with Vitest.
   Components stay thin enough that not testing them is acceptable.
-- State enums come from @zells/shared (states.ts). String literals for scan or
+- State enums come from @forms/shared (states.ts). String literals for scan or
   job status anywhere in this app are a bug: the SQL state machine is the
   authority and shared enums are its projection.
 
@@ -58,10 +58,11 @@ also happens to check.
 ## UI and design
 
 - Design tokens in src/theme/tokens.ts are the only source of colors, spacing,
-  and type (Outfit headings, Manrope body; white/orange/navy). No raw hex
-  values in components. Contrast helpers exist in src/theme/contrast.ts; new
-  color pairs must pass them.
-- Consult the zells-designer agent before new screens. Internal-quality UI is
+  and type (Outfit headings, Manrope body; card yellow #EDD27A, brick red
+  #B0362C with brick 600 #9E352B for action fills, stud brown #3A2E26, bright
+  brick #E0513F on brown only). No raw hex values in components. Contrast
+  helpers exist in src/theme/contrast.ts; new color pairs must pass them.
+- Consult the forms-designer agent before new screens. Internal-quality UI is
   not acceptable in this app; it is the product.
 - No emojis, no em/en dashes, in code or copy.
 
@@ -83,8 +84,8 @@ nothing but EXPO_PUBLIC_* values ever may appear in it).
   the web bundle must not touch it. Capture-related code cannot be verified
   on a simulator; say so in your return instead of claiming device behavior.
 - UI uses tokens from src/theme/tokens.ts only (no raw hex, no ad hoc
-  spacing) and will get zells-designer review; build to that bar.
-- State enums come from @zells/shared; a string-literal status is a bug.
+  spacing) and will get forms-designer review; build to that bar.
+- State enums come from @forms/shared; a string-literal status is a bug.
 - Verify before returning (from repo root):
-  `pnpm --filter @zells/app typecheck && pnpm --filter @zells/app test && pnpm format:check`
+  `pnpm --filter @forms/app typecheck && pnpm --filter @forms/app test && pnpm format:check`
   Return the output verbatim. Leave all changes uncommitted.

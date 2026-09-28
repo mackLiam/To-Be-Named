@@ -9,7 +9,7 @@
 -- real model.
 insert into public.products (name, slug, base_price_cents, currency, active, cad_model)
 values (
-  'Zells Custom Shin Guard', 'custom-guard', 8900, 'usd', true,
+  'FORMS Custom Shin Guard', 'custom-guard', 8900, 'usd', true,
   jsonb_build_object(
     'provider', 'dry_run',
     'schema_version', '1.0.0',

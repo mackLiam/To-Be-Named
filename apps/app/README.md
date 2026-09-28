@@ -1,4 +1,4 @@
-# apps/app - Zells product app
+# apps/app - FORMS product app
 
 Expo Router **universal app**: one codebase shipping as the iOS app, the Android app,
 and the product web app (`app.zells.com`). See `docs/DESIGN.md` sections 3, 5, and 6
@@ -8,7 +8,7 @@ for the full platform strategy; this file is the practical dev-flow reference.
 
 ```
 pnpm install                        # from the repo root
-pnpm --filter @zells/app dev        # expo start --dev-client
+pnpm --filter @forms/app dev        # expo start --dev-client
 ```
 
 Then open the app in your EAS dev-client build (see below), not Expo Go.
@@ -35,14 +35,14 @@ eas build --profile development --platform ios
 ```
 
 installs a dev client onto a physical LiDAR iPhone (iPhone 12 Pro or later Pro
-model, iOS 17+). Until then, `pnpm --filter @zells/app dev` plus Expo's iOS
+model, iOS 17+). Until then, `pnpm --filter @forms/app dev` plus Expo's iOS
 Simulator or Android emulator is enough to work on every screen except the actual
 capture flow, which is gated off on non-capable devices anyway
 (`src/lib/capture.ts`).
 
 ## Capture module
 
-The guided scan lives in a **local Expo module** at `modules/zells-capture/`. It wraps
+The guided scan lives in a **local Expo module** at `modules/forms-capture/`. It wraps
 Apple's `ObjectCaptureSession` (guided photo capture) and `PhotogrammetrySession`
 (on-device reconstruction), then converts the resulting USDZ to OBJ with ModelIO so the
 Python pipeline can consume it (CLAUDE.md gotcha 4). All files stay inside the app
@@ -51,9 +51,9 @@ sandbox; the module adds no network or analytics calls (CLAUDE.md gotcha 5).
 Layout:
 
 ```
-modules/zells-capture/
+modules/forms-capture/
   expo-module.config.json   Autolinking manifest (apple platform)
-  ZellsCapture.podspec       CocoaPods spec, iOS 17 minimum
+  FormsCapture.podspec       CocoaPods spec, iOS 17 minimum
   package.json               Local module metadata (not a pnpm workspace package)
   index.ts                   Public JS API (safe on every platform)
   src/
@@ -62,11 +62,11 @@ modules/zells-capture/
     native.ts                requireOptionalNativeModule boundary (null when absent)
     *.test.ts                Vitest: fallback + error mapping (no device needed)
   ios/
-    ZellsCaptureModule.swift        Module definition (functions + events)
+    FormsCaptureModule.swift        Module definition (functions + events)
     CaptureSessionController.swift   ObjectCaptureSession + SwiftUI hosting
     ReconstructionController.swift   PhotogrammetrySession + USDZ->OBJ export
     Records.swift                    Expo Record types
-    ZellsCaptureError.swift          Typed Swift exceptions -> JS error codes
+    FormsCaptureError.swift          Typed Swift exceptions -> JS error codes
 ```
 
 JS entry points (see `src/lib/nativeCapture.ts` for the app-facing seam):
@@ -80,7 +80,7 @@ JS entry points (see `src/lib/nativeCapture.ts` for the app-facing seam):
 
 The Swift compiles only inside an EAS dev-client build (there is no Swift toolchain in
 CI or this scaffold). The TypeScript wrapper is fully unit-tested with the native module
-mocked, so `pnpm --filter @zells/app test` covers the JS logic without a device.
+mocked, so `pnpm --filter @forms/app test` covers the JS logic without a device.
 
 ### Building the dev client (to run capture on-device)
 
@@ -98,7 +98,7 @@ The Swift was written without a compiler and is flagged throughout with searchab
 `UNVERIFIED:` comments. Grep before the first device session:
 
 ```
-grep -rn "UNVERIFIED:" modules/zells-capture
+grep -rn "UNVERIFIED:" modules/forms-capture
 ```
 
 Highest-risk items: exact `ObjectCaptureSession` / `PhotogrammetrySession` state and
@@ -136,9 +136,9 @@ src/
 
 ## Scripts
 
-- `pnpm --filter @zells/app dev` - `expo start --dev-client`
-- `pnpm --filter @zells/app typecheck` - `tsc --noEmit`
-- `pnpm --filter @zells/app test` - `vitest run` (pure-logic tests only; see below)
+- `pnpm --filter @forms/app dev` - `expo start --dev-client`
+- `pnpm --filter @forms/app typecheck` - `tsc --noEmit`
+- `pnpm --filter @forms/app test` - `vitest run` (pure-logic tests only; see below)
 
 ## Testing approach (deviation from the original jest-expo plan)
 

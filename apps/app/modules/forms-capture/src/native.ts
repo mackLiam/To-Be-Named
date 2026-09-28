@@ -11,8 +11,8 @@
 
 import { requireOptionalNativeModule } from 'expo-modules-core';
 
-import type { ZellsCaptureNativeModule } from './types';
+import type { FormsCaptureNativeModule } from './types';
 
 /** The native module, or null on any platform/build without it linked. */
-export const ZellsCaptureNative =
-  requireOptionalNativeModule<ZellsCaptureNativeModule>('ZellsCapture');
+export const FormsCaptureNative =
+  requireOptionalNativeModule<FormsCaptureNativeModule>('FormsCapture');

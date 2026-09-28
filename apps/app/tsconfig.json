@@ -2,7 +2,10 @@
   "extends": ["../../tsconfig.base.json", "expo/tsconfig.base"],
   "compilerOptions": {
     "strict": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    // app.config.ts imports packages/shared/src/brand.ts by path; Expo evaluates
+    // the config in Node, which only resolves the file with its extension.
+    "allowImportingTsExtensions": true
   },
   "include": [
     "app.config.ts",

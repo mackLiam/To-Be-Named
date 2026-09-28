@@ -15,10 +15,10 @@ interface ButtonProps extends PropsWithChildren {
  * A rectangle, always - one radius token, no pill shape (banned look #3).
  *
  * Variant contrast (see src/theme/tokens.test.ts for the checked ratios):
- * - primary: orange fill, navy text - 5.8:1, passes AA.
- * - secondary: navy fill, white text - 16.5:1.
- * - outline: white fill, navy border and text - for tertiary actions.
- * Orange is never used as text color on a white background in this file.
+ * - primary: action (brick 600) fill, yellow text - 4.7:1, passes AA.
+ * - secondary: stud brown fill, yellow text - 8.8:1.
+ * - outline: yellow fill, brown border and text - for tertiary actions.
+ * Brand brick 500 and bright brick are never label colors in this file.
  */
 export function Button({ children, onPress, variant = 'primary', disabled = false }: ButtonProps) {
   return (
@@ -57,18 +57,18 @@ const styles = StyleSheet.create({
 
 const VARIANT_CONTAINER: Record<Variant, object> = {
   primary: { backgroundColor: colors.action },
-  secondary: { backgroundColor: colors.textPrimary },
+  secondary: { backgroundColor: colors.surfaceDark },
   outline: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.textPrimary },
 };
 
 const PRESSED_CONTAINER: Record<Variant, object> = {
   primary: { backgroundColor: colors.actionPressed },
-  secondary: { backgroundColor: colors.navy[700] },
+  secondary: { backgroundColor: colors.brown[700] },
   outline: { backgroundColor: colors.surfaceMuted },
 };
 
 const VARIANT_LABEL: Record<Variant, object> = {
-  primary: { color: colors.textPrimary },
-  secondary: { color: colors.white },
+  primary: { color: colors.onAction },
+  secondary: { color: colors.onDark },
   outline: { color: colors.textPrimary },
 };

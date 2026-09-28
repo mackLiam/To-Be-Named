@@ -1,4 +1,4 @@
-# Zells - 6-Month Execution Roadmap
+# FORMS - 6-Month Execution Roadmap
 
 **Status:** v2 · **Window:** July 2026 - December 2026 · **Author:** Liam Mackenzie (with Claude)
 **v2 (2026-07-06):** starting point updated to the current repo, every week expanded
@@ -47,7 +47,7 @@ Built, tested, committed:
   sweep with audit logging, Dockerfile. Never run against a real scan or real
   Onshape.
 - **`apps/app`:** Expo Router universal app skeleton, five tabs, brand design
-  system, `zells-capture` native module scaffold with a typed TS surface,
+  system, `forms-capture` native module scaffold with a typed TS surface,
   guided capture flow wired into the Scan tab behind `isCaptureSupported()`,
   lazy Supabase client with fake-data fallback. Never built as a dev client,
   never run against a real backend.
@@ -112,9 +112,9 @@ validation, print validation, compliance position, catalog entry).
 
 | Product | What it is | Enters the plan | Purchasable target |
 |---|---|---|---|
-| **Zells Club** (collaborator's existing model) | Balanced default guard | Now; it IS Phase 0 | Soft launch, Month 5 |
-| **Zells Pro** | Minimal-coverage, low-profile guard for players who want the smallest guard allowed | Design brief with collaborator Month 3; model work Month 4-5 | Month 6 public launch if checklist passes, else Q1 2027 |
-| **Zells Junior Max** | Extended-coverage youth guard; the "parents feel safe" product | Design brief Month 4 (informed by compliance findings); model work Month 5-6 | Q1 2027 |
+| **FORMS Club** (collaborator's existing model) | Balanced default guard | Now; it IS Phase 0 | Soft launch, Month 5 |
+| **FORMS Pro** | Minimal-coverage, low-profile guard for players who want the smallest guard allowed | Design brief with collaborator Month 3; model work Month 4-5 | Month 6 public launch if checklist passes, else Q1 2027 |
+| **FORMS Junior Max** | Extended-coverage youth guard; the "parents feel safe" product | Design brief Month 4 (informed by compliance findings); model work Month 5-6 | Q1 2027 |
 | **S/M/L presets** (per model) | Canonical 25-value sets stored as data; cacheable STLs; no-scan SKU | Preset infrastructure Month 6; first preset SKUs (Club) Month 6 / Q1 2027 | Q1 2027 |
 
 Standing rules for all product-line work:
@@ -158,14 +158,14 @@ Track A - CAD contract:
   Contract-first rule applies: the JSON shape is frozen before either side
   merges.
 - [ ] Decision to force this week: does the model live in the collaborator's
-  paid seat or does Zells need its own Standard seat? (DESIGN.md §7 vendor
+  paid seat or does FORMS need its own Standard seat? (DESIGN.md §7 vendor
   risk: push for a company-owned copy either way.)
 
 Track B - capture build:
 
 - [ ] Enroll in the Apple Developer Program (processing can take days; do it
   first, before anything else on this track).
-- [x] TS surface of `zells-capture` scaffolded; guided capture flow wired
+- [x] TS surface of `forms-capture` scaffolded; guided capture flow wired
   into the Scan tab behind `isCaptureSupported()`.
 - [ ] Implement the Swift side as an Expo config plugin: `ObjectCaptureSession`
   for guided capture, `PhotogrammetrySession` for on-device reconstruction,
@@ -389,7 +389,7 @@ an STL in the bucket, and a replayed webhook does nothing twice.
 - [ ] Upgrade Supabase to Pro before real customer data (backups, PITR).
 - [ ] Dress rehearsal: pay real money on your own card, receive the printed
   guard in the mail. Note every rough edge; that list is Month 4's backlog.
-- [ ] Product line: write the **Zells Pro design brief** with the collaborator
+- [ ] Product line: write the **FORMS Pro design brief** with the collaborator
   (kick off only; model work is Month 4-5). Contents: target silhouette,
   weight target, how the model derives its smaller coverage from the same 25
   inputs, and the open coverage-floor question flagged as pending the
@@ -416,7 +416,7 @@ the legal/privacy story is real. This month is UX and trust, not features.
 - [ ] Every plausibility-gate failure reason maps to one human instruction
   (a `gate → copy` table in the app, tested). No raw error strings to users.
 - [ ] Feed September's PostHog scan-failure data into the guidance copy.
-- [ ] UI pass with zells-designer standards: this flow is the product's first
+- [ ] UI pass with forms-designer standards: this flow is the product's first
   impression; no AI-slop layouts.
 - [ ] Find the lawyer this week (needed in week 14, and lawyers have lead
   times).
@@ -484,7 +484,7 @@ instead of at the last minute.
   email capture. This validates demand for both tiers before their model
   work finishes, with zero pipeline cost.
 - [ ] SEO basics, OpenGraph, App Store link placeholder. Brand rules apply
-  (white/orange/navy, Outfit/Manrope).
+  (card yellow, brick red, stud brown; Outfit/Manrope).
 
 ### Week 18 (Nov 8-14): App Store submission
 
@@ -546,7 +546,7 @@ and honest data on what Q1 2027 should be.
 - [ ] Track the three numbers that decide everything next: scan success rate,
   order conversion from successful scan, per-order pipeline latency (the
   Onshape ceiling, DESIGN.md §7).
-- [ ] **Zells Pro launch attempt:** run the full per-model checklist
+- [ ] **FORMS Pro launch attempt:** run the full per-model checklist
   (DESIGN.md §7a.4): sweep, 3+ leg fit validation from the beta cohort's
   stored measurements plus fresh prints, print validation, compliance
   position, catalog entry with its own `cad_model` descriptor. If any item
@@ -694,7 +694,7 @@ Update at each month boundary.
   EXTRACTION_VERSION 0.2.0). Dev environment verified end to end (pnpm via
   corepack shim, all JS and Python suites green). New idea logged: S/M/L
   standard-size presets derived from the parametric model.
-- **2026-07-06:** Roadmap v2. Progress since v1: zells-capture TS scaffold and
+- **2026-07-06:** Roadmap v2. Progress since v1: forms-capture TS scaffold and
   guided capture flow in the Scan tab, raw-mesh retention sweep with audit
   logging, queue-helper execute revoked from public, Next.js scaffold with
   landing page and admin logic layer, CAD descriptor contract started in

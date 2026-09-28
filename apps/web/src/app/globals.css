@@ -1,38 +1,56 @@
 /*
- * Zells web design tokens, mirrored from apps/app/src/theme/tokens.ts so the
+ * FORMS web design tokens, mirrored from apps/app/src/theme/tokens.ts so the
  * marketing site, the product app, and the admin panel read as one brand.
- * Brand system: white, orange, navy. Nothing else as a brand color. Grays are
- * navy-tinted neutrals, never pure gray. One radius value. Big type jumps.
+ * Values and the contrast ratio of every text pairing are asserted in
+ * apps/app/src/theme/tokens.test.ts; change both files in lockstep.
+ * Brand system: card yellow, brick, stud brown, bright brick. No white.
+ * Neutrals are stud brown tinted toward yellow, never pure gray. One radius.
  *
  * Font family variables (--font-display, --font-body) are injected by
  * next/font in layout.tsx so the fonts are self-hosted, not fetched at runtime.
  */
 
 :root {
-  /* Navy: the anchor. Ink, dark sections, primary text. */
-  --navy-900: #0b1f3a;
-  --navy-700: #48576b;
-  --navy-500: #798493;
-  --navy-300: #aab1ba;
-  --navy-100: #dadde1;
-  --navy-50: #f0f2f3;
+  /* Card yellow: the field. */
+  --yellow: #edd27a;
 
-  /* Orange: the action color. Used sparingly. */
-  --orange-500: #ff6b1a;
-  --orange-600: #e85a0c;
+  /* Stud brown: the anchor. 700/500 are text-safe on yellow; 300 and below
+   * are non-text only (borders, disabled, surfaces). 100 is muted text on 900. */
+  --brown-900: #3a2e26;
+  --brown-700: #4c3e2e;
+  --brown-500: #5e4f37;
+  --brown-300: #948050;
+  --brown-100: #c0a965;
+  --brown-50: #e2c875;
 
-  --white: #ffffff;
-  --danger: #b3261e;
+  /* Brick: 500 is the brand hex (wordmark, large display type, graphics).
+   * It fails 4.5:1 with yellow, so 600 is the action fill and small action
+   * text; 700 is pressed. */
+  --brick-500: #b0362c;
+  --brick-600: #9e352b;
+  --brick-700: #8d342a;
+
+  /* Bright brick: on stud brown only, large text and graphics only. */
+  --bright-brick: #e0513f;
+
+  /* Failure states only: dark oxblood, kept distinct from brand brick. */
+  --danger: #7d1d2c;
 
   /* Semantic aliases. */
-  --bg: var(--white);
-  --surface-muted: var(--navy-50);
-  --text-primary: var(--navy-900);
-  --text-secondary: var(--navy-700);
-  --text-tertiary: var(--navy-500);
-  --border: var(--navy-100);
-  --action: var(--orange-500);
-  --action-pressed: var(--orange-600);
+  --bg: var(--yellow);
+  --surface-muted: var(--brown-50);
+  --text-primary: var(--brown-900);
+  --text-secondary: var(--brown-700);
+  --text-tertiary: var(--brown-500);
+  --border: var(--brown-100);
+  --disabled: var(--brown-300);
+  --action: var(--brick-600);
+  --action-pressed: var(--brick-700);
+  --on-action: var(--yellow);
+  --surface-dark: var(--brown-900);
+  --on-dark: var(--yellow);
+  --on-dark-muted: var(--brown-100);
+  --accent-on-dark: var(--bright-brick);
 
   /* One radius, everywhere. Rectangles, not pills. */
   --radius: 4px;

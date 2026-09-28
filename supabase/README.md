@@ -1,6 +1,6 @@
 # Supabase database layer
 
-Schema, RLS policies, and storage config for Zells. Source of truth for
+Schema, RLS policies, and storage config for FORMS. Source of truth for
 architecture and rationale is `docs/DESIGN.md`, sections 6, 8, and 9. This
 README covers only how to apply and operate this directory.
 

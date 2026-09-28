@@ -1,5 +1,5 @@
 /* Marketing placeholder. Editorial, not SaaS-template: asymmetric hero, big
- * type jumps, rules instead of shadowed cards, orange used only as an accent. */
+ * type jumps, rules instead of shadowed cards, brick used only as an accent. */
 
 .page {
   min-height: 100vh;
@@ -10,18 +10,16 @@
 /* Top bar */
 .topbar {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   padding: var(--space-md) var(--space-lg);
-  background: var(--navy-900);
-  color: var(--white);
+  background: var(--surface-dark);
+  color: var(--on-dark);
 }
 
 .wordmark {
-  font-family: var(--font-display-stack);
-  font-weight: 800;
-  font-size: 22px;
-  letter-spacing: 0.12em;
+  height: 22px;
+  width: auto;
 }
 
 .status {
@@ -30,16 +28,16 @@
   font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--navy-900);
-  background: var(--white);
+  color: var(--surface-dark);
+  background: var(--on-dark);
   padding: 6px 10px;
   border-radius: var(--radius);
 }
 
-/* Hero: navy band, left-aligned, split into copy + flat geometry panel */
+/* Hero: brown band, left-aligned, split into copy + flat geometry panel */
 .hero {
-  background: var(--navy-900);
-  color: var(--white);
+  background: var(--surface-dark);
+  color: var(--on-dark);
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: var(--space-xl);
@@ -57,7 +55,7 @@
   font-size: 13px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--orange-500);
+  color: var(--on-dark-muted);
   margin: 0 0 var(--space-md);
 }
 
@@ -68,25 +66,26 @@
   margin: 0;
 }
 
+/* Bright brick is 3.4:1 on brown: display sizes only, never body text. */
 .headline .accent {
-  color: var(--orange-500);
+  color: var(--accent-on-dark);
 }
 
 .subhead {
   font-family: var(--font-body-stack);
   font-size: clamp(17px, 2.2vw, 21px);
   line-height: 1.5;
-  color: var(--navy-100);
+  color: var(--on-dark-muted);
   margin: var(--space-lg) 0 0;
   max-width: 46ch;
 }
 
-/* Flat geometry echoing a shin guard contour: navy blocks + one orange strut.
+/* Flat geometry echoing a shin guard contour: brown blocks + one bright brick strut.
  * No gradients, no glow, no drop shadows. */
 .guard {
   position: relative;
   aspect-ratio: 3 / 4;
-  border: 2px solid var(--navy-500);
+  border: 2px solid var(--brown-500);
   border-radius: var(--radius);
   overflow: hidden;
 }
@@ -94,7 +93,7 @@
 .guardShell {
   position: absolute;
   inset: 14% 30%;
-  background: var(--white);
+  background: var(--yellow);
   border-radius: 40% 40% 46% 46% / 18% 18% 10% 10%;
 }
 
@@ -105,7 +104,7 @@
   left: 50%;
   width: 10px;
   transform: translateX(-50%);
-  background: var(--orange-500);
+  background: var(--accent-on-dark);
 }
 
 .guardRib {
@@ -113,7 +112,7 @@
   left: 32%;
   right: 32%;
   height: 2px;
-  background: var(--navy-300);
+  background: var(--brown-300);
 }
 
 /* Steps: editorial numbered rows separated by rules, not a card grid */
@@ -146,12 +145,13 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Brick 500 is 4.1:1 on yellow: fine at this display size only. */
 .stepNum {
   font-family: var(--font-display-stack);
   font-weight: 800;
   font-size: 52px;
   line-height: 1;
-  color: var(--orange-500);
+  color: var(--brick-500);
 }
 
 .stepTitle {
@@ -206,8 +206,8 @@
 /* Footer */
 .footer {
   margin-top: auto;
-  background: var(--navy-900);
-  color: var(--navy-300);
+  background: var(--surface-dark);
+  color: var(--on-dark-muted);
   padding: var(--space-xl) var(--space-lg);
   display: flex;
   flex-wrap: wrap;

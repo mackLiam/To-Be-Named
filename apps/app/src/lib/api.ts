@@ -1,6 +1,7 @@
 import type { ImageSourcePropType } from 'react-native';
 
-import type { OrderStatus, ScanStatus } from '@zells/shared';
+import { BRAND_NAME } from '@forms/shared/brand';
+import type { OrderStatus, ScanStatus } from '@forms/shared';
 
 import guardKeeper from '../../assets/products/guard-keeper.jpg';
 import guardPair from '../../assets/products/guard-pair.jpg';
@@ -59,21 +60,21 @@ export interface Product {
 const DEMO_PRODUCTS: Product[] = [
   {
     id: 'demo-custom-guard',
-    name: 'Zells Custom Shin Guard',
+    name: `${BRAND_NAME} Custom Shin Guard`,
     description: 'Printed to your scan. One piece, vented shell, no strap gap at the ankle.',
     priceCents: 8900,
     image: guardSingle,
   },
   {
     id: 'demo-custom-guard-pair',
-    name: 'Zells Custom Shin Guard (pair)',
+    name: `${BRAND_NAME} Custom Shin Guard (pair)`,
     description: 'Both legs scanned separately, so the left is not a mirror of the right.',
     priceCents: 16900,
     image: guardPair,
   },
   {
     id: 'demo-keeper-guard',
-    name: 'Zells Keeper Guard',
+    name: `${BRAND_NAME} Keeper Guard`,
     description: 'Taller shell and a softer liner for goalkeepers taking shots at close range.',
     priceCents: 10900,
     image: guardKeeper,
@@ -89,14 +90,14 @@ const DEMO_SCANS: Scan[] = [
 const DEMO_ORDERS: Order[] = [
   {
     id: 'demo-order-1',
-    productName: 'Zells Custom Shin Guard (pair)',
+    productName: `${BRAND_NAME} Custom Shin Guard (pair)`,
     status: 'in_production',
     totalCents: 16900,
     createdAt: '2026-08-29T10:02:00.000Z',
   },
   {
     id: 'demo-order-2',
-    productName: 'Zells Custom Shin Guard',
+    productName: `${BRAND_NAME} Custom Shin Guard`,
     status: 'delivered',
     totalCents: 8900,
     createdAt: '2026-07-14T15:37:00.000Z',

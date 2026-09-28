@@ -1,61 +1,86 @@
 /**
- * Zells design tokens - the single source of truth for color, spacing, radius,
+ * FORMS design tokens - the single source of truth for color, spacing, radius,
  * and type. Every screen imports from here; nothing in app/ or src/ references
  * a raw hex value, a raw pixel spacing number, or a font family string that
- * did not come from this file. See .claude/agents/zells-designer.md for the
+ * did not come from this file. See .claude/agents/forms-designer.md for the
  * brand rules this file encodes.
  *
- * Brand system: white, orange, navy. Nothing else as a brand color. Grays are
- * navy-tinted neutrals (mixed toward white), never pure #888-style gray.
+ * Brand system (designer's colors.txt, "5a Faded Card"): card yellow, brick
+ * red, stud brown, bright brick. Nothing else as a brand color; no white.
+ * Neutrals are stud brown tinted toward card yellow, never pure gray.
+ * Every text/background pair used below is asserted in tokens.test.ts.
  */
 
 // ---------------------------------------------------------------------------
 // Color
 // ---------------------------------------------------------------------------
 
+/** Card yellow: the field. Main background everywhere light. */
+const yellow = '#EDD27A';
+
 /**
- * Navy is the anchor: headers, primary text on white, dark sections.
- * #0B1F3A chosen deliberately - a near-black navy (not a mid-tone "SaaS
- * blue") so it reads as ink, not as an accent color competing with orange.
+ * Stud brown is the anchor: primary text on yellow, dark sections. The scale
+ * is a linear mix of 900 toward card yellow at uneven stops: yellow is
+ * mid-luminance, so only the first ~20% of the ramp still passes AA as text. 700 and 500 sit inside that band (text); 300 and
+ * below are non-text only (borders, rules, disabled, surfaces).
  */
-const navy = {
-  900: '#0B1F3A', // base navy - primary text on white, dark section backgrounds
-  700: '#48576B', // secondary text on white, muted headings on navy
-  500: '#798493', // tertiary text, icons, dividers on white
-  300: '#AAB1BA', // disabled text, hairline borders on white
-  100: '#DADDE1', // borders, input outlines, subtle section separators
-  50: '#F0F2F3', // faint section backgrounds (never pure white-on-white seams)
+const brown = {
+  900: '#3A2E26', // base, 0% - primary text on yellow, dark section backgrounds
+  700: '#4C3E2E', // 10% - secondary text (6.9:1 on yellow), pressed dark fill
+  500: '#5E4F37', // 20% - tertiary text (5.3:1 on yellow, 4.8:1 on brown 50)
+  300: '#948050', // 50% - disabled text, strong hairlines; never body text
+  100: '#C0A965', // 75% - borders on yellow; muted text on brown 900 (5.7:1)
+  50: '#E2C875', // 94% - muted section surface on the yellow field
 } as const;
 
 /**
- * Orange is the action color: primary buttons, key highlights, active tab
- * state. #FF6B1A chosen deliberately - a hot, saturated orange with enough
- * red in it to stay warm (not a candy/pastel orange). Used sparingly: large
- * text, buttons with white/navy text, and accents only. Never small body
- * text on white (fails contrast; see tokens.test.ts contrast check).
+ * Brick red. 500 is the pinned brand hex: wordmark letters, large display
+ * accents, graphic fills with no small text. It is 4.1:1 against yellow, so it
+ * fails AA for normal text in either direction (brick text on yellow, yellow
+ * text on brick). 600 is brick mixed 15% toward stud brown, the smallest step
+ * that clears 4.5:1 with yellow: it is the action fill (buttons, banners,
+ * badges) and the color of small action text. 700 (30%) is the pressed state.
  */
-const orange = {
-  500: '#FF6B1A', // default: buttons, active states, key accents
-  600: '#E85A0C', // pressed/hover state, slightly darker for feedback
+const brick = {
+  500: '#B0362C',
+  600: '#9E352B',
+  700: '#8D342A',
 } as const;
 
-const white = '#FFFFFF';
+/**
+ * Bright brick: accent on stud brown ONLY (3.4:1 there, large text and
+ * graphics only; 2.6:1 on yellow, so never on the light field at any size).
+ */
+const brightBrick = '#E0513F';
 
 export const colors = {
-  navy,
-  orange,
-  white,
+  yellow,
+  brown,
+  brick,
+  brightBrick,
   // Semantic aliases - prefer these in screens over the raw scale where the
   // usage is generic, so intent stays legible in component code.
-  background: white,
-  surfaceMuted: navy[50],
-  textPrimary: navy[900],
-  textSecondary: navy[700],
-  textTertiary: navy[500],
-  border: navy[100],
-  action: orange[500],
-  actionPressed: orange[600],
-  danger: '#B3261E', // used only for scan/order failure states, never decorative
+  background: yellow,
+  surfaceMuted: brown[50],
+  textPrimary: brown[900],
+  textSecondary: brown[700],
+  textTertiary: brown[500],
+  border: brown[100],
+  disabled: brown[300],
+  action: brick[600],
+  actionPressed: brick[700],
+  onAction: yellow,
+  surfaceDark: brown[900],
+  onDark: yellow,
+  onDarkMuted: brown[100],
+  accentOnDark: brightBrick,
+  /**
+   * Scan/order failure states only, never decorative. A red here would read
+   * as the brand (brick), so failure is a dark cool oxblood: 1.6:1 darker than
+   * brick 500 and shifted toward crimson, 6.8:1 on yellow. Failure copy must
+   * also say it failed in words; color is never the only signal.
+   */
+  danger: '#7D1D2C',
 } as const;
 
 // ---------------------------------------------------------------------------

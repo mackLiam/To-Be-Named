@@ -1,4 +1,4 @@
-import { MEASUREMENT_KEYS } from '@zells/shared';
+import { MEASUREMENT_KEYS } from '@forms/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { GateResult } from './types';

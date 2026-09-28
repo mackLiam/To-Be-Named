@@ -1,4 +1,4 @@
-# Zells Runbook
+# FORMS Runbook
 
 Operational playbook for the deployed system (ROADMAP.md week 19 artifact,
 scaffolded early; fill each section in with real commands and thresholds as
@@ -35,7 +35,7 @@ months 2-5).
 
 - Notice: same scan_id failing measure step across retries.
 - Diagnose: download via break-glass admin path (audit-logged), run
-  zells-extract on it locally, check which gate fails and why.
+  forms-extract on it locally, check which gate fails and why.
 - Fix: if capture-side: user gets rescan guidance; if extraction-side: fix
   with a regression test and, with consent, add the mesh to the golden
   suite (tests/fixtures, provenance in docs/accuracy-log.md).

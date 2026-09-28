@@ -30,7 +30,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ScanStatus } from '@zells/shared';
+import type { ScanStatus } from '@forms/shared';
 
 import { getSupabaseClient, hasSupabaseConfig } from './supabase';
 
@@ -64,7 +64,7 @@ const USE_FAKE_DATA = !hasSupabaseConfig();
 
 /** Which leg the scan is of. Matches the scans.leg CHECK constraint
  * ('L','R') in supabase/migrations/0001_schema.sql. Defined locally rather than
- * in @zells/shared: it is app-only today and promotion into the contract
+ * in @forms/shared: it is app-only today and promotion into the contract
  * package is cheap later (packages/shared/CLAUDE.md: keep single-consumer
  * things in the app). */
 export type Leg = 'L' | 'R';

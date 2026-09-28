@@ -4,7 +4,7 @@ import ExpoModulesCore
  Typed exceptions for the capture module.
 
  These map to the CaptureErrorCode union on the JS side (see
- modules/zells-capture/src/errors.ts). expo-modules-core surfaces a thrown
+ modules/forms-capture/src/errors.ts). expo-modules-core surfaces a thrown
  `Exception` to JS as a rejected promise carrying `.code` and `.message`; the JS
  `mapNativeError` reads `.code` and expects one of the stable ERR_* strings
  below.

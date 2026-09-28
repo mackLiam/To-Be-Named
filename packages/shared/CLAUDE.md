@@ -10,7 +10,7 @@ gotcha 2 first.
 - TypeScript types and validators derived from that schema.
 - State enums for scans/orders/pipeline jobs (mirroring the SQL state machine).
 - The CAD model descriptor type + validator (mirroring the Python validator in
-  services/pipeline/src/zells_pipeline/cad/).
+  services/pipeline/src/forms_pipeline/cad/).
 
 What does not belong here: UI helpers, fetch wrappers, anything platform
 specific, anything only one consumer uses. When in doubt, keep it in the app
@@ -70,5 +70,5 @@ that is what makes the eventual 1.1.0 survivable.
   carefully as the schema itself. No convenience helpers "while you are
   here".
 - Verify before returning (from repo root):
-  `pnpm --filter @zells/shared build && pnpm --filter @zells/shared typecheck && pnpm --filter @zells/shared test && pnpm format:check`
+  `pnpm --filter @forms/shared build && pnpm --filter @forms/shared typecheck && pnpm --filter @forms/shared test && pnpm format:check`
   Return the output verbatim. Leave all changes uncommitted.

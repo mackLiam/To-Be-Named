@@ -1,9 +1,9 @@
 {
-  "name": "zells",
+  "name": "forms",
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
     "build": "turbo run build",

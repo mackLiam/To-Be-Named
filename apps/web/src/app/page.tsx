@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 
+import { BRAND_NAME } from '@forms/shared/brand';
+
 import styles from './page.module.css';
 
 export const metadata: Metadata = {
-  title: 'Zells - shin guards molded to your leg',
+  title: `${BRAND_NAME} - shin guards molded to your leg`,
   description:
     'Custom-fit, 3D-printed soccer shin guards. Scan your leg with your iPhone, we generate the fit, we print and ship it.',
 };
@@ -12,7 +14,7 @@ const steps = [
   {
     n: '1',
     title: 'Scan your leg',
-    body: 'Open the Zells app and follow the guided capture. Your iPhone builds a precise 3D scan of your lower leg in about a minute. No tape measure, no guessing.',
+    body: `Open the ${BRAND_NAME} app and follow the guided capture. Your iPhone builds a precise 3D scan of your lower leg in about a minute. No tape measure, no guessing.`,
   },
   {
     n: '2',
@@ -29,7 +31,7 @@ const steps = [
 const specs = [
   { term: 'Device', detail: 'iPhone 12 Pro or later Pro model (LiDAR required)' },
   { term: 'iOS', detail: 'iOS 17 or later' },
-  { term: 'Where', detail: 'The Zells iPhone app. Android and web ordering come later.' },
+  { term: 'Where', detail: `The ${BRAND_NAME} iPhone app. Android and web ordering come later.` },
   { term: 'Time', detail: 'About a minute to scan each leg.' },
 ];
 
@@ -37,7 +39,12 @@ export default function HomePage() {
   return (
     <main className={styles.page}>
       <header className={styles.topbar}>
-        <span className={styles.wordmark}>ZELLS</span>
+        {/* eslint-disable-next-line @next/next/no-img-element -- static SVG wordmark, nothing to optimize */}
+        <img
+          src="/brand/wordmark-reverse-for-brown.svg"
+          alt={BRAND_NAME}
+          className={styles.wordmark}
+        />
         <span className={styles.status}>Coming soon</span>
       </header>
 
@@ -88,7 +95,12 @@ export default function HomePage() {
       </section>
 
       <footer className={styles.footer}>
-        <span className={styles.wordmark}>ZELLS</span>
+        {/* eslint-disable-next-line @next/next/no-img-element -- static SVG wordmark, nothing to optimize */}
+        <img
+          src="/brand/wordmark-reverse-for-brown.svg"
+          alt={BRAND_NAME}
+          className={styles.wordmark}
+        />
         <p className={styles.footerNote}>
           We are building the scan-to-print pipeline now. No signup yet: check back for the launch.
         </p>

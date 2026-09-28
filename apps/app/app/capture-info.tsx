@@ -2,6 +2,8 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
+import { BRAND_NAME } from '@forms/shared/brand';
+
 import { Body } from '../src/components/Body';
 import { Button } from '../src/components/Button';
 import { Heading } from '../src/components/Heading';
@@ -15,17 +17,15 @@ import { colors, spacing } from '../src/theme/tokens';
  * Pre-capture info screen and the availability gate in front of the guided
  * flow (app/capture.tsx). Runs getCaptureAvailability() on mount: a supported
  * device gets the start button, an unsupported one gets the reason. Capture
- * itself still only runs inside the Zells dev client on a physical LiDAR
+ * itself still only runs inside the FORMS dev client on a physical LiDAR
  * iPhone, never in Expo Go (CLAUDE.md gotcha 3, docs/DESIGN.md section 5).
  */
 /** Copy per unavailability reason. 'module' is a build problem (Expo Go, or
  * autolinking dropped the module); 'device' is a hardware limit. */
 const UNAVAILABLE_COPY: Record<CaptureAvailability['reason'], string> = {
   ok: '',
-  platform:
-    'Guided capture runs on iPhone only. Open Zells on a LiDAR iPhone (12 Pro or later Pro model) to scan; everything else works here.',
-  module:
-    'This build does not include the capture module. Open Zells in the dev client (an EAS or local dev build), not Expo Go.',
+  platform: `Guided capture runs on iPhone only. Open ${BRAND_NAME} on a LiDAR iPhone (12 Pro or later Pro model) to scan; everything else works here.`,
+  module: `This build does not include the capture module. Open ${BRAND_NAME} in the dev client (an EAS or local dev build), not Expo Go.`,
   device:
     'This iPhone cannot run guided capture. It needs a LiDAR sensor (12 Pro or later Pro model) and iOS 17 or later.',
 };
@@ -52,8 +52,8 @@ export default function CaptureInfoScreen() {
       <View style={{ height: spacing.md }} />
       <Body>
         The guided scan uses Apple&apos;s ObjectCaptureSession through a native module built
-        specifically for Zells. It only runs inside the Zells dev client (an EAS build), never
-        inside Expo Go.
+        specifically for {BRAND_NAME}. It only runs inside the {BRAND_NAME} dev client (an EAS
+        build), never inside Expo Go.
       </Body>
       <Rule />
       {availability === null && (

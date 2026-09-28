@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { BRAND_NAME } from '@forms/shared/brand';
+
 import styles from './admin.module.css';
 import { AdminShell } from './AdminShell';
 import { StatusBadge } from './StatusBadge';
@@ -10,7 +12,7 @@ import { DEFAULT_PAGE_SIZE, parsePageParam } from '@/lib/pagination';
 import { formatDateTime, shortId, summarizeJobError } from '@/lib/view';
 
 export const metadata: Metadata = {
-  title: 'Pipeline queue - Zells admin',
+  title: `Pipeline queue - ${BRAND_NAME} admin`,
   robots: { index: false, follow: false },
 };
 

@@ -14,7 +14,7 @@ PYTHON        := python3.12
         check-node check-pnpm check-python check-venv
 
 help: ## Show this help
-	@echo "Zells - make targets:"
+	@echo "FORMS - make targets:"
 	@grep -E '^[a-zA-Z_-]+:.*## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
@@ -58,21 +58,21 @@ bootstrap: check-node check-python ## Install JS + Python deps, create pipeline 
 
 dev: ## Print how to start each dev server (run each in its own terminal)
 	@echo "Run one of these in its own terminal:"
-	@echo "  make dev-app        # Expo app (apps/app), pnpm --filter @zells/app dev"
-	@echo "  make dev-web        # Next.js site (apps/web), pnpm --filter @zells/web dev"
+	@echo "  make dev-app        # Expo app (apps/app), pnpm --filter @forms/app dev"
+	@echo "  make dev-web        # Next.js site (apps/web), pnpm --filter @forms/web dev"
 	@echo "  make dev-pipeline   # Python pipeline worker (services/pipeline), uvicorn --reload"
 
 dev-app: check-pnpm ## Run the Expo app dev server
-	pnpm --filter @zells/app dev
+	pnpm --filter @forms/app dev
 
 dev-web: check-pnpm ## Run the Next.js web dev server
-	pnpm --filter @zells/web dev
+	pnpm --filter @forms/web dev
 
 dev-pipeline: check-venv ## Run the pipeline worker (FastAPI, autoreload)
-	# Assumes the worker exposes a FastAPI app at zells_pipeline.api:app.
+	# Assumes the worker exposes a FastAPI app at forms_pipeline.api:app.
 	# If that module doesn't exist yet, fall back to:
-	#   $(VENV_BIN)/python -m zells_pipeline
-	$(VENV_BIN)/uvicorn zells_pipeline.api:app --reload --app-dir $(PIPELINE_DIR)/src
+	#   $(VENV_BIN)/python -m forms_pipeline
+	$(VENV_BIN)/uvicorn forms_pipeline.api:app --reload --app-dir $(PIPELINE_DIR)/src
 
 test: test-js test-py ## Run all tests (JS + Python)
 

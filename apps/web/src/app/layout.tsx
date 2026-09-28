@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { Manrope, Outfit } from 'next/font/google';
 
+import { BRAND_NAME } from '@forms/shared/brand';
+
 import './globals.css';
 
 // Self-hosted via next/font: fonts are downloaded and served from our own
@@ -21,9 +23,16 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: 'Zells - custom-fit shin guards',
+  title: `${BRAND_NAME} - custom-fit shin guards`,
   description:
     'Shin guards molded to your leg. Scan with your iPhone, we generate the fit, we print and ship it.',
+  icons: {
+    icon: [
+      { url: '/brand/icon-brick.svg', type: 'image/svg+xml' },
+      { url: '/brand/icon-brick-32.png', sizes: '32x32', type: 'image/png' },
+    ],
+    apple: '/brand/icon-brick-180.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

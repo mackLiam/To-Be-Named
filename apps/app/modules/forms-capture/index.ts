@@ -1,5 +1,5 @@
 /**
- * Zells capture module - public JS API.
+ * FORMS capture module - public JS API.
  *
  * Thin, safe wrapper over the Swift native module. Every function works on
  * every platform: where the native module is absent, isSupported() resolves
@@ -16,7 +16,7 @@
 import type { EventSubscription } from 'expo-modules-core';
 
 import { CaptureUnavailableError, mapNativeError } from './src/errors';
-import { ZellsCaptureNative } from './src/native';
+import { FormsCaptureNative } from './src/native';
 import type {
   CaptureResult,
   CaptureStateEvent,
@@ -37,12 +37,12 @@ export type {
   ReconstructOptions,
   ReconstructResult,
   ReconstructionProgressEvent,
-  ZellsCaptureNativeModule,
+  FormsCaptureNativeModule,
 } from './src/types';
 
 /** True when the native module is linked into the running binary. */
 export function isNativeModuleAvailable(): boolean {
-  return ZellsCaptureNative != null;
+  return FormsCaptureNative != null;
 }
 
 /**
@@ -52,13 +52,13 @@ export function isNativeModuleAvailable(): boolean {
  * src/lib/nativeCapture.ts layers Platform + policy on top of it.
  */
 export async function isSupported(): Promise<boolean> {
-  if (!ZellsCaptureNative) {
+  if (!FormsCaptureNative) {
     return false;
   }
   try {
     // Native side is an AsyncFunction (the SDK property is main-actor
     // isolated); any bridge error collapses into a plain false.
-    return Boolean(await ZellsCaptureNative.isSupported());
+    return Boolean(await FormsCaptureNative.isSupported());
   } catch {
     return false;
   }
@@ -70,13 +70,13 @@ export async function isSupported(): Promise<boolean> {
  * guided capture; rejects with ERR_CAPTURE_CANCELLED if they back out.
  */
 export async function startCapture(): Promise<CaptureResult> {
-  if (!ZellsCaptureNative) {
+  if (!FormsCaptureNative) {
     throw new CaptureUnavailableError(
       'Guided capture is unavailable on this device (native module not linked).',
     );
   }
   try {
-    return await ZellsCaptureNative.startCapture();
+    return await FormsCaptureNative.startCapture();
   } catch (error) {
     throw mapNativeError(error);
   }
@@ -88,13 +88,13 @@ export async function startCapture(): Promise<CaptureResult> {
  * Subscribe to progress via {@link addReconstructionProgressListener}.
  */
 export async function reconstruct(options: ReconstructOptions = {}): Promise<ReconstructResult> {
-  if (!ZellsCaptureNative) {
+  if (!FormsCaptureNative) {
     throw new CaptureUnavailableError(
       'Reconstruction is unavailable on this device (native module not linked).',
     );
   }
   try {
-    return await ZellsCaptureNative.reconstruct(options);
+    return await FormsCaptureNative.reconstruct(options);
   } catch (error) {
     throw mapNativeError(error);
   }
@@ -105,11 +105,11 @@ export async function reconstruct(options: ReconstructOptions = {}): Promise<Rec
  * native module is absent, since there is nothing to cancel.
  */
 export async function cancel(): Promise<void> {
-  if (!ZellsCaptureNative) {
+  if (!FormsCaptureNative) {
     return;
   }
   try {
-    await ZellsCaptureNative.cancel();
+    await FormsCaptureNative.cancel();
   } catch (error) {
     throw mapNativeError(error);
   }
@@ -122,18 +122,18 @@ const NOOP_SUBSCRIPTION: EventSubscription = { remove() {} };
 export function addCaptureStateListener(
   listener: (event: CaptureStateEvent) => void,
 ): EventSubscription {
-  if (!ZellsCaptureNative) {
+  if (!FormsCaptureNative) {
     return NOOP_SUBSCRIPTION;
   }
-  return ZellsCaptureNative.addListener('onCaptureStateChange', listener);
+  return FormsCaptureNative.addListener('onCaptureStateChange', listener);
 }
 
 /** Subscribe to reconstruction progress (0..1). */
 export function addReconstructionProgressListener(
   listener: (event: ReconstructionProgressEvent) => void,
 ): EventSubscription {
-  if (!ZellsCaptureNative) {
+  if (!FormsCaptureNative) {
     return NOOP_SUBSCRIPTION;
   }
-  return ZellsCaptureNative.addListener('onReconstructionProgress', listener);
+  return FormsCaptureNative.addListener('onReconstructionProgress', listener);
 }

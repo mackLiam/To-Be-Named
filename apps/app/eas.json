@@ -1,5 +1,5 @@
 {
-  // EAS Build / Submit configuration for the Zells product app.
+  // EAS Build / Submit configuration for the FORMS product app.
   // eas.json supports JSON-with-comments (EAS strips them). It is excluded from
   // Prettier (.prettierignore) so these comments survive format:check.
   //
