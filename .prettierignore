@@ -13,5 +13,7 @@ CLAUDE.md
 supabase/
 # eas.json uses JSON-with-comments (JSONC), which Prettier's json parser rejects.
 apps/app/eas.json
-# Canvas tool state and backups, machine-written.
+# Local-only, gitignored in nested .gitignore files Prettier does not read.
 .array/
+apps/app/ios/
+apps/app/android/

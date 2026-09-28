@@ -1,4 +1,4 @@
-# Environment / secrets — never commit
+# Environment / secrets: never commit
 .env
 .env.*
 !.env.example
@@ -53,7 +53,7 @@ venv/
 .ruff_cache/
 *.egg-info/
 
-# Large binary artifacts — meshes/STLs live in object storage, not git
+# Large binary artifacts: meshes/STLs live in object storage, not git
 # (small golden-file test fixtures are allowed via test fixture dirs)
 *.obj
 *.usdz
@@ -75,3 +75,6 @@ coverage/
 
 # Claude Code local settings (personal, not shared)
 .claude/settings.local.json
+
+# Canvas tool state (local only)
+.array/
