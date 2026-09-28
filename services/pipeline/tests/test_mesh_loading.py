@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from zells_pipeline.config import Settings
-from zells_pipeline.extraction.mesh_loading import MeshValidationError, load_mesh
+from forms_pipeline.config import Settings
+from forms_pipeline.extraction.mesh_loading import MeshValidationError, load_mesh
 
 
 def test_valid_synthetic_mesh_loads(frustum_obj_path: Path) -> None:

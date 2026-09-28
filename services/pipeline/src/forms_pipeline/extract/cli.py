@@ -9,8 +9,8 @@ are built from (see `scripts/make_synthetic_fixture.py` and
 `tests/fixtures/README.md`).
 
 Usage:
-    python -m zells_pipeline.extract <mesh-path> [--json]
-    zells-extract <mesh-path> [--json]
+    python -m forms_pipeline.extract <mesh-path> [--json]
+    forms-extract <mesh-path> [--json]
 
 Exit codes:
     0  mesh loaded, measured, and every plausibility gate passed
@@ -25,13 +25,13 @@ import json
 import sys
 from pathlib import Path
 
-from zells_pipeline.contract import MEASUREMENT_KEYS, SCHEMA_VERSION, validate_measurements
-from zells_pipeline.extraction.measure import (
+from forms_pipeline.contract import MEASUREMENT_KEYS, SCHEMA_VERSION, validate_measurements
+from forms_pipeline.extraction.measure import (
     EXTRACTION_VERSION,
     MeasurementError,
     extract_measurements,
 )
-from zells_pipeline.extraction.mesh_loading import MeshValidationError, load_mesh
+from forms_pipeline.extraction.mesh_loading import MeshValidationError, load_mesh
 
 EXIT_OK = 0
 EXIT_LOAD_OR_MEASURE_ERROR = 1
@@ -42,9 +42,9 @@ _NAME_WIDTH = max(len(key) for key in MEASUREMENT_KEYS)
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="zells-extract",
+        prog="forms-extract",
         description=(
-            "Load a mesh, run the Zells measurement extraction algorithm, and print the "
+            "Load a mesh, run the FORMS measurement extraction algorithm, and print the "
             "25-variable values plus plausibility-gate results."
         ),
     )
@@ -147,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run() -> None:
-    """Console-script entry point (`zells-extract`). See `main` for the testable core."""
+    """Console-script entry point (`forms-extract`). See `main` for the testable core."""
     raise SystemExit(main())
 
 

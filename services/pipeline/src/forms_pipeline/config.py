@@ -18,7 +18,7 @@ from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repo root is five levels up from this file:
-# services/pipeline/src/zells_pipeline/config.py -> zells_pipeline -> src ->
+# services/pipeline/src/forms_pipeline/config.py -> forms_pipeline -> src ->
 # pipeline -> services -> repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _DEFAULT_SCHEMA_PATH = _REPO_ROOT / "packages" / "shared" / "schema" / "measurements.schema.json"

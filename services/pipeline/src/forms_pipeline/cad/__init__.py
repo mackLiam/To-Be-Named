@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from zells_pipeline.cad.dispatch import (
+from forms_pipeline.cad.dispatch import (
     CadDispatcher,
     default_descriptor,
     resolve_descriptor,
 )
-from zells_pipeline.cad.model import CadModelDescriptor, DescriptorError
-from zells_pipeline.cad.providers import (
+from forms_pipeline.cad.model import CadModelDescriptor, DescriptorError
+from forms_pipeline.cad.providers import (
     CadProvider,
     DryRunProvider,
     OnshapeProvider,

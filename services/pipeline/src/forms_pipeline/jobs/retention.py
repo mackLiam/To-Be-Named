@@ -18,7 +18,7 @@ sweep. Idempotent by construction:
   is treated as success, not a failure, so a retry always converges.
 
 This module is invoked as a standalone entry point (`python -m
-zells_pipeline.jobs.retention`), not as a background thread inside the
+forms_pipeline.jobs.retention`), not as a background thread inside the
 always-on worker process (see `jobs/runner.py`'s `run_forever`). Retention is
 a daily-cadence batch maintenance task, not a queue consumer: running it as
 a separate process invocation lets it be scheduled independently (a nightly
@@ -34,8 +34,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
-from zells_pipeline.config import Settings, get_settings
-from zells_pipeline.jobs.runner import StorageClient, SupabaseStorageClient
+from forms_pipeline.config import Settings, get_settings
+from forms_pipeline.jobs.runner import StorageClient, SupabaseStorageClient
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ class PostgresRetentionStore:
 
 
 # ---------------------------------------------------------------------------
-# Entry point: `python -m zells_pipeline.jobs.retention`.
+# Entry point: `python -m forms_pipeline.jobs.retention`.
 # ---------------------------------------------------------------------------
 
 

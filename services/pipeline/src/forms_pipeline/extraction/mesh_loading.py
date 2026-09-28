@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from zells_pipeline.config import Settings, get_settings
+from forms_pipeline.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 

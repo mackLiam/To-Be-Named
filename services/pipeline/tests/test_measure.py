@@ -4,8 +4,8 @@ from collections.abc import Callable
 
 import trimesh
 
-from zells_pipeline.contract import MEASUREMENT_KEYS
-from zells_pipeline.extraction.measure import extract_measurements
+from forms_pipeline.contract import MEASUREMENT_KEYS
+from forms_pipeline.extraction.measure import extract_measurements
 
 DIM_TOLERANCE_MM = 3.0  # polygon-approximation slack for a 64-sided ellipse
 

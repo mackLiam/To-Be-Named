@@ -26,9 +26,9 @@ from typing import Protocol, runtime_checkable
 
 import httpx
 
-from zells_pipeline.cad.model import CadModelDescriptor, DescriptorError
-from zells_pipeline.config import Settings, get_settings
-from zells_pipeline.onshape.client import OnshapeClient, OnshapeRef
+from forms_pipeline.cad.model import CadModelDescriptor, DescriptorError
+from forms_pipeline.config import Settings, get_settings
+from forms_pipeline.onshape.client import OnshapeClient, OnshapeRef
 
 logger = logging.getLogger(__name__)
 

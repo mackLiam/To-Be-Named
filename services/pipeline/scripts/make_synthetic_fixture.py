@@ -35,8 +35,8 @@ from conftest import (  # noqa: E402 - path setup above must run first
     make_tapered_frustum,
 )
 
-from zells_pipeline.contract import validate_measurements  # noqa: E402
-from zells_pipeline.extraction.measure import extract_measurements  # noqa: E402
+from forms_pipeline.contract import validate_measurements  # noqa: E402
+from forms_pipeline.extraction.measure import extract_measurements  # noqa: E402
 
 FIXTURES_DIR = _TESTS_DIR / "fixtures"
 FIXTURE_NAME = "synthetic-frustum"

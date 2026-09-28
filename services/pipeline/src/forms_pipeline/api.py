@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from zells_pipeline import __version__
-from zells_pipeline.config import get_settings
-from zells_pipeline.contract import SCHEMA_VERSION
+from forms_pipeline import __version__
+from forms_pipeline.config import get_settings
+from forms_pipeline.contract import SCHEMA_VERSION
 
-app = FastAPI(title="zells-pipeline", version=__version__)
+app = FastAPI(title="forms-pipeline", version=__version__)
 
 
 @app.get("/healthz")

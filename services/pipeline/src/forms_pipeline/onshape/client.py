@@ -21,8 +21,8 @@ from dataclasses import dataclass
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from zells_pipeline.config import Settings, get_settings
-from zells_pipeline.contract import MEASUREMENT_KEYS
+from forms_pipeline.config import Settings, get_settings
+from forms_pipeline.contract import MEASUREMENT_KEYS
 
 logger = logging.getLogger(__name__)
 

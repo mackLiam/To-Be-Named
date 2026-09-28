@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "zells-pipeline"
+name = "forms-pipeline"
 version = "0.1.0"
-description = "Zells scan-to-STL pipeline worker: measurement extraction, Onshape CAD generation, STL export."
+description = "FORMS scan-to-STL pipeline worker: measurement extraction, Onshape CAD generation, STL export."
 requires-python = ">=3.12"
 dependencies = [
   "fastapi~=0.115",
@@ -34,8 +34,8 @@ dev = [
 ]
 
 [project.scripts]
-zells-extract = "zells_pipeline.extract.cli:run"
-zells-retention = "zells_pipeline.jobs.retention:main"
+forms-extract = "forms_pipeline.extract.cli:run"
+forms-retention = "forms_pipeline.jobs.retention:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

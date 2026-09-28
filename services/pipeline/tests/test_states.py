@@ -4,7 +4,7 @@ from itertools import pairwise
 
 import pytest
 
-from zells_pipeline.jobs.states import (
+from forms_pipeline.jobs.states import (
     STATES,
     InvalidTransitionError,
     guard_transition,

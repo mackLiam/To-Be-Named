@@ -63,7 +63,7 @@ from dataclasses import dataclass
 import numpy as np
 import trimesh
 
-from zells_pipeline.contract import MEASUREMENT_KEYS
+from forms_pipeline.contract import MEASUREMENT_KEYS
 
 logger = logging.getLogger(__name__)
 

@@ -7,9 +7,9 @@ import httpx
 import pytest
 import trimesh
 
-from zells_pipeline.cad.dispatch import CadDispatcher
-from zells_pipeline.config import Settings
-from zells_pipeline.jobs.runner import (
+from forms_pipeline.cad.dispatch import CadDispatcher
+from forms_pipeline.config import Settings
+from forms_pipeline.jobs.runner import (
     Job,
     JobContext,
     SupabaseStorageClient,
@@ -177,8 +177,8 @@ def _cad_job(job_id: str, scan_id: str, order_id: str | None) -> Job:
 
 
 def _seed_measurements(store: FakeJobStore, scan_id: str) -> None:
-    from zells_pipeline.contract import MEASUREMENT_KEYS
-    from zells_pipeline.extraction.measure import EXTRACTION_VERSION
+    from forms_pipeline.contract import MEASUREMENT_KEYS
+    from forms_pipeline.extraction.measure import EXTRACTION_VERSION
 
     store.measurements[(scan_id, EXTRACTION_VERSION)] = {key: 100.0 for key in MEASUREMENT_KEYS}
 

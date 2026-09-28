@@ -18,9 +18,9 @@ from pathlib import Path
 
 import pytest
 
-from zells_pipeline.contract import MEASUREMENT_KEYS
-from zells_pipeline.extraction.measure import extract_measurements
-from zells_pipeline.extraction.mesh_loading import load_mesh
+from forms_pipeline.contract import MEASUREMENT_KEYS
+from forms_pipeline.extraction.measure import extract_measurements
+from forms_pipeline.extraction.mesh_loading import load_mesh
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 MESH_EXTENSIONS = (".obj", ".ply", ".glb")

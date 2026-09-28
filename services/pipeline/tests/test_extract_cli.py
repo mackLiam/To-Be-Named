@@ -7,9 +7,9 @@ import pytest
 import trimesh
 from conftest import make_tapered_frustum
 
-from zells_pipeline.contract import MEASUREMENT_KEYS, SCHEMA_VERSION
-from zells_pipeline.extract.cli import EXIT_GATES_FAILED, EXIT_LOAD_OR_MEASURE_ERROR, EXIT_OK, main
-from zells_pipeline.extraction.measure import EXTRACTION_VERSION
+from forms_pipeline.contract import MEASUREMENT_KEYS, SCHEMA_VERSION
+from forms_pipeline.extract.cli import EXIT_GATES_FAILED, EXIT_LOAD_OR_MEASURE_ERROR, EXIT_OK, main
+from forms_pipeline.extraction.measure import EXTRACTION_VERSION
 
 # Deliberately below the schema's Leg_Length minimum (150mm), so extraction
 # succeeds (produces all 25 keys) but the Leg_Length gate fails. Radii are

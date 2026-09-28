@@ -5,17 +5,17 @@ import json
 import httpx
 import pytest
 
-from zells_pipeline.cad.dispatch import CadDispatcher, default_descriptor, resolve_descriptor
-from zells_pipeline.cad.model import CadModelDescriptor, DescriptorError
-from zells_pipeline.cad.providers import (
+from forms_pipeline.cad.dispatch import CadDispatcher, default_descriptor, resolve_descriptor
+from forms_pipeline.cad.model import CadModelDescriptor, DescriptorError
+from forms_pipeline.cad.providers import (
     DRY_RUN_STL,
     DryRunProvider,
     OnshapeProvider,
     ProviderNotFoundError,
     get_provider,
 )
-from zells_pipeline.config import Settings
-from zells_pipeline.contract import MEASUREMENT_KEYS, SCHEMA_VERSION
+from forms_pipeline.config import Settings
+from forms_pipeline.contract import MEASUREMENT_KEYS, SCHEMA_VERSION
 
 _FAKE_SECRET = "test-secret"  # noqa: S105 - test fixture value, not a real secret
 

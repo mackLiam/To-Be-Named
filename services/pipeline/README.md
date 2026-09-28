@@ -40,8 +40,8 @@ pip install -e ".[dev]"
 ruff check .
 pytest
 
-uvicorn zells_pipeline.api:app --reload   # health endpoint only
-python -m zells_pipeline.main             # health endpoint + worker loop
+uvicorn forms_pipeline.api:app --reload   # health endpoint only
+python -m forms_pipeline.main             # health endpoint + worker loop
 ```
 
 (A root-level `make` target wrapping the above will exist once the
@@ -80,13 +80,13 @@ plumbing be exercised end to end without an Onshape account. `GET
 
 Note: this table documents the variables this service reads; the
 repo-root `.env.example` is out of scope for this change (see
-`src/zells_pipeline/config.py` for the authoritative field list and
+`src/forms_pipeline/config.py` for the authoritative field list and
 defaults).
 
 ## Retention sweep
 
-`python -m zells_pipeline.jobs.retention` (also installed as the
-`zells-retention` console script) runs one batch of the raw-mesh retention
+`python -m forms_pipeline.jobs.retention` (also installed as the
+`forms-retention` console script) runs one batch of the raw-mesh retention
 sweep and exits: it fetches scans whose pipeline job completed more than
 `RETENTION_DAYS` ago and whose mesh hasn't been deleted yet (via the
 `get_meshes_pending_deletion` SQL helper, `supabase/migrations/0004_retention.sql`),
@@ -109,7 +109,7 @@ the image copies `packages/shared/schema/measurements.schema.json` in
 alongside the service source:
 
 ```sh
-docker build -f services/pipeline/Dockerfile -t zells-pipeline .
+docker build -f services/pipeline/Dockerfile -t forms-pipeline .
 ```
 
 ## Tests

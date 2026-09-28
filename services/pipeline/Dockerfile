@@ -1,7 +1,7 @@
 # Build context MUST be the monorepo root, not services/pipeline, because
 # this image needs packages/shared/schema alongside the service source, e.g.:
 #
-#   docker build -f services/pipeline/Dockerfile -t zells-pipeline .
+#   docker build -f services/pipeline/Dockerfile -t forms-pipeline .
 #
 # (from the repo root).
 
@@ -13,7 +13,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd --system zells && useradd --system --gid zells --home /app zells
+RUN groupadd --system forms && useradd --system --gid forms --home /app forms
 
 WORKDIR /app
 
@@ -28,11 +28,11 @@ ENV SCHEMA_PATH=/app/schema/measurements.schema.json
 
 RUN pip install --no-cache-dir .
 
-USER zells
+USER forms
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/healthz || exit 1
 
-CMD ["python", "-m", "zells_pipeline.main"]
+CMD ["python", "-m", "forms_pipeline.main"]

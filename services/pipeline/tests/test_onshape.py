@@ -6,9 +6,9 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from zells_pipeline.config import Settings
-from zells_pipeline.contract import MEASUREMENT_KEYS
-from zells_pipeline.onshape.client import MAX_RETRY_ATTEMPTS, OnshapeClient, OnshapeError, mm_to_m
+from forms_pipeline.config import Settings
+from forms_pipeline.contract import MEASUREMENT_KEYS
+from forms_pipeline.onshape.client import MAX_RETRY_ATTEMPTS, OnshapeClient, OnshapeError, mm_to_m
 
 _FAKE_SECRET = "test-secret"  # noqa: S105 - test fixture value, not a real secret
 

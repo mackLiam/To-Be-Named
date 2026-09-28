@@ -30,7 +30,7 @@ algorithm edge case.
 Each golden case is a matched pair of files sharing a `<name>`:
 
 - `<name>.obj` (or `.ply` / `.glb`): the mesh, loaded the same way the
-  pipeline loads any untrusted upload (`zells_pipeline.extraction.mesh_loading.load_mesh`).
+  pipeline loads any untrusted upload (`forms_pipeline.extraction.mesh_loading.load_mesh`).
 - `<name>.expected.json`: the expected output, shaped as:
 
   ```json
@@ -64,7 +64,7 @@ a green one.
 ## Generating the `expected.json` for a new fixture
 
 Never hand-type the 25 expected values. Run the real extraction once against
-the mesh (with `--json`, via the CLI in `zells_pipeline.extract`, or a short
+the mesh (with `--json`, via the CLI in `forms_pipeline.extract`, or a short
 script) and use its `values` output as the starting point, then adjust only
 after hand-verifying against a tape measure and logging the comparison in
 `docs/accuracy-log.md`.

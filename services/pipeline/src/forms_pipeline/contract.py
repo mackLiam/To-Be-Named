@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from zells_pipeline.config import get_settings
+from forms_pipeline.config import get_settings
 
 EXPECTED_PROPERTY_COUNT = 25
 

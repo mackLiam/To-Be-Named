@@ -30,7 +30,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from zells_pipeline.contract import MEASUREMENT_KEYS
+from forms_pipeline.contract import MEASUREMENT_KEYS
 
 
 class DescriptorError(ValueError):

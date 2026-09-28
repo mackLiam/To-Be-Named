@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from zells_pipeline.contract import (
+from forms_pipeline.contract import (
     EXPECTED_PROPERTY_COUNT,
     MEASUREMENT_KEYS,
     SCHEMA,

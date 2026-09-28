@@ -59,7 +59,7 @@ from the schema version. Bump it whenever extraction output could change for
 the same mesh; the measurements table keys on (scan_id, extraction_version)
 precisely so old and new algorithm outputs can coexist and be compared.
 
-## CAD provider layer (zells_pipeline/cad/)
+## CAD provider layer (forms_pipeline/cad/)
 
 CAD generation is behind a provider abstraction so the product can serve
 multiple guard designs and swap backends (DESIGN.md section 7 exit strategy:
