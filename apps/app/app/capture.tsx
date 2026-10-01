@@ -11,8 +11,10 @@ import { Rule } from '../src/components/Rule';
 import { Screen } from '../src/components/Screen';
 import { captureErrorMessage, useCaptureFlow } from '../src/hooks/useCaptureFlow';
 import type { CaptureFlowState, CaptureMetaEnv } from '../src/hooks/useCaptureFlow';
+import { isSessionComplete } from '../src/lib/captureSession';
 import { hasSupabaseConfig } from '../src/lib/supabase';
 import { uploadErrorMessage } from '../src/lib/upload';
+import type { Leg } from '../src/lib/upload';
 import type { CaptureState } from '../modules/forms-capture';
 import { colors, radius, spacing } from '../src/theme/tokens';
 
@@ -39,29 +41,37 @@ function readCaptureEnv(): CaptureMetaEnv {
  */
 export default function CaptureScreen() {
   const router = useRouter();
-  const { state, start, retryUpload } = useCaptureFlow({ leg: 'L', captureEnv: readCaptureEnv });
+  const { state, start, retryUpload, nextLeg } = useCaptureFlow({
+    pair: true,
+    captureEnv: readCaptureEnv,
+  });
+  const session = state.session;
+  const pairComplete = session != null && isSessionComplete(session);
 
-  // On a successful upload the scan lives in the library; send the user there.
-  // replace() so the back button does not land them on a finished capture.
-  // Without a backend the upload is simulated and the mesh exists only on this
-  // phone, so stay here and offer the file instead (UploadedSection).
+  // Once both legs are saved, open the pair. replace() so the back button does
+  // not land on a finished capture. Without a backend the uploads are simulated
+  // and the files exist only on this phone, so stay here (UploadedSection).
   useEffect(() => {
-    if (state.phase === 'uploaded' && hasSupabaseConfig()) {
-      router.replace('/(tabs)/scans');
+    if (state.phase === 'uploaded' && pairComplete && session && hasSupabaseConfig()) {
+      router.replace({ pathname: '/scan/[key]', params: { key: session.pairId, fresh: '1' } });
     }
-  }, [state.phase, router]);
+  }, [state.phase, pairComplete, session, router]);
 
   return (
     <Screen>
       {state.phase === 'checking' && <CheckingSection />}
       {state.phase === 'unsupported' && <UnsupportedSection state={state} onBack={router.back} />}
-      {state.phase === 'ready' && <ReadySection mode={state.mode} onStart={start} />}
+      {state.phase === 'ready' && (
+        <ReadySection mode={state.mode} leg={state.leg} onStart={start} />
+      )}
       {state.phase === 'capturing' && <CapturingSection state={state} />}
       {state.phase === 'reconstructing' && <ReconstructingSection state={state} />}
       {(state.phase === 'done' || state.phase === 'uploading') && (
         <UploadingSection state={state} />
       )}
-      {state.phase === 'uploaded' && <UploadedSection state={state} />}
+      {state.phase === 'uploaded' && (
+        <UploadedSection state={state} pairComplete={pairComplete} onNextLeg={nextLeg} />
+      )}
       {state.phase === 'upload_failed' && (
         <UploadFailedSection state={state} onRetry={retryUpload} onRescan={start} />
       )}
@@ -121,10 +131,25 @@ function UnsupportedSection({ state, onBack }: { state: CaptureFlowState; onBack
   );
 }
 
-function ReadySection({ mode, onStart }: { mode: CaptureFlowState['mode']; onStart: () => void }) {
+const LEG_LABEL: Record<Leg, string> = { L: 'Left leg', R: 'Right leg' };
+const LEG_STEP: Record<Leg, string> = { L: 'Step 1 of 2', R: 'Step 2 of 2' };
+
+function ReadySection({
+  mode,
+  leg,
+  onStart,
+}: {
+  mode: CaptureFlowState['mode'];
+  leg: Leg;
+  onStart: () => void;
+}) {
   return (
     <>
-      <Heading level="h1">Ready to scan.</Heading>
+      <Body variant="label" color={colors.textSecondary}>
+        {LEG_STEP[leg]}
+      </Body>
+      <View style={{ height: spacing.xs }} />
+      <Heading level="h1">{LEG_LABEL[leg]}.</Heading>
       <View style={{ height: spacing.md }} />
       {mode === 'photos' ? (
         <>
@@ -245,48 +270,85 @@ function UploadingSection({ state }: { state: CaptureFlowState }) {
   );
 }
 
-/** Brief success state shown before the router redirects to the Scans tab. */
 /**
- * Dev-only escape hatch until hosted Supabase exists (ROADMAP.md week 5): with
- * no backend, share the OBJ off the phone (AirDrop to the Mac) so it can be run
- * through forms-extract by hand. Never shown in a build with a backend.
+ * A leg finished. Before the last leg: an interstitial with Continue. After it:
+ * a brief state before the router opens the pair, or with no backend a plain
+ * finished message.
+ *
+ * The offline branch is a dev-only escape hatch until hosted Supabase exists
+ * (ROADMAP.md week 5): share each leg's OBJ off the phone (AirDrop to the Mac)
+ * so it can be run through forms-extract by hand. Never shown with a backend.
  */
-function UploadedSection({ state }: { state: CaptureFlowState }) {
-  const objPath = state.result?.objPath;
-  if (!hasSupabaseConfig() && state.photoCapture) {
+function UploadedSection({
+  state,
+  pairComplete,
+  onNextLeg,
+}: {
+  state: CaptureFlowState;
+  pairComplete: boolean;
+  onNextLeg: () => void;
+}) {
+  const offline = !hasSupabaseConfig();
+  if (!pairComplete) {
     return (
       <>
-        <Heading level="h1">Scan finished.</Heading>
-        <View style={{ height: spacing.md }} />
-        <Body>No server is configured in this build, so the photos were not uploaded.</Body>
+        <Heading level="h1">Left leg saved. Now the right leg.</Heading>
+        <OfflineLegNote state={state} />
+        <View style={{ height: spacing.lg }} />
+        <Button onPress={onNextLeg}>Continue</Button>
       </>
     );
   }
-  if (!hasSupabaseConfig() && objPath) {
+  if (offline) {
     return (
       <>
-        <Heading level="h1">Scan finished.</Heading>
-        <View style={{ height: spacing.md }} />
-        <Body>
-          No server is configured in this build, so the scan was not uploaded. Share the file to get
-          it off this phone.
-        </Body>
-        <View style={{ height: spacing.lg }} />
-        <Button
-          onPress={() =>
-            Share.share({ url: objPath.startsWith('file://') ? objPath : `file://${objPath}` })
-          }
-        >
-          Share scan file
-        </Button>
+        <Heading level="h1">Both legs finished.</Heading>
+        <OfflineLegNote state={state} />
       </>
     );
   }
   return (
     <>
-      <Heading level="h1">Scan saved.</Heading>
+      <Heading level="h1">Both legs saved.</Heading>
       <View style={{ height: spacing.md }} />
-      <Body>Taking you to your scan library.</Body>
+      <Body>Opening your scan.</Body>
+    </>
+  );
+}
+
+/** Offline only: what happened to this leg's capture, plus the share escape hatch. */
+function OfflineLegNote({ state }: { state: CaptureFlowState }) {
+  const objPath = state.result?.objPath;
+  if (hasSupabaseConfig()) {
+    return null;
+  }
+  if (state.photoCapture) {
+    return (
+      <>
+        <View style={{ height: spacing.md }} />
+        <Body>No server is configured in this build, so the photos were not uploaded.</Body>
+      </>
+    );
+  }
+  if (!objPath) {
+    return null;
+  }
+  return (
+    <>
+      <View style={{ height: spacing.md }} />
+      <Body>
+        No server is configured in this build, so the scan was not uploaded. Share the file to get
+        it off this phone.
+      </Body>
+      <View style={{ height: spacing.lg }} />
+      <Button
+        variant="outline"
+        onPress={() =>
+          Share.share({ url: objPath.startsWith('file://') ? objPath : `file://${objPath}` })
+        }
+      >
+        Share scan file
+      </Button>
     </>
   );
 }

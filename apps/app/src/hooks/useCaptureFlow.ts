@@ -12,6 +12,7 @@
  *   reconstructing -> done                  (OBJ + USDZ on disk)
  *   done -> uploading -> uploaded           (upload deps present: save the scan)
  *   uploading -> upload_failed              (upload rejected; retryUpload() retries)
+ *   uploaded -> ready                       (pair mode, nextLeg(): left leg saved, right next)
  *
  * Photos mode (availability.mode 'photos', non-LiDAR iPhones) skips the
  * on-device reconstruction: capturing -> done (photo bundle on disk) ->
@@ -23,6 +24,11 @@
  * 'done' exactly as before, so existing behavior is preserved. When present (the
  * real deps built by defaultCaptureFlowDeps) a successful reconstruction flows
  * on through the upload path.
+ *
+ * Pair mode (CaptureFlowOptions.pair) runs the left leg then the right leg
+ * under one pair id, with the identity rules in src/lib/captureSession.ts:
+ * start() refuses any leg but the session's current one, and every capture
+ * and upload of a leg reuses that leg's scan id until it uploads.
  *
  * The machine lives in {@link CaptureFlowController}, a plain class with every
  * module call injected through {@link CaptureFlowDeps}, so all transitions are
@@ -58,6 +64,14 @@ import type {
   ReconstructOptions,
   ReconstructResult,
 } from '../../modules/forms-capture';
+import {
+  allocateScanId,
+  canCapture,
+  createCaptureSession,
+  currentLeg,
+  markUploaded,
+} from '../lib/captureSession';
+import type { CaptureSession } from '../lib/captureSession';
 import { getCaptureAvailability } from '../lib/nativeCapture';
 import type {
   CaptureAvailability,
@@ -123,6 +137,10 @@ export interface CaptureFlowState {
   uploadError: UploadError | null;
   /** Id of the saved scan; set in the 'uploaded' phase (used to route to it). */
   scanId: string | null;
+  /** Leg the current capture is of. */
+  leg: Leg;
+  /** Pair mode only: the two-leg session; null in single-leg mode. */
+  session: CaptureSession | null;
 }
 
 export const INITIAL_CAPTURE_FLOW_STATE: CaptureFlowState = {
@@ -138,6 +156,8 @@ export const INITIAL_CAPTURE_FLOW_STATE: CaptureFlowState = {
   error: null,
   uploadError: null,
   scanId: null,
+  leg: 'L',
+  session: null,
 };
 
 /** Phases from which start() may (re)enter the capture pipeline (i.e. rescan). */
@@ -241,6 +261,8 @@ function clamp01(value: number): number {
 export interface CaptureFlowOptions {
   /** Which leg the scan is of. Defaults to 'L' until a leg picker exists. */
   leg?: Leg;
+  /** Capture both legs (L then R) under one pair id; overrides leg. */
+  pair?: boolean;
 }
 
 export class CaptureFlowController {
@@ -248,7 +270,8 @@ export class CaptureFlowController {
   private disposed = false;
   private listenersAttached = false;
   private subscriptions: EventSubscription[] = [];
-  private readonly leg: Leg;
+  private leg: Leg;
+  private session: CaptureSession | null = null;
   /** Wall-clock start of the current capture, for capture_meta duration. */
   private captureStartedAt: number | null = null;
   /** Reconstruction result of the current attempt, so retryUpload can reuse it. */
@@ -264,6 +287,11 @@ export class CaptureFlowController {
     options: CaptureFlowOptions = {},
   ) {
     this.leg = options.leg ?? 'L';
+    if (options.pair) {
+      this.session = createCaptureSession(newScanId);
+      this.leg = currentLeg(this.session) ?? 'L';
+    }
+    this.state = { ...INITIAL_CAPTURE_FLOW_STATE, leg: this.leg, session: this.session };
   }
 
   getState(): CaptureFlowState {
@@ -272,7 +300,7 @@ export class CaptureFlowController {
 
   /** Run the availability gate: checking -> ready | unsupported. */
   async initialize(): Promise<void> {
-    this.patch(INITIAL_CAPTURE_FLOW_STATE);
+    this.patch({ ...INITIAL_CAPTURE_FLOW_STATE, leg: this.leg, session: this.session });
     let availability: CaptureAvailability;
     try {
       availability = await this.deps.getAvailability();
@@ -298,6 +326,9 @@ export class CaptureFlowController {
    */
   async start(): Promise<void> {
     if (this.disposed || !STARTABLE_PHASES.includes(this.state.phase)) {
+      return;
+    }
+    if (this.session && !canCapture(this.session, this.leg)) {
       return;
     }
     this.attachListeners();
@@ -379,6 +410,37 @@ export class CaptureFlowController {
   }
 
   /**
+   * Pair mode: after a leg uploads, move to the next leg's 'ready' phase.
+   * No-op outside pair mode, outside 'uploaded', or once both legs are saved.
+   */
+  nextLeg(): void {
+    if (this.disposed || this.state.phase !== 'uploaded' || !this.session) {
+      return;
+    }
+    const next = currentLeg(this.session);
+    if (!next) {
+      return;
+    }
+    this.leg = next;
+    this.uploadScanId = null;
+    this.lastResult = null;
+    this.lastPhotoCapture = null;
+    this.patch({
+      phase: 'ready',
+      leg: next,
+      captureState: null,
+      progress: 0,
+      progressStage: null,
+      capture: null,
+      result: null,
+      photoCapture: null,
+      error: null,
+      uploadError: null,
+      scanId: null,
+    });
+  }
+
+  /**
    * Retry only the upload after an upload failure, reusing the same scan id so
    * the storage object, scan row, and job are not duplicated. A full rescan is
    * still available via start().
@@ -410,6 +472,7 @@ export class CaptureFlowController {
           detail: result.detail,
         }),
         scanId,
+        pairId: this.session?.pairId ?? null,
       }),
     );
   }
@@ -431,6 +494,7 @@ export class CaptureFlowController {
           captureKind: 'photos',
         }),
         scanId,
+        pairId: this.session?.pairId ?? null,
       }),
     );
   }
@@ -440,10 +504,18 @@ export class CaptureFlowController {
     // Allocate the scan id once and reuse it across retries: a retry then
     // overwrites the same objects, upserts the same row, and returns the same
     // active job instead of orphaning a partially-uploaded scan.
+    // In pair mode the session owns the id so a recapture of the same leg also
+    // reuses it ((pair_id, leg) is unique server-side).
     if (!this.uploadScanId) {
-      this.uploadScanId = newScanId();
+      if (this.session) {
+        const allocated = allocateScanId(this.session, this.leg, newScanId);
+        this.session = allocated.session;
+        this.uploadScanId = allocated.scanId;
+      } else {
+        this.uploadScanId = newScanId();
+      }
     }
-    this.patch({ phase: 'uploading', uploadError: null });
+    this.patch({ phase: 'uploading', uploadError: null, session: this.session });
     let uploaded: { scanId: string };
     try {
       uploaded = await upload(this.uploadScanId);
@@ -458,7 +530,15 @@ export class CaptureFlowController {
       return;
     }
     this.uploadScanId = uploaded.scanId;
-    this.patch({ phase: 'uploaded', scanId: uploaded.scanId, uploadError: null });
+    if (this.session) {
+      this.session = markUploaded(this.session, this.leg, uploaded.scanId);
+    }
+    this.patch({
+      phase: 'uploaded',
+      scanId: uploaded.scanId,
+      uploadError: null,
+      session: this.session,
+    });
   }
 
   /** Assemble capture_meta from what the flow knows plus injected device env.
@@ -551,11 +631,15 @@ export interface UseCaptureFlowResult {
   start: () => void;
   /** Retry only the upload after an upload failure (no rescan). */
   retryUpload: () => void;
+  /** Pair mode: continue to the next leg after one uploads. */
+  nextLeg: () => void;
 }
 
 export interface UseCaptureFlowOptions {
   /** Which leg the scan is of. Defaults to 'L'. */
   leg?: Leg;
+  /** Capture both legs under one pair id (see CaptureFlowOptions.pair). */
+  pair?: boolean;
   /** Device/OS context for capture_meta (screen-provided; keeps react-native
    * out of this module's import graph). */
   captureEnv?: () => CaptureMetaEnv;
@@ -576,11 +660,11 @@ export function useCaptureFlow(options: UseCaptureFlowOptions = {}): UseCaptureF
   const optionsRef = useRef(options);
 
   useEffect(() => {
-    const { deps, captureEnv, leg } = optionsRef.current;
+    const { deps, captureEnv, leg, pair } = optionsRef.current;
     const controller = new CaptureFlowController(
       deps ?? defaultCaptureFlowDeps(captureEnv),
       setState,
-      { leg },
+      { leg, pair },
     );
     controllerRef.current = controller;
     void controller.initialize();
@@ -598,5 +682,9 @@ export function useCaptureFlow(options: UseCaptureFlowOptions = {}): UseCaptureF
     void controllerRef.current?.retryUpload();
   }, []);
 
-  return { state, start, retryUpload };
+  const nextLeg = useCallback(() => {
+    controllerRef.current?.nextLeg();
+  }, []);
+
+  return { state, start, retryUpload, nextLeg };
 }

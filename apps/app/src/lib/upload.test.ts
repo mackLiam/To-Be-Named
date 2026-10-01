@@ -181,6 +181,24 @@ describe('uploadScanWith: orchestration', () => {
     expect(h.upsertCalls[0]?.options.onConflict).toBe('id');
   });
 
+  it('stamps pair_id on the scan row and keeps it out of capture_meta', async () => {
+    const h = harness();
+    await uploadScanWith(h.deps, {
+      localFileUri: 'file:///m.obj',
+      leg: 'R',
+      pairId: 'pair-1',
+      captureMeta: { imageCount: 42 },
+    });
+    expect(h.upsertCalls[0]?.row).toMatchObject({ leg: 'R', pair_id: 'pair-1' });
+    expect(h.upsertCalls[0]?.row.capture_meta).toEqual({ imageCount: 42 });
+  });
+
+  it('writes pair_id null when no pair is given', async () => {
+    const h = harness();
+    await uploadScanWith(h.deps, { localFileUri: 'file:///m.obj', leg: 'L' });
+    expect(h.upsertCalls[0]?.row.pair_id).toBeNull();
+  });
+
   it('enqueues the measure job for the scan id via the RPC', async () => {
     const h = harness();
     await uploadScanWith(h.deps, { localFileUri: 'file:///m.obj', leg: 'L' });
@@ -488,6 +506,7 @@ describe('uploadPhotoBundleWith: paths and ordering', () => {
       status: 'uploaded',
       capture_kind: 'photos',
       mesh_path: null,
+      pair_id: null,
       capture_meta: { imageCount: 24 },
     });
     expect(h.upsertCalls[0]?.options.onConflict).toBe('id');
@@ -573,6 +592,18 @@ describe('uploadPhotoBundleWith: caps and failures', () => {
       code: 'ERR_UPLOAD_NO_SESSION',
     });
     expect(h.readUris).toHaveLength(0);
+  });
+
+  it('stamps pair_id on the scan row and keeps it out of capture_meta', async () => {
+    const h = photoHarness();
+    await uploadPhotoBundleWith(h.deps, {
+      ...BUNDLE,
+      leg: 'R',
+      pairId: 'pair-1',
+      captureMeta: { imageCount: 24 },
+    });
+    expect(h.upsertCalls[0]?.row).toMatchObject({ leg: 'R', pair_id: 'pair-1' });
+    expect(h.upsertCalls[0]?.row.capture_meta).toEqual({ imageCount: 24 });
   });
 
   it('retrying with the same scan id hits the same paths and row', async () => {

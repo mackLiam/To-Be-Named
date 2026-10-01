@@ -594,6 +594,169 @@ describe('upload leg', () => {
   });
 });
 
+describe('pair mode (left then right)', () => {
+  /** Echoes the requested scan id, like the real upload path. */
+  function echoUpload() {
+    return vi.fn((params: UploadScanParams) =>
+      Promise.resolve({ ...UPLOAD_RESULT, scanId: params.scanId ?? 'missing' }),
+    );
+  }
+
+  async function pairController(deps: CaptureFlowDeps) {
+    const controller = new CaptureFlowController(deps, () => {}, { pair: true });
+    await controller.initialize();
+    return controller;
+  }
+
+  it('runs L -> upload -> nextLeg -> R -> upload with one pair id on both rows', async () => {
+    const uploadScan = echoUpload();
+    const { deps } = makeDeps({ uploadScan });
+    const controller = await pairController(deps);
+    const pairId = controller.getState().session?.pairId;
+    expect(pairId).toBeTruthy();
+    expect(controller.getState()).toMatchObject({ phase: 'ready', leg: 'L' });
+
+    await controller.start();
+    expect(controller.getState()).toMatchObject({ phase: 'uploaded', leg: 'L' });
+    expect(controller.getState().session?.uploaded).toEqual({ L: true, R: false });
+
+    controller.nextLeg();
+    expect(controller.getState()).toMatchObject({ phase: 'ready', leg: 'R', result: null });
+
+    await controller.start();
+    expect(controller.getState()).toMatchObject({ phase: 'uploaded', leg: 'R' });
+    expect(controller.getState().session?.uploaded).toEqual({ L: true, R: true });
+
+    const [left, right] = uploadScan.mock.calls.map((call) => call[0]);
+    expect(left).toMatchObject({ leg: 'L', pairId });
+    expect(right).toMatchObject({ leg: 'R', pairId });
+    expect(left?.scanId).not.toBe(right?.scanId);
+    expect(controller.getState().session?.scanIds).toEqual({ L: left?.scanId, R: right?.scanId });
+    expect(left?.captureMeta).not.toHaveProperty('pairId');
+  });
+
+  it('upload retry reuses the leg scan id and the pair id', async () => {
+    const uploadScan = echoUpload().mockRejectedValueOnce(
+      new UploadError('ERR_UPLOAD_STORAGE', 'boom'),
+    );
+    const { deps } = makeDeps({ uploadScan });
+    const controller = await pairController(deps);
+    await controller.start();
+    expect(controller.getState().phase).toBe('upload_failed');
+    await controller.retryUpload();
+    expect(controller.getState().phase).toBe('uploaded');
+    const [first, second] = uploadScan.mock.calls.map((call) => call[0]);
+    expect(second?.scanId).toBe(first?.scanId);
+    expect(second?.pairId).toBe(first?.pairId);
+  });
+
+  it('rescanning a leg after an upload failure reuses its scan id (one row per leg)', async () => {
+    const uploadScan = echoUpload().mockRejectedValueOnce(new UploadError('ERR_UPLOAD_DB', 'x'));
+    const { deps } = makeDeps({ uploadScan });
+    const controller = await pairController(deps);
+    await controller.start();
+    expect(controller.getState().phase).toBe('upload_failed');
+    await controller.start();
+    expect(controller.getState()).toMatchObject({ phase: 'uploaded', leg: 'L' });
+    const [first, second] = uploadScan.mock.calls.map((call) => call[0]);
+    expect(second?.scanId).toBe(first?.scanId);
+  });
+
+  it('a cancelled capture returns to ready on the same leg and retries in the same pair', async () => {
+    const uploadScan = echoUpload();
+    const startCapture = vi
+      .fn<() => Promise<CaptureResult>>()
+      .mockRejectedValueOnce(new CaptureError('ERR_CAPTURE_CANCELLED', 'backed out'))
+      .mockResolvedValueOnce(CAPTURE_RESULT);
+    const { deps } = makeDeps({ uploadScan, startCapture });
+    const controller = await pairController(deps);
+    const pairId = controller.getState().session?.pairId;
+
+    await controller.start();
+    expect(controller.getState()).toMatchObject({ phase: 'ready', leg: 'L' });
+    expect(uploadScan).not.toHaveBeenCalled();
+
+    await controller.start();
+    expect(controller.getState()).toMatchObject({ phase: 'uploaded', leg: 'L' });
+    expect(uploadScan.mock.calls[0]?.[0]).toMatchObject({ leg: 'L', pairId });
+  });
+
+  it('a failed capture retries the same leg in the same pair', async () => {
+    const uploadScan = echoUpload();
+    const startCapture = vi
+      .fn<() => Promise<CaptureResult>>()
+      .mockRejectedValueOnce(new CaptureError('ERR_CAPTURE_NO_IMAGES', 'none'))
+      .mockResolvedValueOnce(CAPTURE_RESULT);
+    const { deps } = makeDeps({ uploadScan, startCapture });
+    const controller = await pairController(deps);
+    const pairId = controller.getState().session?.pairId;
+    await controller.start();
+    expect(controller.getState()).toMatchObject({ phase: 'failed', leg: 'L' });
+    await controller.start();
+    expect(controller.getState()).toMatchObject({ phase: 'uploaded', leg: 'L' });
+    expect(controller.getState().session?.pairId).toBe(pairId);
+  });
+
+  it('never recaptures an uploaded leg, and nextLeg is a no-op once both are saved', async () => {
+    const uploadScan = echoUpload();
+    const { deps } = makeDeps({ uploadScan });
+    const controller = await pairController(deps);
+    await controller.start();
+    await controller.start();
+    expect(deps.startCapture).toHaveBeenCalledTimes(1);
+    expect(controller.getState()).toMatchObject({ phase: 'uploaded', leg: 'L' });
+
+    controller.nextLeg();
+    await controller.start();
+    await controller.start();
+    expect(deps.startCapture).toHaveBeenCalledTimes(2);
+
+    controller.nextLeg();
+    expect(controller.getState()).toMatchObject({ phase: 'uploaded', leg: 'R' });
+    expect(uploadScan).toHaveBeenCalledTimes(2);
+  });
+
+  it('nextLeg is a no-op before the current leg uploads', async () => {
+    const { deps } = makeDeps({ uploadScan: echoUpload() });
+    const controller = await pairController(deps);
+    controller.nextLeg();
+    expect(controller.getState()).toMatchObject({ phase: 'ready', leg: 'L' });
+  });
+
+  it('single-leg mode sends pairId null', async () => {
+    const uploadScan = echoUpload();
+    const { deps } = makeDeps({ uploadScan });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(uploadScan.mock.calls[0]?.[0]?.pairId).toBeNull();
+    expect(controller.getState().session).toBeNull();
+  });
+
+  it('photos mode stamps the pair id on both legs', async () => {
+    const uploadPhotoBundle = vi.fn((params: UploadPhotoBundleParams) =>
+      Promise.resolve({ ...PHOTO_UPLOAD_RESULT, scanId: params.scanId ?? 'missing' }),
+    );
+    const { deps } = makeDeps({
+      getAvailability: vi.fn(async () => ({
+        supported: true,
+        reason: 'ok' as const,
+        mode: 'photos' as const,
+      })),
+      uploadPhotoBundle,
+    });
+    const controller = await pairController(deps);
+    const pairId = controller.getState().session?.pairId;
+    await controller.start();
+    controller.nextLeg();
+    await controller.start();
+    const [left, right] = uploadPhotoBundle.mock.calls.map((call) => call[0]);
+    expect(left).toMatchObject({ leg: 'L', pairId });
+    expect(right).toMatchObject({ leg: 'R', pairId });
+    expect(controller.getState().session?.uploaded).toEqual({ L: true, R: true });
+  });
+});
+
 describe('photos mode (non-LiDAR)', () => {
   function photoDeps(overrides: Partial<CaptureFlowDeps> = {}) {
     return makeDeps({

@@ -145,6 +145,9 @@ export interface UploadScanParams {
    * same object path, the same scan row (upsert), and the same active job
    * (guarded server-side). Omit on the first attempt. */
   scanId?: string;
+  /** Two-leg capture session id, written to scans.pair_id. Both legs of a pair
+   * carry the same id; (pair_id, leg) is unique server-side. */
+  pairId?: string | null;
 }
 
 export interface UploadScanResult {
@@ -304,6 +307,7 @@ export async function uploadScanWith(
     leg: params.leg,
     status: UPLOADED_STATUS,
     mesh_path: meshPath,
+    pair_id: params.pairId ?? null,
     capture_meta: params.captureMeta ?? null,
   };
   const inserted = await deps.client
@@ -500,6 +504,8 @@ export interface UploadPhotoBundleParams {
   captureMeta?: Record<string, unknown>;
   /** Reuse across retries: same object paths, same row, same active job. */
   scanId?: string;
+  /** Same as UploadScanParams.pairId. */
+  pairId?: string | null;
 }
 
 export interface UploadPhotoBundleResult {
@@ -610,6 +616,7 @@ export async function uploadPhotoBundleWith(
     status: UPLOADED_STATUS,
     capture_kind: PHOTOS_CAPTURE_KIND,
     mesh_path: null,
+    pair_id: params.pairId ?? null,
     capture_meta: params.captureMeta ?? null,
   };
   const inserted = await deps.client
