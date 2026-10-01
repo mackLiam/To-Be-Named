@@ -21,9 +21,13 @@ export const metadata: Metadata = {
 
 export const dynamic = 'force-dynamic';
 
+const REFUND = 'needs_refund';
+
 function href(status: string, page = 1): string {
   const params = new URLSearchParams();
-  if (status !== 'all') {
+  if (status === REFUND) {
+    params.set('needs_refund', '1');
+  } else if (status !== 'all') {
     params.set('status', status);
   }
   if (page > 1) {
@@ -46,13 +50,15 @@ export default async function OrdersPage({
 
   const sp = await searchParams;
   const rawStatus = firstValue(sp.status);
-  const activeStatus = isOrderStatus(rawStatus) ? rawStatus : 'all';
+  const needsRefund = firstValue(sp.needs_refund) === '1';
+  const activeStatus = needsRefund ? REFUND : isOrderStatus(rawStatus) ? rawStatus : 'all';
   const page = parsePageParam(sp.page);
   const rawRef = firstValue(sp.ref)?.trim() ?? '';
   const ref = orderReferenceRange(rawRef) ? rawRef : undefined;
 
   const { rows, hasNext } = await listOrders({
-    status: activeStatus === 'all' ? undefined : activeStatus,
+    status: needsRefund || activeStatus === 'all' ? undefined : activeStatus,
+    needsRefund,
     ref,
     page,
     pageSize: DEFAULT_PAGE_SIZE,
@@ -65,6 +71,7 @@ export default async function OrdersPage({
   const filters = [
     { value: 'all', label: 'All' },
     ...ORDER_STATUSES.map((s) => ({ value: s, label: ORDER_STATUS_META[s].label })),
+    { value: REFUND, label: 'Payments to refund' },
   ];
 
   return (
@@ -135,7 +142,9 @@ export default async function OrdersPage({
                   No orders
                   {activeStatus === 'all'
                     ? ''
-                    : ` that are ${ORDER_STATUS_META[activeStatus].label.toLowerCase()}`}
+                    : activeStatus === REFUND
+                      ? ' with a payment to refund'
+                      : ` that are ${ORDER_STATUS_META[activeStatus].label.toLowerCase()}`}
                   .
                 </td>
               </tr>

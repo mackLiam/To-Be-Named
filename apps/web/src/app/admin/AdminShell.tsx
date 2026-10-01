@@ -34,6 +34,9 @@ export function AdminShell({ fake, children }: { fake: boolean; children: React.
           <Link href="/admin" className={styles.navLink}>
             Pipeline queue
           </Link>
+          <Link href="/admin/waitlist" className={styles.navLink}>
+            Waitlist
+          </Link>
           <Link href="/admin/audit" className={styles.navLink}>
             Audit log
           </Link>

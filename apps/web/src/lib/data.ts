@@ -1,3 +1,5 @@
+import type { OrderStatus } from '@forms/shared';
+
 import { isFakeMode, hasServiceRoleConfig } from './env';
 import { fakeJobs, fakeOrderDetail, fakeOrders, fakeProducts, fakeTriage } from './fake';
 import { lookaheadRange, splitLookahead } from './pagination';
@@ -89,8 +91,27 @@ function flattenOrder({ products, ...row }: OrderQueryRow): OrderRow {
   return { ...row, product_name: products?.name ?? null, currency: products?.currency ?? null };
 }
 
+interface OrderFilterChain {
+  eq(column: string, value: string): OrderFilterChain;
+  not(column: string, operator: string, value: unknown): OrderFilterChain;
+  is(column: string, value: null): OrderFilterChain;
+}
+
+/**
+ * Cancelled orders that still hold a captured payment that was never refunded.
+ * Typed loosely on purpose: the supabase builder generics blow the type depth limit.
+ */
+export function applyNeedsRefund<T>(query: T): T {
+  return (query as unknown as OrderFilterChain)
+    .eq('status', 'cancelled' satisfies OrderStatus)
+    .not('stripe_payment_intent', 'is', null)
+    .is('refunded_at', null) as unknown as T;
+}
+
 export async function listOrders(opts: {
   status?: string;
+  /** Payments to refund; takes precedence over status. */
+  needsRefund?: boolean;
   /** Customer-facing order reference (8 hex chars); ignored when malformed. */
   ref?: string;
   page: number;
@@ -98,9 +119,11 @@ export async function listOrders(opts: {
 }): Promise<ListResult<OrderRow>> {
   const range = orderReferenceRange(opts.ref);
   if (shouldUseFake()) {
+    // Fake rows carry no payment columns, so "needs refund" approximates to cancelled.
+    const status = opts.needsRefund ? 'cancelled' : opts.status;
     const filtered = fakeOrders.filter(
       (row) =>
-        (!isOrderStatus(opts.status) || row.status === opts.status) &&
+        (!isOrderStatus(status) || row.status === status) &&
         (!range || (row.id >= range.from && row.id <= range.to)),
     );
     const start = (opts.page - 1) * opts.pageSize;
@@ -110,7 +133,9 @@ export async function listOrders(opts: {
   const client = await serviceClient();
   const { from, to } = lookaheadRange(opts.page, opts.pageSize);
   let query = client.from('orders').select(ORDER_COLUMNS);
-  if (isOrderStatus(opts.status)) {
+  if (opts.needsRefund) {
+    query = applyNeedsRefund(query);
+  } else if (isOrderStatus(opts.status)) {
     query = query.eq('status', opts.status);
   }
   if (range) {

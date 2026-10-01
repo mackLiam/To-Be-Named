@@ -6,6 +6,7 @@ import { BRAND_NAME } from '@forms/shared/brand';
 import styles from './admin.module.css';
 import { AdminShell } from './AdminShell';
 import { StatusBadge } from './StatusBadge';
+import { buildAttentionItems, getAttentionCounts } from '@/lib/attention';
 import { requireAdmin } from '@/lib/admin-auth';
 import { JOB_STATES, isValidJobState, listPipelineJobs } from '@/lib/data';
 import { DEFAULT_PAGE_SIZE, parsePageParam } from '@/lib/pagination';
@@ -61,6 +62,8 @@ export default async function AdminDashboardPage({
   const activeStatus = isValidJobState(rawStatus) ? rawStatus : 'all';
   const page = parsePageParam(sp.page);
 
+  const attention = buildAttentionItems(await getAttentionCounts());
+
   const { rows, hasNext } = await listPipelineJobs({
     state: activeStatus === 'all' ? undefined : activeStatus,
     page,
@@ -77,6 +80,18 @@ export default async function AdminDashboardPage({
           </p>
         </div>
       </div>
+
+      <section className={styles.attention} aria-label="Needs attention">
+        {attention.length === 0 ? (
+          <span className={styles.muted}>Nothing needs attention.</span>
+        ) : (
+          attention.map((item) => (
+            <Link key={item.key} href={item.href} className={styles.attentionItem}>
+              <span className={styles.mono}>{item.count}</span> {item.label}
+            </Link>
+          ))
+        )}
+      </section>
 
       <nav className={styles.filterBar} aria-label="Filter by status">
         {FILTERS.map((filter) => {

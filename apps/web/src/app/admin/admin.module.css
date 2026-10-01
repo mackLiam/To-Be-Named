@@ -766,3 +766,24 @@ textarea.input {
   white-space: pre-line;
   margin: 0;
 }
+
+.attention {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+}
+
+.attentionItem {
+  font-weight: 700;
+  color: var(--action);
+  text-decoration: none;
+  border-left: 3px solid var(--action);
+  padding-left: var(--space-sm);
+}
+
+.attentionItem:hover {
+  text-decoration: underline;
+}
