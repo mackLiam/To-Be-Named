@@ -50,16 +50,24 @@ export default function OrdersScreen() {
         <View key={order.id}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <Body variant="bodyStrong">{order.productName}</Body>
-            <Body>
-              {(order.totalCents / 100).toLocaleString('en-US', {
-                style: 'currency',
-                currency: 'USD',
-              })}
-            </Body>
+            {order.totalCents !== null && (
+              <Body>
+                {(order.totalCents / 100).toLocaleString('en-US', {
+                  style: 'currency',
+                  currency: order.currency.toUpperCase(),
+                })}
+              </Body>
+            )}
           </View>
           <Body color={colors.textSecondary} variant="bodySmall">
             {STATUS_LABEL[order.status] ?? order.status}
           </Body>
+          {order.trackingNumber && (
+            <Body color={colors.textSecondary} variant="bodySmall">
+              Tracking: {order.trackingCarrier ? `${order.trackingCarrier} ` : ''}
+              {order.trackingNumber}
+            </Body>
+          )}
           <Rule />
         </View>
       ))}

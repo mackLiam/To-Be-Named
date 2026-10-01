@@ -32,7 +32,12 @@ export interface Order {
   id: string;
   productName: string;
   status: OrderStatus;
-  totalCents: number;
+  /** Null until checkout sets the charged amount. */
+  totalCents: number | null;
+  currency: string;
+  /** Set by the admin panel when the order ships. */
+  trackingCarrier: string | null;
+  trackingNumber: string | null;
   createdAt: string;
 }
 
@@ -150,6 +155,9 @@ const DEMO_ORDERS: Order[] = [
     productName: `${BRAND_NAME} Custom Shin Guard (pair)`,
     status: 'in_production',
     totalCents: 16900,
+    currency: 'usd',
+    trackingCarrier: null,
+    trackingNumber: null,
     createdAt: '2026-08-29T10:02:00.000Z',
   },
   {
@@ -157,6 +165,9 @@ const DEMO_ORDERS: Order[] = [
     productName: `${BRAND_NAME} Custom Shin Guard`,
     status: 'delivered',
     totalCents: 8900,
+    currency: 'usd',
+    trackingCarrier: 'UPS',
+    trackingNumber: '1Z999AA10123456784',
     createdAt: '2026-07-14T15:37:00.000Z',
   },
 ];
@@ -209,41 +220,84 @@ export async function listMeasurements(scanIds: readonly string[]): Promise<Meas
   }));
 }
 
+/** Same cap as the library: recent history, not an archive. */
+export const ORDER_LIST_LIMIT = 50;
+
+// Row shapes as PostgREST returns them for the selects below; columns match
+// supabase/migrations 0001 + 0009. orders has no name or currency of its own,
+// both come from the products join.
+export interface OrderQueryRow {
+  id: string;
+  status: OrderStatus;
+  amount_cents: number | null;
+  tracking_carrier: string | null;
+  tracking_number: string | null;
+  created_at: string;
+  products: { name: string; currency: string } | null;
+}
+
+export interface ProductQueryRow {
+  id: string;
+  name: string;
+  description: string;
+  base_price_cents: number;
+  image_url: string | null;
+}
+
+export function toOrder(row: OrderQueryRow): Order {
+  return {
+    id: row.id,
+    productName: row.products?.name ?? 'Shin guard',
+    status: row.status,
+    totalCents: row.amount_cents,
+    currency: row.products?.currency ?? 'usd',
+    trackingCarrier: row.tracking_carrier,
+    trackingNumber: row.tracking_number,
+    createdAt: row.created_at,
+  };
+}
+
+export function toProduct(row: ProductQueryRow): Product {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    priceCents: row.base_price_cents,
+    ...(row.image_url ? { image: { uri: row.image_url } } : {}),
+  };
+}
+
 export async function listOrders(): Promise<Order[]> {
   if (USE_FAKE_DATA) {
     return DEMO_ORDERS;
   }
   const { data, error } = await getSupabaseClient()
     .from('orders')
-    .select('id, product_name, status, total_cents, created_at')
-    .order('created_at', { ascending: false });
+    .select(
+      'id, status, amount_cents, tracking_carrier, tracking_number, created_at, products(name, currency)',
+    )
+    .order('created_at', { ascending: false })
+    .limit(ORDER_LIST_LIMIT);
   if (error) {
     throw error;
   }
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    productName: row.product_name,
-    status: row.status,
-    totalCents: row.total_cents,
-    createdAt: row.created_at,
-  }));
+  return ((data ?? []) as unknown as OrderQueryRow[]).map(toOrder);
 }
 
+/** Only products the admin panel marked available. Cheapest first, so the
+ * single guard leads and the pair follows. */
 export async function listProducts(): Promise<Product[]> {
   if (USE_FAKE_DATA) {
     return DEMO_PRODUCTS;
   }
   const { data, error } = await getSupabaseClient()
     .from('products')
-    .select('id, name, description, price_cents')
-    .eq('active', true);
+    .select('id, name, description, base_price_cents, image_url')
+    .eq('active', true)
+    .order('base_price_cents')
+    .limit(50);
   if (error) {
     throw error;
   }
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    priceCents: row.price_cents,
-  }));
+  return ((data ?? []) as ProductQueryRow[]).map(toProduct);
 }

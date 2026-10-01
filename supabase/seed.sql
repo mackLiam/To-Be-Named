@@ -7,9 +7,11 @@
 -- account: the dry-run provider returns a canned STL. Swap provider to
 -- "onshape" and fill ref with real document/workspace/element ids to drive a
 -- real model.
-insert into public.products (name, slug, base_price_cents, currency, active, cad_model)
+insert into public.products (name, slug, description, base_price_cents, currency, active, cad_model)
 values (
-  'FORMS Custom Shin Guard', 'custom-guard', 8900, 'usd', true,
+  'FORMS Custom Shin Guard', 'custom-guard',
+  'Printed to your scan. One piece, vented shell, no strap gap at the ankle.',
+  8900, 'usd', true,
   jsonb_build_object(
     'provider', 'dry_run',
     'schema_version', '1.0.0',

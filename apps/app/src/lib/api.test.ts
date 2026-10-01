@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { validateMeasurements } from '@forms/shared';
 
-import { listMeasurements, listOrders, listProducts, listScans } from './api';
+import { listMeasurements, listOrders, listProducts, listScans, toOrder, toProduct } from './api';
 import { groupScanSessions, sessionStatus } from './library';
 
 // No EXPO_PUBLIC_SUPABASE_* env vars are set in the test environment, so
@@ -42,7 +42,7 @@ describe('data-layer stubs (no backend configured)', () => {
   it('listOrders resolves to demo orders', async () => {
     const orders = await listOrders();
     expect(orders.length).toBeGreaterThan(0);
-    expect(orders.every((order) => order.totalCents > 0)).toBe(true);
+    expect(orders.every((order) => (order.totalCents ?? 0) > 0)).toBe(true);
   });
 
   it('listProducts resolves to demo products', async () => {
@@ -50,5 +50,64 @@ describe('data-layer stubs (no backend configured)', () => {
     expect(products.length).toBeGreaterThan(0);
     expect(products.every((product) => product.name && product.priceCents > 0)).toBe(true);
     expect(products.every((product) => product.image !== undefined)).toBe(true);
+  });
+});
+
+// The admin panel (apps/web) writes these columns; these mappers are the
+// app's half of that contract (supabase/migrations 0001 + 0009).
+describe('row mappers', () => {
+  it('maps an order row, taking name and currency from the product join', () => {
+    expect(
+      toOrder({
+        id: 'o1',
+        status: 'shipped',
+        amount_cents: 8900,
+        tracking_carrier: 'UPS',
+        tracking_number: '1Z9',
+        created_at: '2026-09-01T00:00:00Z',
+        products: { name: 'Guard', currency: 'usd' },
+      }),
+    ).toEqual({
+      id: 'o1',
+      productName: 'Guard',
+      status: 'shipped',
+      totalCents: 8900,
+      currency: 'usd',
+      trackingCarrier: 'UPS',
+      trackingNumber: '1Z9',
+      createdAt: '2026-09-01T00:00:00Z',
+    });
+  });
+
+  it('survives an order with no amount or product join', () => {
+    const order = toOrder({
+      id: 'o2',
+      status: 'pending_payment',
+      amount_cents: null,
+      tracking_carrier: null,
+      tracking_number: null,
+      created_at: '2026-09-01T00:00:00Z',
+      products: null,
+    });
+    expect(order.totalCents).toBeNull();
+    expect(order.productName).toBe('Shin guard');
+  });
+
+  it('maps a product row and only adds an image when a URL is set', () => {
+    const row = {
+      id: 'p1',
+      name: 'Guard',
+      description: 'Fits.',
+      base_price_cents: 8900,
+      image_url: 'https://example.com/g.jpg',
+    };
+    expect(toProduct(row)).toEqual({
+      id: 'p1',
+      name: 'Guard',
+      description: 'Fits.',
+      priceCents: 8900,
+      image: { uri: 'https://example.com/g.jpg' },
+    });
+    expect('image' in toProduct({ ...row, image_url: null })).toBe(false);
   });
 });
