@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+import { authStorage, bindAutoRefresh } from './authStorage';
+
 /**
  * Supabase client, lazily created. Only EXPO_PUBLIC_* values are read here -
  * anything in the app bundle is public, so no service keys, ever (see
@@ -34,6 +36,15 @@ export function getSupabaseClient(): SupabaseClient {
     );
   }
 
-  client = createClient(url, anonKey);
+  client = createClient(url, anonKey, {
+    auth: {
+      storage: authStorage,
+      persistSession: true,
+      autoRefreshToken: true,
+      // Sign-in is by typed one-time code, never a redirect back into the app.
+      detectSessionInUrl: false,
+    },
+  });
+  bindAutoRefresh(client);
   return client;
 }
