@@ -319,3 +319,28 @@ def test_help(argv: list[str]) -> None:
     with pytest.raises(SystemExit) as exc:
         cli.build_parser().parse_args(argv)
     assert exc.value.code == 0
+
+
+def test_manifest_masks_lists_v2_masks_and_ignores_v1() -> None:
+    from forms_pipeline.replay.core import manifest_masks
+
+    v2 = json.dumps(
+        {"images": [{"file": "000.jpg", "mask": "000.png"}, {"file": "001.jpg", "mask": "001.png"}]}
+    )
+    assert manifest_masks(v2.encode()) == ["000.png", "001.png"]
+    assert manifest_masks(json.dumps({"images": [{"file": "000.jpg"}]}).encode()) == []
+
+
+@pytest.mark.parametrize("mask", ["../x.png", "000.jpg", "0000.png", 7])
+def test_manifest_masks_rejects_bad_names(mask: object) -> None:
+    from forms_pipeline.replay.core import ReplayError, manifest_masks
+
+    with pytest.raises(ReplayError):
+        manifest_masks(json.dumps({"images": [{"file": "000.jpg", "mask": mask}]}).encode())
+
+
+def test_manifest_masks_rejects_stem_mismatch() -> None:
+    from forms_pipeline.replay.core import ReplayError, manifest_masks
+
+    with pytest.raises(ReplayError):
+        manifest_masks(json.dumps({"images": [{"file": "000.jpg", "mask": "001.png"}]}).encode())

@@ -43,6 +43,7 @@ from forms_pipeline.replay.core import (
     job_signature,
     load_bundle,
     manifest_images,
+    manifest_masks,
     printable_artifacts,
     recording_summary,
     replay_user_email,
@@ -150,6 +151,8 @@ def cmd_record(args: argparse.Namespace, settings: Settings) -> int:
                     _download(client, f"{prefix}/images/{name}", out / "images" / name)
                     print(f"\rimages {i}/{len(images)}", end="", file=sys.stderr)
                 print(file=sys.stderr)
+                for name in manifest_masks((out / CAPTURE_FILE).read_bytes()):
+                    _download(client, f"{prefix}/masks/{name}", out / "masks" / name)
             if scan["mesh_path"]:
                 _download(client, owned_mesh_path(owner, scan["mesh_path"]), out / MESH_FILE)
             measurements = _latest_measurements(client, scan_id, validated_only=True)
@@ -283,6 +286,9 @@ def cmd_run(args: argparse.Namespace, settings: ReplaySettings) -> int:
                     _upload(user, f"{uid}/{scan_id}/images/{name}", data, "image/jpeg")
                     print(f"\ruploaded {i}/{len(bundle.images)} images", end="")
                 print()
+                for name in bundle.masks:
+                    data = (bundle.root / "masks" / name).read_bytes()
+                    _upload(user, f"{uid}/{scan_id}/masks/{name}", data, "image/png")
                 # Last, as the app does: its presence implies every image landed.
                 capture = (bundle.root / CAPTURE_FILE).read_bytes()
                 _upload(user, f"{uid}/{scan_id}/{CAPTURE_FILE}", capture, "application/json")

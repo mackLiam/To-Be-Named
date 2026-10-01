@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from forms_pipeline.reconstruct.bundle import MAX_CAPTURE_JSON_BYTES, MAX_IMAGES
 
 IMAGE_NAME_RE = re.compile(r"^\d{3}\.jpg$")
+MASK_NAME_RE = re.compile(r"^\d{3}\.png$")
 LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
 RECORDING_FILE = "recording.json"
 CAPTURE_FILE = "capture.json"
@@ -68,6 +69,22 @@ def manifest_images(capture_json: bytes) -> list[str]:
     return names
 
 
+def manifest_masks(capture_json: bytes) -> list[str]:
+    """Silhouette (v2) mask names, ^\\d{3}\\.png$ with the photo's stem; empty for v1."""
+    manifest = json.loads(capture_json)
+    masks: list[str] = []
+    for i, entry in enumerate(manifest.get("images") or []):
+        if not isinstance(entry, dict) or "mask" not in entry:
+            continue
+        name = entry["mask"]
+        if not isinstance(name, str) or not MASK_NAME_RE.fullmatch(name):
+            raise ReplayError(f"capture.json image {i} has an invalid mask name")
+        if name[:3] != str(entry.get("file", ""))[:3]:
+            raise ReplayError(f"capture.json image {i} mask does not match its photo")
+        masks.append(name)
+    return masks
+
+
 @dataclass(frozen=True)
 class Bundle:
     root: Path
@@ -75,6 +92,7 @@ class Bundle:
     capture_kind: str
     leg: str
     images: tuple[str, ...]  # empty for a mesh recording
+    masks: tuple[str, ...] = ()  # silhouette (v2) recordings only
 
     @property
     def expected(self) -> dict[str, float] | None:
@@ -94,17 +112,22 @@ def load_bundle(root: Path) -> Bundle:
     if leg not in LEGS:
         raise ReplayError(f"recording has invalid leg {leg!r}")
     images: list[str] = []
+    masks: list[str] = []
     if kind == "photos":
         capture = root / CAPTURE_FILE
         if not capture.is_file():
             raise ReplayError(f"photo recording is missing {CAPTURE_FILE}")
         images = manifest_images(capture.read_bytes())
+        masks = manifest_masks(capture.read_bytes())
         missing = [n for n in images if not (root / "images" / n).is_file()]
+        missing += [n for n in masks if not (root / "masks" / n).is_file()]
         if missing:
             raise ReplayError(f"recording is missing {len(missing)} image(s), e.g. {missing[0]}")
     elif not (root / MESH_FILE).is_file():
         raise ReplayError(f"mesh recording is missing {MESH_FILE}")
-    return Bundle(root=root, meta=meta, capture_kind=kind, leg=leg, images=tuple(images))
+    return Bundle(
+        root=root, meta=meta, capture_kind=kind, leg=leg, images=tuple(images), masks=tuple(masks)
+    )
 
 
 def recording_summary(root: Path) -> tuple[int, int]:
