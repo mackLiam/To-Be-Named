@@ -64,6 +64,19 @@ jobs:
       - name: Test (pytest)
         run: pytest
 
+  sql:
+    # RLS, grants, the queue helpers and the payment RPCs are only tested
+    # here: every migration applied to a throwaway Postgres, then every
+    # supabase/tests/*checks.sql. The runner image ships Postgres binaries.
+    name: SQL migrations and checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Apply migrations and run checks
+        run: PG_BIN="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)" bash supabase/tests/run_sql_checks.sh
+
   gitleaks:
     # The repo is public, so a pushed secret is leaked the moment it lands.
     # Scans only the commits this push or PR adds, never full history, so it
