@@ -42,10 +42,45 @@ months 2-5).
 - Prevent: gate-failure PostHog events aggregate into guidance copy
   (ROADMAP.md week 13).
 
-## Stripe disputes and webhook failures
+## Stripe payments, webhooks and refunds
 
-- TODO (Month 3): webhook signature failures, replayed/idempotent events,
-  dispute evidence flow, refund path.
+How it works: the app calls `POST /api/checkout` (apps/web), which creates
+the order as pending_payment and a hosted Checkout Session (30 minute
+expiry). Stripe calls `POST /api/stripe/webhook`; each handled event goes
+through one RPC in migration 0013 that records the event id and applies the
+effect in one transaction (stripe_events), so redelivery is harmless.
+Paid orders enqueue CAD through the orders_enqueue_cad trigger.
+
+- Notice: Stripe dashboard > Developers > Webhooks shows failed deliveries
+  (Stripe retries for up to 3 days); web host logs show
+  `stripe webhook: <rpc> failed: ...`; an order stuck in pending_payment
+  after a customer says they paid.
+- Diagnose:
+  - 400 invalid_signature: STRIPE_WEBHOOK_SECRET does not match the
+    endpoint's signing secret (it differs per endpoint and per test/live).
+  - 501: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET or the service role is
+    missing on the web host.
+  - 500 processing_failed on checkout.session.completed: usually the paid
+    trigger refusing (a scan with no measurements, or a product with no
+    cad_model); the message is in the web logs. Nothing was recorded, so
+    the next retry applies cleanly once the cause is fixed.
+  - Admin > Audit log, filter orders: every webhook outcome is a
+    `stripe.*` row with event id, outcome, expected vs charged amount.
+- Fix:
+  - Fix the cause, then use "Resend" on the event in the Stripe dashboard;
+    a duplicate is a no-op, a previously failed one applies now.
+  - An audit row with `needs_refund: true` means a payment landed on an
+    order already cancelled (admin cancel or account deletion raced the
+    payment). The order shows the payment; use Refund payment on it.
+  - Refunds: Admin > order > Refund payment (idempotent per order). It
+    cancels the order if it had not shipped; charge.refunded then stamps
+    refunded_at. Partial refunds are done in the Stripe dashboard and only
+    audit-logged here.
+- Disputes: answer in the Stripe dashboard with the order's audit history,
+  the shipping address and tracking from the admin order page. No dispute
+  automation exists.
+- Prevent: never hand-edit order status to paid for a Stripe order; the
+  manual "Mark paid" exists only for orders paid outside Stripe.
 
 ## Supabase incidents
 
