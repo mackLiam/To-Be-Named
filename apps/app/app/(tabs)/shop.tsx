@@ -1,14 +1,20 @@
+import { useRouter } from 'expo-router';
 import { Image, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
+import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
 import { Rule } from '../../src/components/Rule';
 import { Screen } from '../../src/components/Screen';
+import { useAccount } from '../../src/hooks/useAccount';
 import { useProducts } from '../../src/hooks/useProducts';
+import { canPlaceOrder } from '../../src/lib/auth';
 import { colors, radius, spacing } from '../../src/theme/tokens';
 
 export default function ShopScreen() {
   const { data: products, loading, error } = useProducts();
+  const { account } = useAccount();
+  const router = useRouter();
 
   return (
     <Screen>
@@ -19,6 +25,22 @@ export default function ShopScreen() {
         into a hard shell that does not fit.
       </Body>
       <Rule />
+
+      {!canPlaceOrder(account) && (
+        <View style={{ backgroundColor: colors.surfaceMuted, padding: spacing.lg }}>
+          <Heading level="h3">Ordering needs an account.</Heading>
+          <View style={{ height: spacing.sm }} />
+          <Body variant="bodySmall">
+            You are in guest mode. Save your scans to an account from Profile, it takes one code,
+            then order here.
+          </Body>
+          <View style={{ height: spacing.md }} />
+          <Button variant="outline" onPress={() => router.push('/profile')}>
+            Save my scans
+          </Button>
+        </View>
+      )}
+      {!canPlaceOrder(account) && <Rule />}
 
       {loading && <Body color={colors.textSecondary}>Loading the shop.</Body>}
 

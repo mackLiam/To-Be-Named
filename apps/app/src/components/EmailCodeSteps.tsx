@@ -1,6 +1,9 @@
 import { View } from 'react-native';
 
-import { IS_FAKE_AUTH } from '../lib/auth';
+import { BRAND_NAME } from '@forms/shared/brand';
+
+import { CODE_LIFETIME_MINUTES } from '../hooks/useEmailCodeFlow';
+import { FAKE_EXISTING_EMAIL, IS_FAKE_AUTH } from '../lib/auth';
 import { colors, spacing } from '../theme/tokens';
 import { Body } from './Body';
 import { Button } from './Button';
@@ -15,7 +18,8 @@ export function FakeModeCaption() {
     <>
       <View style={{ height: spacing.md }} />
       <Body variant="caption" color={colors.textTertiary}>
-        Test mode, no backend connected. Any 6-digit code works.
+        Test mode, no backend connected. Any 6-digit code works. {FAKE_EXISTING_EMAIL} acts as an
+        existing account.
       </Body>
     </>
   );
@@ -29,6 +33,10 @@ export function CodeStep(props: {
   busy: boolean;
   error?: string;
   resent: boolean;
+  /** Seconds until a new code may be sent; 0 when it may. */
+  resendWait: number;
+  /** The email already has an account: this code signs in and moves the guest's scans. */
+  merge?: boolean;
   onVerify: () => void;
   onResend: () => void;
   onChangeEmail: () => void;
@@ -45,8 +53,20 @@ export function CodeStep(props: {
           <View style={{ height: spacing.md }} />
         </>
       )}
-      <Body>
-        We sent a 6-digit code to <Body variant="bodyStrong">{props.email}</Body>. Enter it below.
+      {props.merge ? (
+        <Body>
+          That email already has a {BRAND_NAME} account. Enter the code we sent to{' '}
+          <Body variant="bodyStrong">{props.email}</Body> to sign in, and your scans from this phone
+          move to it.
+        </Body>
+      ) : (
+        <Body>
+          We sent a 6-digit code to <Body variant="bodyStrong">{props.email}</Body>. Enter it below.
+        </Body>
+      )}
+      <View style={{ height: spacing.xs }} />
+      <Body variant="bodySmall" color={colors.textSecondary}>
+        The code works for {CODE_LIFETIME_MINUTES} minutes.
       </Body>
       <View style={{ height: spacing.lg }} />
       <TextField
@@ -65,8 +85,12 @@ export function CodeStep(props: {
       </Button>
       <View style={{ height: spacing.lg }} />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-        <Button variant="outline" onPress={props.onResend} disabled={props.busy}>
-          Send a new code
+        <Button
+          variant="outline"
+          onPress={props.onResend}
+          disabled={props.busy || props.resendWait > 0}
+        >
+          {props.resendWait > 0 ? `Send a new code in ${props.resendWait}s` : 'Send a new code'}
         </Button>
         <Button variant="outline" onPress={props.onChangeEmail} disabled={props.busy}>
           Use a different email

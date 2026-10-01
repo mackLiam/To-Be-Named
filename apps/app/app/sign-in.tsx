@@ -8,6 +8,8 @@ import { Rule } from '../src/components/Rule';
 import { Screen } from '../src/components/Screen';
 import { CodeStep, FakeModeCaption } from '../src/components/EmailCodeSteps';
 import { TextField } from '../src/components/TextField';
+import { TextLink } from '../src/components/TextLink';
+import { PRIVACY_URL, TERMS_URL } from '../src/lib/links';
 import { useAuthAction, useEmailCodeFlow } from '../src/hooks/useEmailCodeFlow';
 import { colors, spacing } from '../src/theme/tokens';
 
@@ -21,7 +23,7 @@ const continueAsGuest = (backend: { continueAsGuest(): Promise<void> }) =>
  * navigation here: the auth change flips the guard and the tabs mount.
  */
 export default function SignInScreen() {
-  const { state, submitEmail, submitCode, resend, reset } = useEmailCodeFlow('sign_in');
+  const { state, resendWait, submitEmail, submitCode, resend, reset } = useEmailCodeFlow('sign_in');
   const guest = useAuthAction(continueAsGuest);
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -53,6 +55,7 @@ export default function SignInScreen() {
             onChangeText={setEmail}
             editable={!busy}
             error={state.error?.message}
+            autoFocus
             onSubmitEditing={() => submitEmail(email)}
           />
           <View style={{ height: spacing.lg }} />
@@ -60,15 +63,19 @@ export default function SignInScreen() {
             {state.busy ? 'Sending code' : 'Send code'}
           </Button>
           <FakeModeCaption />
+          <View style={{ height: spacing.md }} />
+          <Body variant="caption" color={colors.textSecondary}>
+            By continuing you agree to the <TextLink href={TERMS_URL}>Terms</TextLink> and{' '}
+            <TextLink href={PRIVACY_URL}>Privacy policy</TextLink>.
+          </Body>
 
           <View style={{ height: spacing.xxl }} />
           <Rule />
           <Heading level="h3">Continue as guest</Heading>
           <View style={{ height: spacing.sm }} />
           <Body variant="bodySmall" color={colors.textSecondary}>
-            Scan and order straight away, no email needed. Your scans and orders stay on this phone
-            only: sign out or delete the app and they are gone. You can save them to an account
-            later from Profile.
+            Scan straight away, no email needed. Your scans stay on this phone. To order, you save
+            them to an account, it takes one code.
           </Body>
           <View style={{ height: spacing.lg }} />
           <Button variant="outline" onPress={guest.run} disabled={busy}>
@@ -90,6 +97,7 @@ export default function SignInScreen() {
           busy={state.busy}
           error={state.error?.message}
           resent={state.resent}
+          resendWait={resendWait}
           onVerify={() => submitCode(code)}
           onResend={resend}
           onChangeEmail={() => {

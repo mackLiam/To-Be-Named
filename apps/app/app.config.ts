@@ -54,6 +54,10 @@ const config: ExpoConfig = {
     'expo-font',
     'expo-splash-screen',
     'expo-dev-client',
+    // Excludes the SecureStore session from Android Auto Backup (its Keystore
+    // key is never backed up, so a restored copy could not be read anyway).
+    // No Face ID string: the session store never asks for biometrics.
+    'expo-secure-store',
     [
       'expo-build-properties',
       {

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   asAuthError,
@@ -13,22 +13,34 @@ import {
  * an email to the current guest so its scans and orders carry over. */
 export type EmailCodeMode = 'sign_in' | 'upgrade';
 
+/** Mirrors supabase/config.toml [auth.email] max_frequency = "60s". */
+export const RESEND_COOLDOWN_MS = 60_000;
+/** Mirrors supabase/config.toml [auth.email] otp_expiry = 900. */
+export const CODE_LIFETIME_MINUTES = 15;
+
 export interface EmailCodeState {
   step: 'email' | 'code';
   /** Normalized address the code was sent to; set on the code step. */
   email: string | null;
+  /** Upgrade mode only: the email already has an account, so the code signs
+   * in to it and the guest's scans move there (mergeGuestInto). */
+  merge: boolean;
   busy: boolean;
   error: AuthError | null;
   /** True after a successful resend, until the next request. */
   resent: boolean;
+  /** Clock time of the last successful send; drives the resend cooldown. */
+  sentAt: number | null;
 }
 
 export const INITIAL_EMAIL_CODE_STATE: EmailCodeState = {
   step: 'email',
   email: null,
+  merge: false,
   busy: false,
   error: null,
   resent: false,
+  sentAt: null,
 };
 
 /**
@@ -43,10 +55,20 @@ export class EmailCodeFlow {
     private readonly backend: AuthBackend,
     private readonly mode: EmailCodeMode,
     private readonly onChange: (state: EmailCodeState) => void,
+    private readonly now: () => number = Date.now,
   ) {}
 
   getState(): EmailCodeState {
     return this.state;
+  }
+
+  /** Whole seconds until "Send a new code" is allowed again; 0 when it is. */
+  resendWaitSeconds(): number {
+    const { sentAt } = this.state;
+    if (sentAt === null) {
+      return 0;
+    }
+    return Math.max(0, Math.ceil((sentAt + RESEND_COOLDOWN_MS - this.now()) / 1000));
   }
 
   async submitEmail(input: string): Promise<void> {
@@ -56,10 +78,8 @@ export class EmailCodeFlow {
       return;
     }
     await this.run(async () => {
-      await (this.mode === 'sign_in'
-        ? this.backend.sendCode(email)
-        : this.backend.startUpgrade(email));
-      this.patch({ step: 'code', email });
+      const merge = await this.send(email);
+      this.patch({ step: 'code', email, merge, sentAt: this.now() });
     });
   }
 
@@ -70,26 +90,54 @@ export class EmailCodeFlow {
       this.patch({ error: new AuthError('ERR_AUTH_CODE') });
       return;
     }
-    await this.run(() =>
-      this.mode === 'sign_in'
-        ? this.backend.verifyCode(email, code)
-        : this.backend.finishUpgrade(email, code),
-    );
+    await this.run(() => {
+      if (this.mode === 'sign_in') {
+        return this.backend.verifyCode(email, code);
+      }
+      return this.state.merge
+        ? this.backend.mergeGuestInto(email, code)
+        : this.backend.finishUpgrade(email, code);
+    });
   }
 
-  /** Send a fresh code to the same address. */
+  /** Send a fresh code to the same address, once the cooldown has passed. */
   async resend(): Promise<void> {
-    if (this.state.email) {
-      await this.submitEmail(this.state.email);
-      if (!this.state.error) {
-        this.patch({ resent: true });
-      }
+    const { email, merge } = this.state;
+    if (!email || this.resendWaitSeconds() > 0) {
+      return;
     }
+    await this.run(async () => {
+      let nextMerge = merge;
+      if (merge) {
+        await this.backend.startMerge(email);
+      } else {
+        nextMerge = await this.send(email);
+      }
+      this.patch({ merge: nextMerge, resent: true, sentAt: this.now() });
+    });
   }
 
   /** Back to the email step ("use a different email"). */
   reset(): void {
     this.patch(INITIAL_EMAIL_CODE_STATE);
+  }
+
+  /** Returns true when the upgrade turned into a merge. */
+  private async send(email: string): Promise<boolean> {
+    if (this.mode === 'sign_in') {
+      await this.backend.sendCode(email);
+      return false;
+    }
+    try {
+      await this.backend.startUpgrade(email);
+      return false;
+    } catch (error) {
+      if (asAuthError(error).code !== 'ERR_AUTH_EMAIL_TAKEN') {
+        throw error;
+      }
+      await this.backend.startMerge(email);
+      return true;
+    }
   }
 
   private async run(work: () => Promise<void>): Promise<void> {
@@ -116,8 +164,18 @@ export function useEmailCodeFlow(mode: EmailCodeMode) {
   const flow = useRef<EmailCodeFlow | null>(null);
   flow.current ??= new EmailCodeFlow(getAuthBackend(), mode, setState);
   const current = flow.current;
+  const resendWait = current.resendWaitSeconds();
+  // Re-render once a second while the countdown is visible.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (resendWait > 0) {
+      const timer = setTimeout(() => tick((n) => n + 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendWait, state.sentAt]);
   return {
     state,
+    resendWait,
     submitEmail: (email: string) => void current.submitEmail(email),
     submitCode: (code: string) => void current.submitCode(code),
     resend: () => void current.resend(),

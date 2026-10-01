@@ -44,6 +44,27 @@ pipeline instead: the app never interprets geometry.
   job status anywhere in this app are a bug: the SQL state machine is the
   authority and shared enums are its projection.
 
+## Accounts model (src/lib/auth.ts)
+
+- No account needed to scan: a guest is an anonymous Supabase user whose
+  scans live in this device's session only. Payment needs a member (email
+  code): orders RLS refuses guests (migration 0012), and every screen that
+  mentions ordering says so via `canPlaceOrder`.
+- Guest to member: attach the email in place (same user id). If the email
+  already has an account, `mergeGuestInto` moves the guest's scans there via
+  the 0012 transfer RPCs. Only its last step (`setSession` on the main
+  client) changes what the app sees; any earlier failure leaves the guest
+  signed in. The member is signed in on a throwaway, non-persisting client.
+- Sign out is `local` by default; members can also sign out everywhere.
+  Delete account (guest or member) and "Get a copy of your data" go through
+  RPCs; destructive actions use inline two-step confirms (Alert does nothing
+  on web).
+- Native sessions live in the Keychain/Keystore (expo-secure-store,
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY), chunked by src/lib/chunkedStorage.ts
+  because SecureStore values must stay small. Changing the native storage
+  needs a new EAS dev build.
+- Never log emails, codes, tokens or exported data.
+
 ## Upload path reasoning
 
 Upload is the only place the app writes anything heavy. Constraints that

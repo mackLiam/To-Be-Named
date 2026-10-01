@@ -21,11 +21,7 @@ export function hasSupabaseConfig(): boolean {
   return Boolean(process.env.EXPO_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
 }
 
-export function getSupabaseClient(): SupabaseClient {
-  if (client) {
-    return client;
-  }
-
+function config(): { url: string; anonKey: string } {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -35,7 +31,15 @@ export function getSupabaseClient(): SupabaseClient {
         'Copy .env.example (repo root) to .env and fill in your Supabase project values.',
     );
   }
+  return { url, anonKey };
+}
 
+export function getSupabaseClient(): SupabaseClient {
+  if (client) {
+    return client;
+  }
+
+  const { url, anonKey } = config();
   client = createClient(url, anonKey, {
     auth: {
       storage: authStorage,
@@ -47,4 +51,33 @@ export function getSupabaseClient(): SupabaseClient {
   });
   bindAutoRefresh(client);
   return client;
+}
+
+/** Auth options for a client whose session must never reach the app: it is
+ * not persisted, not refreshed, and keyed apart from the main client. */
+export const THROWAWAY_AUTH_OPTIONS = {
+  persistSession: false,
+  autoRefreshToken: false,
+  detectSessionInUrl: false,
+  storageKey: 'forms-throwaway',
+} as const;
+
+/**
+ * A fresh client that holds a session only in memory. Used to sign a second
+ * user in (the guest merge, src/lib/auth.ts) without touching the main
+ * client's session until the caller explicitly hands it over.
+ */
+export function createThrowawayClient(): SupabaseClient {
+  const { url, anonKey } = config();
+  const memory = new Map<string, string>();
+  return createClient(url, anonKey, {
+    auth: {
+      ...THROWAWAY_AUTH_OPTIONS,
+      storage: {
+        getItem: (key) => memory.get(key) ?? null,
+        setItem: (key, value) => void memory.set(key, value),
+        removeItem: (key) => void memory.delete(key),
+      },
+    },
+  });
 }

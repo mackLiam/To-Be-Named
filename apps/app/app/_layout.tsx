@@ -34,7 +34,9 @@ export default function RootLayout() {
  * Every product route sits behind a session (guest or member): scans and
  * orders are owner-scoped by RLS, so there is nothing to show without an
  * auth.uid(). Flipping the guard unmounts the other side, which is what keeps
- * one user's fetched rows from surviving into the next user's session.
+ * one user's fetched rows from surviving into the next user's session. A
+ * guest merging into an existing account changes user without passing
+ * through signed out, so the stack is also keyed on the user id.
  */
 function RootStack({ fontsReady }: { fontsReady: boolean }) {
   const { loading, account } = useAccount();
@@ -56,6 +58,7 @@ function RootStack({ fontsReady }: { fontsReady: boolean }) {
     <>
       <StatusBar style="dark" />
       <Stack
+        key={account?.userId ?? 'signed-out'}
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.background },
@@ -83,6 +86,17 @@ function RootStack({ fontsReady }: { fontsReady: boolean }) {
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.textPrimary,
               presentation: 'modal',
+            }}
+          />
+          <Stack.Screen
+            name="order/[key]"
+            options={{
+              headerShown: true,
+              headerTitle: 'Order',
+              headerBackTitle: 'Scan',
+              headerStyle: { backgroundColor: colors.background },
+              headerTintColor: colors.textPrimary,
+              headerShadowVisible: false,
             }}
           />
         </Stack.Protected>

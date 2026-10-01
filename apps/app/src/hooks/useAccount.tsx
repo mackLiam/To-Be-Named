@@ -1,14 +1,20 @@
 import { createContext, useContext, useEffect, useState, type PropsWithChildren } from 'react';
 
-import { getAuthBackend, type Account } from '../lib/auth';
+import { becameMember, getAuthBackend, type Account } from '../lib/auth';
 
 export interface AccountState {
   /** True until the stored session has been read; render nothing route-wise before then. */
   loading: boolean;
   account: Account | null;
+  /** This guest just became a member (upgrade or merge), for the Profile
+   * confirmation. Held here because a merge changes the user id, which
+   * remounts every screen (app/_layout.tsx). */
+  justSaved: boolean;
 }
 
-const AccountContext = createContext<AccountState>({ loading: true, account: null });
+const INITIAL: AccountState = { loading: true, account: null, justSaved: false };
+
+const AccountContext = createContext<AccountState>(INITIAL);
 
 /**
  * Single subscriber to auth state for the whole app. The root layout guards
@@ -16,15 +22,23 @@ const AccountContext = createContext<AccountState>({ loading: true, account: nul
  * signing in gets fresh fetches, never the previous user's rows.
  */
 export function AccountProvider({ children }: PropsWithChildren) {
-  const [state, setState] = useState<AccountState>({ loading: true, account: null });
+  const [state, setState] = useState<AccountState>(INITIAL);
 
   useEffect(() => {
     const backend = getAuthBackend();
-    const unsubscribe = backend.onChange((account) => setState({ loading: false, account }));
+    const update = (account: Account | null) =>
+      setState((prev) => ({
+        loading: false,
+        account,
+        justSaved:
+          becameMember(prev.account, account) ||
+          (prev.justSaved && account?.userId === prev.account?.userId),
+      }));
+    const unsubscribe = backend.onChange(update);
     backend
       .getAccount()
-      .then((account) => setState({ loading: false, account }))
-      .catch(() => setState({ loading: false, account: null }));
+      .then(update)
+      .catch(() => update(null));
     return unsubscribe;
   }, []);
 
