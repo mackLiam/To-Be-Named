@@ -52,6 +52,10 @@ finishing a task checks this file for anything its change closes.
 - Legal: /privacy and /terms are drafts with marked placeholders (entity,
   liability, governing law, record retention); lawyer review is roadmap
   week 14.
+- Business decisions Checkout does not make yet: sales tax (Stripe Tax /
+  `automatic_tax` is off), shipping cost (none is charged; the price is
+  per guard), and terms acceptance (Checkout `consent_collection` needs
+  the terms URL set in the Stripe dashboard first).
 - The checkout success page links back with `zells://orders`, which only
   helps native payers; a desktop Expo-web payer should get a link to the
   web app instead once app.zells.com exists.

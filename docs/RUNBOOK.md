@@ -87,7 +87,20 @@ Paid orders enqueue CAD through the orders_enqueue_cad trigger.
 - TODO (Month 2): RLS regression checklist, storage CORS, backup/restore
   procedure (Supabase Pro, Month 3), key rotation steps.
 
-## Retention sweep
+## Retention sweep, scan purge and account deletion
+
+Three daily maintenance runs, none scheduled yet (docs/KNOWN-ISSUES.md).
+All are idempotent and batch-limited, and all are dry runs until armed, so
+run each once unarmed against production and read the log before arming:
+
+    python -m forms_pipeline.jobs.retention                # RETENTION_DRY_RUN=false to delete
+    python -m forms_pipeline.jobs.scan_deletion --arm      # owner-deleted scans
+    python -m forms_pipeline.jobs.account_deletion --arm   # deletion requests
+
+Order matters: the purge first releases the scans that hold an account
+deletion back. Retention (0015) covers every scan with files 30 days after
+its last finished job (or creation): measured, failed, never enqueued, and
+photo bundles. The purge waits 24 hours after a dead order was cancelled.
 
 - Notice: sweep run logs (deployed worker scheduled task), audit_log rows.
 - Diagnose: sweep is idempotent and batch-limited; a stuck batch means a
