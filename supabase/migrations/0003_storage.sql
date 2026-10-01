@@ -33,8 +33,10 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values ('stls', 'stls', false, 52428800, array['model/stl', 'application/octet-stream'])
 on conflict (id) do nothing;
 
-comment on table storage.buckets is
-  'meshes: user-uploaded raw scans, path-scoped RLS below. stls: worker-generated print files, service-role only.';
+-- Bucket roles: meshes holds user-uploaded raw scans (path-scoped RLS below);
+-- stls holds worker-generated print files (service role only). Not a COMMENT
+-- ON storage.buckets: Supabase migrations do not own the storage schema
+-- (42501 must be owner), so the note lives here.
 
 -- ---------------------------------------------------------------------------
 -- storage.objects policies
