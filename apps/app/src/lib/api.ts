@@ -1,13 +1,16 @@
 import type { ImageSourcePropType } from 'react-native';
 
 import { BRAND_NAME } from '@forms/shared/brand';
-import type { OrderStatus, ScanStatus } from '@forms/shared';
+import type { Measurements, OrderStatus } from '@forms/shared';
 
 import guardKeeper from '../../assets/products/guard-keeper.jpg';
 import guardPair from '../../assets/products/guard-pair.jpg';
 import guardSingle from '../../assets/products/guard-single.jpg';
 
+import { SLICE_DIMS, SLICES, sliceKey, type MeasurementRow, type Scan } from './library';
 import { getSupabaseClient, hasSupabaseConfig } from './supabase';
+
+export type { Scan } from './library';
 
 /**
  * Data-layer stubs for the product surface (scans, orders, products). Phase
@@ -21,12 +24,9 @@ import { getSupabaseClient, hasSupabaseConfig } from './supabase';
 
 const USE_FAKE_DATA = !hasSupabaseConfig();
 
-export interface Scan {
-  id: string;
-  leg: 'left' | 'right';
-  status: ScanStatus;
-  createdAt: string;
-}
+/** Library page size. The tab shows recent history, not an archive; raise or
+ * paginate when someone actually has this many scans. */
+export const SCAN_LIST_LIMIT = 100;
 
 export interface Order {
   id: string;
@@ -81,10 +81,61 @@ const DEMO_PRODUCTS: Product[] = [
   },
 ];
 
+// Three sessions covering the states the Library must render: a finished
+// pair, a pair still measuring, and a pair where one leg failed.
 const DEMO_SCANS: Scan[] = [
-  { id: 'demo-scan-1', leg: 'right', status: 'ready', createdAt: '2026-08-28T17:12:00.000Z' },
-  { id: 'demo-scan-2', leg: 'left', status: 'processing', createdAt: '2026-08-28T17:04:00.000Z' },
-  { id: 'demo-scan-3', leg: 'left', status: 'failed', createdAt: '2026-08-21T09:41:00.000Z' },
+  demoScan('demo-scan-1', 'demo-pair-1', 'L', 'ready', '2026-08-28T17:04:00.000Z'),
+  demoScan('demo-scan-2', 'demo-pair-1', 'R', 'ready', '2026-08-28T17:12:00.000Z'),
+  demoScan('demo-scan-3', 'demo-pair-2', 'L', 'ready', '2026-09-27T10:20:00.000Z'),
+  demoScan('demo-scan-4', 'demo-pair-2', 'R', 'processing', '2026-09-27T10:29:00.000Z'),
+  demoScan('demo-scan-5', 'demo-pair-3', 'L', 'failed', '2026-08-21T09:41:00.000Z'),
+  demoScan('demo-scan-6', 'demo-pair-3', 'R', 'ready', '2026-08-21T09:50:00.000Z'),
+];
+
+function demoScan(
+  id: string,
+  pairId: string,
+  leg: Scan['leg'],
+  status: Scan['status'],
+  createdAt: string,
+): Scan {
+  return { id, pairId, leg, status, createdAt };
+}
+
+/** Plausible values inside the schema's ranges (validated in api.test.ts):
+ * the leg narrows toward the ankle, so S1 is the smallest slice. */
+function demoMeasurements(legLength: number, ankleWidth: number): Measurements {
+  const values = { Leg_Length: legLength } as Measurements;
+  SLICES.forEach((slice, i) => {
+    const width = ankleWidth + i * 14;
+    SLICE_DIMS.forEach((dim, j) => {
+      values[sliceKey(slice, dim)] = Math.round((width + j * 3) * 10) / 10;
+    });
+  });
+  return values;
+}
+
+const DEMO_MEASUREMENTS: MeasurementRow[] = [
+  {
+    scanId: 'demo-scan-1',
+    values: demoMeasurements(392, 61),
+    createdAt: '2026-08-28T17:30:00.000Z',
+  },
+  {
+    scanId: 'demo-scan-2',
+    values: demoMeasurements(394, 63),
+    createdAt: '2026-08-28T17:38:00.000Z',
+  },
+  {
+    scanId: 'demo-scan-3',
+    values: demoMeasurements(401, 62),
+    createdAt: '2026-09-27T10:45:00.000Z',
+  },
+  {
+    scanId: 'demo-scan-6',
+    values: demoMeasurements(389, 60),
+    createdAt: '2026-08-21T10:05:00.000Z',
+  },
 ];
 
 const DEMO_ORDERS: Order[] = [
@@ -110,8 +161,9 @@ export async function listScans(): Promise<Scan[]> {
   }
   const { data, error } = await getSupabaseClient()
     .from('scans')
-    .select('id, leg, status, created_at')
-    .order('created_at', { ascending: false });
+    .select('id, leg, status, pair_id, created_at')
+    .order('created_at', { ascending: false })
+    .limit(SCAN_LIST_LIMIT);
   if (error) {
     throw error;
   }
@@ -119,6 +171,34 @@ export async function listScans(): Promise<Scan[]> {
     id: row.id,
     leg: row.leg,
     status: row.status,
+    pairId: row.pair_id,
+    createdAt: row.created_at,
+  }));
+}
+
+/** Validated measurement rows for the given scans (both legs of one session).
+ * RLS "measurements: select own via scan" scopes this to the user's own scans;
+ * unvalidated rows are filtered server-side so they never reach the device. */
+export async function listMeasurements(scanIds: readonly string[]): Promise<MeasurementRow[]> {
+  if (scanIds.length === 0) {
+    return [];
+  }
+  if (USE_FAKE_DATA) {
+    return DEMO_MEASUREMENTS.filter((row) => scanIds.includes(row.scanId));
+  }
+  const { data, error } = await getSupabaseClient()
+    .from('measurements')
+    .select('scan_id, values, created_at')
+    .in('scan_id', scanIds)
+    .eq('validated', true)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    scanId: row.scan_id,
+    values: row.values,
     createdAt: row.created_at,
   }));
 }

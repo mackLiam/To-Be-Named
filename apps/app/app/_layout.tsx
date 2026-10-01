@@ -45,6 +45,17 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
+          name="scan/[key]"
+          options={{
+            headerShown: true,
+            headerTitle: 'Scan',
+            headerBackTitle: 'Library',
+            headerStyle: { backgroundColor: colors.background },
+            headerTintColor: colors.textPrimary,
+            headerShadowVisible: false,
+          }}
+        />
+        <Stack.Screen
           name="capture-info"
           options={{
             headerShown: true,

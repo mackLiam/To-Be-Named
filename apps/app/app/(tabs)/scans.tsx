@@ -1,71 +1,143 @@
-import { View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
+import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
 import { Rule } from '../../src/components/Rule';
 import { Screen } from '../../src/components/Screen';
-import { useScans } from '../../src/hooks/useScans';
+import { useScanSessions } from '../../src/hooks/useScans';
+import {
+  formatSessionDate,
+  SCAN_STATUS_LABEL,
+  SESSION_STATUS_LABEL,
+  sessionStatus,
+  type Scan,
+  type ScanSession,
+} from '../../src/lib/library';
 import { colors, spacing } from '../../src/theme/tokens';
 
-const STATUS_LABEL: Record<string, string> = {
-  capturing: 'Capturing',
-  uploaded: 'Uploaded',
-  processing: 'Processing',
-  ready: 'Ready',
-  failed: 'Failed, rescan needed',
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  capturing: colors.textSecondary,
-  uploaded: colors.textSecondary,
-  processing: colors.textSecondary,
-  ready: colors.textPrimary,
-  failed: colors.danger,
-};
-
 export default function ScansScreen() {
-  const { data: scans, loading, error } = useScans();
+  const router = useRouter();
+  const { sessions, loading, error, reload } = useScanSessions();
+
+  // Refresh when the tab regains focus (e.g. back from a capture) but not on
+  // the first focus, which the hook's own initial load already covers.
+  const focusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedOnce.current) {
+        reload();
+      }
+      focusedOnce.current = true;
+    }, [reload]),
+  );
+
+  const firstLoad = loading && sessions.length === 0;
 
   return (
-    <Screen>
+    <Screen onRefresh={reload} refreshing={loading && sessions.length > 0}>
       <Heading level="display">Your scan library.</Heading>
       <View style={{ height: spacing.md }} />
-      <Body>Every scan you take, kept here. A guard order reuses one, no rescan required.</Body>
+      <Body>
+        Each scan is both legs, left and right, measured separately. Every one is kept here, so a
+        reorder never needs a rescan.
+      </Body>
       <Rule />
 
-      {loading && <Body color={colors.textSecondary}>Loading your scans.</Body>}
+      {firstLoad && <Body color={colors.textSecondary}>Loading your scans.</Body>}
 
       {error && (
         <Body color={colors.danger}>
-          Could not load your scans right now. Pull to refresh once that is wired up, or try again
-          shortly.
+          Could not load your scans right now. Pull down to try again.
         </Body>
       )}
 
-      {!loading && !error && scans.length === 0 && (
+      {!loading && !error && sessions.length === 0 && (
         <View>
           <Heading level="h3">No scans yet.</Heading>
           <View style={{ height: spacing.sm }} />
           <Body color={colors.textSecondary}>
-            Start one from the Scan tab. It takes about ten minutes and works for both legs.
+            Start one from the Scan tab. It takes about ten minutes for both legs.
           </Body>
+          <View style={{ height: spacing.lg }} />
+          <Button onPress={() => router.navigate('/')}>Start a scan</Button>
         </View>
       )}
 
-      {scans.map((scan) => (
-        <View key={scan.id}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Body variant="bodyStrong">{scan.leg === 'left' ? 'Left leg' : 'Right leg'}</Body>
-            <Body color={STATUS_COLOR[scan.status] ?? colors.textSecondary}>
-              {STATUS_LABEL[scan.status] ?? scan.status}
-            </Body>
-          </View>
-          <Body variant="caption" color={colors.textTertiary}>
-            {new Date(scan.createdAt).toLocaleDateString()}
-          </Body>
-          <Rule />
-        </View>
+      {sessions.map((session) => (
+        <SessionRow
+          key={session.key}
+          session={session}
+          onPress={() => router.push({ pathname: '/scan/[key]', params: { key: session.key } })}
+        />
       ))}
     </Screen>
   );
 }
+
+function SessionRow({ session, onPress }: { session: ScanSession; onPress: () => void }) {
+  const status = sessionStatus(session);
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Scan from ${formatSessionDate(session.createdAt)}, ${SESSION_STATUS_LABEL[status]}`}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
+      <View style={styles.rowHeader}>
+        <Heading level="h3">{formatSessionDate(session.createdAt)}</Heading>
+        <Feather name="chevron-right" size={20} color={colors.textSecondary} />
+      </View>
+      <Body
+        variant="label"
+        color={status === 'needs_rescan' ? colors.danger : colors.textSecondary}
+      >
+        {SESSION_STATUS_LABEL[status]}
+      </Body>
+      <View style={{ height: spacing.sm }} />
+      <View style={styles.legs}>
+        <LegCell label="Left" scan={session.left} />
+        <LegCell label="Right" scan={session.right} />
+      </View>
+      <Rule />
+    </Pressable>
+  );
+}
+
+function LegCell({ label, scan }: { label: string; scan: Scan | null }) {
+  const failed = scan?.status === 'failed';
+  return (
+    <View style={styles.leg}>
+      <Body variant="caption" color={colors.textTertiary}>
+        {label}
+      </Body>
+      <Body variant="bodySmall" color={failed ? colors.danger : colors.textPrimary}>
+        {scan ? SCAN_STATUS_LABEL[scan.status] : 'Not scanned'}
+      </Body>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: {
+    paddingTop: spacing.sm,
+  },
+  rowPressed: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  rowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  legs: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+  },
+  leg: {
+    flex: 1,
+  },
+});

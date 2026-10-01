@@ -1,11 +1,14 @@
 import type { PropsWithChildren } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '../theme/tokens';
 
 interface ScreenProps extends PropsWithChildren {
   scroll?: boolean;
+  /** Enables pull-to-refresh on scrolling screens. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }
 
 /**
@@ -13,16 +16,29 @@ interface ScreenProps extends PropsWithChildren {
  * max-width container. Every tab screen wraps its content in this so spacing
  * stays consistent without every screen re-deriving it.
  */
-export function Screen({ children, scroll = true }: ScreenProps) {
-  const Container = scroll ? ScrollView : View;
+export function Screen({ children, scroll = true, onRefresh, refreshing = false }: ScreenProps) {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <Container
-        style={styles.container}
-        contentContainerStyle={scroll ? styles.content : undefined}
-      >
-        {scroll ? children : <View style={styles.content}>{children}</View>}
-      </Container>
+      {scroll ? (
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.content}
+          refreshControl={
+            onRefresh && (
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.textPrimary}
+                colors={[colors.action]}
+              />
+            )
+          }
+        >
+          {children}
+        </ScrollView>
+      ) : (
+        <View style={[styles.container, styles.content]}>{children}</View>
+      )}
     </SafeAreaView>
   );
 }
