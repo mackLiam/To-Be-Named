@@ -125,8 +125,8 @@ export function ProductForm({ initial }: { initial: ProductFormValues }) {
           spellCheck={false}
         />
         <span className={styles.fieldHint}>
-          Which parametric model the pipeline builds for this product. Empty uses the worker
-          default.
+          Which parametric model the pipeline builds for this product. Required before an order for
+          it can be marked paid.
         </span>
       </label>
 

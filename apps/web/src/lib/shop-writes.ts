@@ -153,6 +153,12 @@ export async function transitionOrder(
     .eq('id', id)
     .eq('status', order.status)
     .select('id');
+  // check_violation: the orders_enqueue_cad trigger (migration 0008) refuses
+  // 'paid' when a scan has no measurements or the product has no cad_model.
+  // Its message says which, so the admin sees it instead of a crash.
+  if (error?.code === '23514') {
+    return { error: error.message };
+  }
   if (error) {
     throw error;
   }

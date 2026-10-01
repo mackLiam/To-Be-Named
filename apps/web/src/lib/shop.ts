@@ -95,7 +95,7 @@ export function parseProductForm(
         cadModel = parsed as Record<string, unknown>;
       }
     } catch {
-      errors.push('CAD model must be valid JSON, or empty to use the worker default.');
+      errors.push('CAD model must be valid JSON, or empty.');
     }
   }
 

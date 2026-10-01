@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createProduct, transitionOrder } from './shop-writes';
 
-type Result = { data: unknown; error: { code?: string } | null };
+type Result = { data: unknown; error: { code?: string; message?: string } | null };
 
 /**
  * Minimal stand-in for the supabase-js query builder: records every call
@@ -76,6 +76,21 @@ describe('transitionOrder', () => {
     });
     const result = await transitionOrder(client, 'admin@x', ORDER, 'cancelled');
     expect(result.error).toMatch(/changed/);
+    expect(calls.map((c) => c.table)).toEqual(['orders', 'orders']);
+  });
+
+  it('shows the paid trigger refusal instead of throwing', async () => {
+    const { client, calls } = fakeClient({
+      orders: [
+        { data: { status: 'pending_payment', tracking_number: null }, error: null },
+        {
+          data: null,
+          error: { code: '23514', message: 'scan has no measurements yet' },
+        },
+      ],
+    });
+    const result = await transitionOrder(client, 'admin@x', ORDER, 'paid');
+    expect(result.error).toBe('scan has no measurements yet');
     expect(calls.map((c) => c.table)).toEqual(['orders', 'orders']);
   });
 
