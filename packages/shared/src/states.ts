@@ -52,6 +52,6 @@ export const VALID_TRANSITIONS: Record<PipelineStep, readonly PipelineStep[]> = 
 
 // scans.capture_kind (0008). 'photos' bundles live under the derived prefix
 // `${user_id}/${scan_id}/` in the meshes bucket; nothing stores the prefix.
-export const CAPTURE_KINDS = ['mesh', 'photos'] as const;
+export const CAPTURE_KINDS = ['mesh', 'photos', 'manual'] as const;
 
 export type CaptureKind = (typeof CAPTURE_KINDS)[number];

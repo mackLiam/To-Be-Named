@@ -66,6 +66,6 @@ describe('VALID_TRANSITIONS', () => {
 
 describe('CAPTURE_KINDS', () => {
   it('matches the scans.capture_kind CHECK', () => {
-    expect(CAPTURE_KINDS).toEqual(['mesh', 'photos']);
+    expect(CAPTURE_KINDS).toEqual(['mesh', 'photos', 'manual']);
   });
 });
