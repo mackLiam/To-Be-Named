@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { BRAND_NAME } from '@forms/shared/brand';
 
+import { signOut } from './actions';
 import styles from './admin.module.css';
 
 /**
@@ -24,9 +25,22 @@ export function AdminShell({ fake, children }: { fake: boolean; children: React.
           <span className={styles.panelTag}>Admin</span>
         </div>
         <nav className={styles.nav}>
+          <Link href="/admin/orders" className={styles.navLink}>
+            Orders
+          </Link>
+          <Link href="/admin/products" className={styles.navLink}>
+            Products
+          </Link>
           <Link href="/admin" className={styles.navLink}>
             Pipeline queue
           </Link>
+          {fake ? null : (
+            <form action={signOut}>
+              <button type="submit" className={styles.navButton}>
+                Sign out
+              </button>
+            </form>
+          )}
         </nav>
       </header>
 

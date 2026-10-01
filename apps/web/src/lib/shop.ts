@@ -53,7 +53,9 @@ export function centsToPriceInput(cents: number): string {
 }
 
 /** Field values as a form posts them. A missing checkbox is "off". */
-export function parseProductForm(form: Record<string, string | undefined>): ParseResult<ProductInput> {
+export function parseProductForm(
+  form: Record<string, string | undefined>,
+): ParseResult<ProductInput> {
   const errors: string[] = [];
   const name = (form.name ?? '').trim();
   const slug = (form.slug ?? '').trim();
@@ -192,7 +194,53 @@ export function parseTrackingForm(
   if (errors.length > 0) {
     return { ok: false, errors };
   }
-  return { ok: true, value: { tracking_carrier: carrier || null, tracking_number: number || null } };
+  return {
+    ok: true,
+    value: { tracking_carrier: carrier || null, tracking_number: number || null },
+  };
+}
+
+/** Button copy for each move an admin can make. */
+export const ORDER_ACTION_LABEL: Record<OrderStatus, string> = {
+  pending_payment: 'Back to awaiting payment',
+  paid: 'Mark paid (manual)',
+  in_production: 'Start production',
+  shipped: 'Mark shipped',
+  delivered: 'Mark delivered',
+  cancelled: 'Cancel order',
+};
+
+const ADDRESS_KEYS = ['name', 'line1', 'line2', 'city', 'state', 'postal_code', 'country'];
+
+/**
+ * orders.address is JSONB written by checkout (Stripe's address shape).
+ * Read defensively: only known string fields, in mailing order, one per line.
+ */
+export function formatAddress(address: Record<string, unknown> | null | undefined): string {
+  if (!address) {
+    return '';
+  }
+  return ADDRESS_KEYS.map((key) => address[key])
+    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+    .map((value) => value.trim())
+    .join('\n');
+}
+
+/** One line per audit row on the order history. */
+export function describeAudit(row: {
+  action: string;
+  detail: Record<string, unknown> | null;
+}): string {
+  const d = row.detail ?? {};
+  if (row.action === 'order.status' && typeof d.from === 'string' && typeof d.to === 'string') {
+    return `${orderStatusMeta(d.from).label} to ${orderStatusMeta(d.to).label}`;
+  }
+  if (row.action === 'order.tracking') {
+    const number = typeof d.tracking_number === 'string' ? d.tracking_number : null;
+    const carrier = typeof d.tracking_carrier === 'string' ? `${d.tracking_carrier} ` : '';
+    return number ? `Tracking set to ${carrier}${number}` : 'Tracking cleared';
+  }
+  return row.action;
 }
 
 export function formatMoney(cents: number | null, currency: string | null): string {

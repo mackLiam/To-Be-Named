@@ -5,6 +5,8 @@ import {
   ORDER_STATUS_META,
   ORDER_TRANSITIONS,
   centsToPriceInput,
+  describeAudit,
+  formatAddress,
   checkOrderTransition,
   formatMoney,
   isUuid,
@@ -119,7 +121,9 @@ describe('order transitions', () => {
   it('allows the happy path', () => {
     expect(checkOrderTransition('pending_payment', 'paid', { trackingNumber: null })).toBeNull();
     expect(checkOrderTransition('paid', 'in_production', { trackingNumber: null })).toBeNull();
-    expect(checkOrderTransition('in_production', 'shipped', { trackingNumber: '1Z999' })).toBeNull();
+    expect(
+      checkOrderTransition('in_production', 'shipped', { trackingNumber: '1Z999' }),
+    ).toBeNull();
     expect(checkOrderTransition('shipped', 'delivered', { trackingNumber: '1Z999' })).toBeNull();
   });
 
@@ -163,5 +167,39 @@ describe('isUuid', () => {
     expect(isUuid('00000000-0000-4000-8000-0000000000a1')).toBe(true);
     expect(isUuid('new')).toBe(false);
     expect(isUuid("1' or 1=1")).toBe(false);
+  });
+});
+
+describe('formatAddress', () => {
+  it('orders known string fields and drops the rest', () => {
+    expect(
+      formatAddress({
+        country: 'US',
+        line1: '1 Main St ',
+        name: 'Sam',
+        line2: '',
+        zip: 1,
+        city: 7,
+      }),
+    ).toBe('Sam\n1 Main St\nUS');
+    expect(formatAddress(null)).toBe('');
+  });
+});
+
+describe('describeAudit', () => {
+  it('describes status moves and tracking changes', () => {
+    expect(
+      describeAudit({ action: 'order.status', detail: { from: 'paid', to: 'in_production' } }),
+    ).toBe('Paid to In production');
+    expect(
+      describeAudit({
+        action: 'order.tracking',
+        detail: { tracking_carrier: 'UPS', tracking_number: '1Z9' },
+      }),
+    ).toBe('Tracking set to UPS 1Z9');
+    expect(describeAudit({ action: 'order.tracking', detail: { tracking_number: null } })).toBe(
+      'Tracking cleared',
+    );
+    expect(describeAudit({ action: 'order.refund', detail: null })).toBe('order.refund');
   });
 });

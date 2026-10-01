@@ -85,7 +85,11 @@ export async function setProductActive(
   id: string,
   active: boolean,
 ): Promise<WriteResult> {
-  const { data, error } = await client.from('products').update({ active }).eq('id', id).select('id');
+  const { data, error } = await client
+    .from('products')
+    .update({ active })
+    .eq('id', id)
+    .select('id');
   if (error) {
     throw error;
   }

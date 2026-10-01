@@ -54,6 +54,8 @@ export async function getAdminDecision(): Promise<AdminDecision> {
 
 export interface AdminContext {
   fake: boolean;
+  /** Who to write into audit_log.actor: the admin's email, or their id. */
+  actor: string;
 }
 
 /**
@@ -65,5 +67,8 @@ export async function requireAdmin(): Promise<AdminContext> {
   if (decision.kind === 'deny') {
     notFound();
   }
-  return { fake: decision.kind === 'fake' };
+  if (decision.kind === 'fake') {
+    return { fake: true, actor: 'fake-mode' };
+  }
+  return { fake: false, actor: decision.user.email ?? decision.user.id };
 }

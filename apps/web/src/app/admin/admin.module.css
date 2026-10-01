@@ -601,3 +601,168 @@
     padding: var(--space-md);
   }
 }
+
+/* ------------------------------------------------------------------------- */
+/* Shop admin: forms, inline actions, sign-in.                               */
+/* ------------------------------------------------------------------------- */
+.nav {
+  align-items: center;
+}
+
+.navButton {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--on-dark-muted);
+  background: none;
+  border: 1px solid var(--brown-500);
+  border-radius: var(--radius);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.navButton:hover {
+  color: var(--on-dark);
+  border-color: var(--on-dark-muted);
+}
+
+.loginWrap {
+  max-width: 380px;
+  margin: var(--space-xxl) auto;
+  padding: 0 var(--space-md);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 640px;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-md);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.fieldLabel {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.fieldHint {
+  font-family: var(--font-body-stack);
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.input {
+  font-family: var(--font-body-stack);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--yellow);
+  border: 1px solid var(--brown-300);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.input:focus-visible,
+.secondaryBtn:focus-visible,
+.downloadBtn:focus-visible,
+.navButton:focus-visible {
+  outline: 2px solid var(--brick-600);
+  outline-offset: 2px;
+}
+
+textarea.input {
+  resize: vertical;
+}
+
+.mono.input {
+  font-size: 12px;
+}
+
+.checkboxField {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.checkboxField input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brick-600);
+}
+
+.formError {
+  border-left: 3px solid var(--danger);
+  background: var(--surface-muted);
+  border-radius: var(--radius);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-md);
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--danger);
+}
+
+.formError ul {
+  margin: 0;
+  padding-left: var(--space-md);
+}
+
+.secondaryBtn {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--brown-300);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.secondaryBtn:hover {
+  background: var(--surface-muted);
+}
+
+.inlineForm {
+  display: inline;
+}
+
+.thumb {
+  width: 48px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  display: block;
+}
+
+.addressBlock {
+  font-family: var(--font-body-stack);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-line;
+  margin: 0;
+}

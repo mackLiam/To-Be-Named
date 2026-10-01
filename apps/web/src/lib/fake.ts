@@ -160,10 +160,43 @@ function fakeOrder(
 const B = (n: number) => `00000000-0000-4000-8000-0000000000b${n}`;
 
 export const fakeOrders: OrderRow[] = [
-  fakeOrder('00000000-0000-4000-8000-0000000000a6', 'pending_payment', C2, null, null, B(7), '2026-07-02T12:10:00Z'),
-  fakeOrder('00000000-0000-4000-8000-0000000000a5', 'paid', C1, 8900, B(5), null, '2026-07-02T10:58:00Z'),
-  fakeOrder('00000000-0000-4000-8000-0000000000a3', 'in_production', C2, 16900, B(3), B(6), '2026-07-02T07:55:00Z'),
-  fakeOrder('00000000-0000-4000-8000-0000000000a1', 'delivered', C1, 8900, B(1), null, '2026-06-28T09:00:00Z', 'FAKE1Z999'),
+  fakeOrder(
+    '00000000-0000-4000-8000-0000000000a6',
+    'pending_payment',
+    C2,
+    null,
+    null,
+    B(7),
+    '2026-07-02T12:10:00Z',
+  ),
+  fakeOrder(
+    '00000000-0000-4000-8000-0000000000a5',
+    'paid',
+    C1,
+    8900,
+    B(5),
+    null,
+    '2026-07-02T10:58:00Z',
+  ),
+  fakeOrder(
+    '00000000-0000-4000-8000-0000000000a3',
+    'in_production',
+    C2,
+    16900,
+    B(3),
+    B(6),
+    '2026-07-02T07:55:00Z',
+  ),
+  fakeOrder(
+    '00000000-0000-4000-8000-0000000000a1',
+    'delivered',
+    C1,
+    8900,
+    B(1),
+    null,
+    '2026-06-28T09:00:00Z',
+    'FAKE1Z999',
+  ),
 ];
 
 export function fakeOrderDetail(id: string): OrderDetail | null {
@@ -173,7 +206,13 @@ export function fakeOrderDetail(id: string): OrderDetail | null {
   }
   return {
     ...order,
-    address: { name: 'FAKE Customer', line1: '1 Example St', city: 'Springfield', postal_code: '00000', country: 'US' },
+    address: {
+      name: 'FAKE Customer',
+      line1: '1 Example St',
+      city: 'Springfield',
+      postal_code: '00000',
+      country: 'US',
+    },
     customer_email: 'fake.customer@example.com',
     jobs: fakeJobs
       .filter((job) => job.order_id === id)
