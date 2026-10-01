@@ -105,7 +105,7 @@ pipeline, and the pipeline can be tested without any phone at all.
 | Job queue | **Postgres-backed queue** (pgmq or Graphile Worker) | Pipeline jobs are minutes-long and must survive restarts/retries. Using Postgres avoids a second piece of infrastructure (no Redis/SQS yet). Swap for SQS later if needed. |
 | Worker hosting | **Fly.io or Railway** (Docker) | Cheap always-on container, scale-to-N later. Modal is a good alternative if jobs become bursty/GPU-bound. |
 | CAD generation | **Onshape REST API** (MVP) | Collaborator's parametric model already exists and accepts the 25 variables. See §7 for the scaling caveat and exit strategy. |
-| Payments | **Stripe** (Payment Sheet on mobile, Checkout on web) | Industry default; handles SCA/tax/receipts. Never touch card data. |
+| Payments | **Stripe hosted Checkout on every platform** (decided 2026-09-30, replacing Payment Sheet on mobile) | Industry default; handles SCA/tax/receipts. Hosted Checkout keeps PCI scope at SAQ-A, needs no native SDK or EAS rebuild, and physical goods may be sold outside in-app purchase. The app asks `POST /api/checkout` (apps/web) for a session URL and opens it; the server prices the order (base price per guard times legs, one function in apps/web/src/lib/checkout.ts) and the signed webhook marks it paid. Cards only (wallets included). |
 | Auth | **Supabase Auth**: email one-time code (sign-in and sign-up are one flow) + guest mode as Supabase anonymous users; Sign in with Apple once the Apple Developer account exists (+ Google for Android/web later) | Sign in with Apple is required by App Store review when any third-party login is offered. Guests are real auth users so the existing RLS scopes their scans unchanged, and a guest upgrades by attaching an email, keeping the user id, so nothing migrates. A guest whose email already has an account brings its scans along through a single-use transfer token (migration 0012). **Paying needs a member account**: RLS refuses order inserts from anonymous users. Sessions live in Keychain/Keystore on native. Accounts can be deleted and exported in-app (App Store 5.1.1(v), GDPR). Staff (admin panel) need password + TOTP (AAL2). See section 9 and supabase/README.md "Accounts and sign-in". |
 | CI/CD | **GitHub Actions** + **EAS Build/Submit** (mobile), Vercel (web), Docker deploy (worker) | Solves the "no Mac" problem for release builds - EAS builds iOS in the cloud (see §5). |
 | Errors / analytics | **Sentry** (app + worker) · **PostHog** (funnel: scan started → scan succeeded → order) | Scan failure rate is the #1 product metric; instrument it from day one. |
@@ -234,6 +234,14 @@ Step details:
    each dimension inside the model's sketches, not the names.
 4. **Fulfillment:** initially manual (admin downloads STL, sends to print
    partner, marks shipped). Later: print partner API + webhook status updates.
+
+**What the customer sees (migration 0013):** `scans.status` is driven by a
+trigger on the scan's measure job (pending/running -> processing,
+succeeded -> ready, dead_letter -> failed with `scans.failed_step`), never
+by the client and never by worker code, so every path that moves a job
+(worker, deletion RPC, admin retry) keeps the app truthful. CAD jobs belong
+to orders: one active CAD job per (order, scan) (migration 0016), started
+by the paid transition and dead-lettered if the order is cancelled.
 
 Cross-cutting rules:
 
@@ -376,7 +384,10 @@ products       id, name, base_price, active,
                cad_model(jsonb: provider, ref, variable_map, schema_version)
                -- guard models/styles; descriptor contract in §7a.2
 orders         id, user_id (null after account deletion), product_id, scan_id_left, scan_id_right,
-               status, stripe_payment_intent, amount, address(json), created_at
+               status, stripe_payment_intent, stripe_checkout_session_id,
+               amount, address(json), paid_at, refunded_at, created_at
+stripe_events  id (Stripe event id), type, received_at
+               -- recorded inside the same transaction as each webhook effect
 pipeline_jobs  id, order_id, step, status, attempts, error, started_at,
                finished_at, artifacts(jsonb: stl_path, onshape_refs)
 ```
@@ -414,9 +425,17 @@ retrofitting features.
    (keep only the 25 measurements, which are far less sensitive), with explicit
    opt-in to retain the scan for easy reordering. In-app "delete my scans" and
    full account deletion (App Store requires account deletion anyway). Scan
-   deletion is a soft delete by the owner (RPC, refused for scans on an order)
-   followed by a service-role purge of storage and rows, armed explicitly
-   (supabase/migrations/0011, forms_pipeline.jobs.scan_deletion).
+   deletion is a soft delete by the owner (RPC, refused for scans on a live
+   order) followed by a service-role purge of storage and rows, armed
+   explicitly (supabase/migrations/0011, forms_pipeline.jobs.scan_deletion).
+   A live order is anything but cancelled-and-never-paid (migration 0015):
+   an abandoned checkout must not pin a body scan forever, so its dead order
+   is deleted with the scan, after a 24-hour hold so a late charge on a
+   still-open Stripe session lands on a refundable row. `paid_at` is stamped
+   on every transition to paid. Retention (30 days) covers every scan with
+   files: measured, failed, never enqueued, and photo bundles whose
+   reconstruction failed; the clock starts at the last finished job, or at
+   creation.
    Account deletion (migration 0012, forms_pipeline.jobs.account_deletion,
    armed by `--arm`): refused while an order is paid, in production or
    shipped; cancels unpaid orders, purges unordered scans, erases the mesh
@@ -428,13 +447,19 @@ retrofitting features.
    path. Users can export their data in-app (`export_my_data`).
 4. **Minors:** likely under-16 users → parental-consent flow and a COPPA/GDPR-K
    review before launch. Flag for legal review; do not silently ignore.
-5. **Payments:** Stripe-hosted fields/sheets only; PCI SAQ-A scope. Store the
-   Stripe customer/payment-intent ids, never card data.
+5. **Payments:** Stripe hosted Checkout only; PCI SAQ-A scope. Store the
+   Stripe session/payment-intent ids, never card data. Checkout runs with the
+   service role, so it repeats every refusal RLS would make: guests, a
+   pending account deletion, scans not the caller's, not ready or not
+   validated, inactive products, and more than 5 open checkouts a day.
 6. **Pipeline hardening:** the worker parses user-supplied OBJ files - treat as
    untrusted input (size caps, vertex-count caps, parse in a sandboxed
    container, timeouts). Malformed mesh must fail a job, never the worker.
 7. **Webhooks:** verify Stripe (and later print-partner) signatures; process
-   idempotently.
+   idempotently. Implemented for Stripe (apps/web/src/app/api/stripe/webhook,
+   migration 0013): each event is one RPC that records the event id and
+   applies its effect in one transaction. A payment that lands on an order
+   cancelled meanwhile is recorded on that order and flagged for refund.
 8. **Operational:** Sentry PII scrubbing on; audit log on admin actions;
    dependency scanning (Dependabot) in CI; secrets in platform secret stores,
    never in the repo.

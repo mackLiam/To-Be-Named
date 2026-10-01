@@ -701,3 +701,16 @@ Update at each month boundary.
   `packages/shared` (uncommitted). Product decision adopted into DESIGN.md
   §7a: multi-model product line (Pro / Club / Junior Max) plus S/M/L presets,
   sequenced in §2 of this file; all product-line work gated behind Phase 0.
+- **2026-09-30 (end of Month 3):** The Month 1 exit gate is still red: no
+  real leg has gone scan -> Onshape -> printed guard, and there are no
+  hosted Supabase, deployed worker, Apple Developer account or Onshape keys
+  yet (all human-only). Software for Months 2-3 was built ahead of that
+  gate, against fakes and a stubbed Postgres: pair capture plus guided photo
+  capture with Mac reconstruction, manual and adjusted measurements, guest
+  and member accounts with merge, deletion and export, admin MFA, Stripe
+  hosted Checkout with an idempotent signed webhook, refunds, order and
+  shipping emails, admin retry/audit/order-reference search, privacy and
+  terms drafts, waitlist, and retention covering failed and photo scans.
+  SQL checks (RLS, grants, RPCs) now run in CI. Re-date Months 4-6 once
+  the first real round-trip and print happen; the go-live human checklist
+  is in docs/KNOWN-ISSUES.md.
