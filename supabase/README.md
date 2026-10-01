@@ -112,29 +112,61 @@ The app (apps/app/src/lib/auth.ts) has two kinds of signed-in user, and no
 signed-out access to any product screen:
 
 - **Guest**: a Supabase anonymous sign-in. It is a real `auth.users` row with
-  an `auth.uid()`, so every policy above already scopes its scans, orders and
-  mesh uploads to it; no policy distinguishes guests. Its session lives on one
-  device only: sign-out or reinstall makes its rows unreachable (they are
-  orphaned, not deleted).
+  an `auth.uid()`, so the policies above scope its scans and mesh uploads to
+  it. Its session lives on one device only (Keychain/Keystore,
+  this-device-only). A guest cannot place an order: payment needs a member.
 - **Member**: email one-time code. Same flow signs in and signs up.
 
-A guest becomes a member by attaching an email (`updateUser({ email })` then
-`verifyOtp({ type: 'email_change' })`). The user id does not change, which is
-the whole reason guests are anonymous users: their library and orders carry
-over with no data migration. Merging a guest into an existing member account
-is not supported (the app tells them to sign in to that account instead).
+Upgrade paths (all keep every scan):
+
+- New email: `updateUser({ email })` then `verifyOtp({ type: 'email_change' })`.
+  The user id does not change, so nothing moves.
+- Email that already has an account: the guest calls `begin_guest_transfer()`
+  (single-use token, 10 minutes, stored hashed), the app verifies the member's
+  sign-in code on a throwaway non-persisting client, calls
+  `claim_guest_transfer(token)` as the member, and only then swaps sessions.
+  Any failure leaves the guest session untouched. Moved scans keep
+  `storage_user_id`, so their files never move.
+
+Rules enforced in Postgres (0012), not in the app:
+
+- `orders` insert: non-anonymous JWT, `pending_payment`, no amount, intent or
+  tracking, and only the caller's own, undeleted scans on the matching leg.
+  Checkout sets amount and payment fields server-side.
+- No client deletes of `scans` rows (that orphaned files); deletion is the RPC
+  plus the purge. `deleted_at` cannot be cleared once set. `mesh_path` must sit
+  under the scan's `storage_user_id`.
+- Account deletion: `request_account_deletion()` then
+  `forms_pipeline.jobs.account_deletion --arm` (purge, erase ordered meshes,
+  delete the auth user via the Admin API). Orders survive with `user_id` null.
+- Abandoned guests: `queue_abandoned_guests(90)` from the same worker.
+- Data access: `export_my_data()` returns the caller's rows as JSON.
 
 Hosted project setup (Supabase dashboard, one time; `config.toml` covers
-local dev):
+local dev only). Verify each after setting it:
 
-1. Authentication > Sign In / Providers: Email enabled, "Allow anonymous
-   sign-ins" on.
-2. Authentication > Emails: the "Magic Link" and "Change Email Address"
-   templates must include `{{ .Token }}`. The app takes a typed code, not a
-   link; the hosted default templates only contain the link.
-3. Authentication > Rate Limits: keep anonymous sign-ins per IP low, and
-   turn on CAPTCHA before launch, since anonymous sign-in is an open endpoint.
-4. Custom SMTP before real users: the built-in sender is heavily rate limited.
+1. Authentication > Sign In / Providers: Email on, "Allow anonymous sign-ins"
+   on, "Confirm email" on, "Secure email change" on.
+2. Authentication > Emails > Templates: paste `supabase/templates/*.html` with
+   the subjects in `supabase/templates/README.md` (Confirm signup, Magic Link,
+   Change Email Address, Reauthentication) and turn on the "Email address
+   changed" security notification.
+3. Authentication > Emails > SMTP: custom SMTP sending from a FORMS domain
+   address (for example `no-reply@` your domain) with SPF, DKIM and DMARC set
+   on the domain. Without this, mail comes from Supabase's shared sender, is
+   heavily rate limited, and does not say FORMS in the From line.
+4. Authentication > Settings: email OTP expiry 900 seconds, OTP length 6,
+   minimum password length 12 (staff only use passwords), leaked password
+   protection on if the plan has it.
+5. Authentication > Multi-Factor: TOTP enabled (admin panel requires it).
+6. Authentication > Rate Limits: anonymous sign-ins per IP low (30/hour), and
+   CAPTCHA or app attestation before public launch: anonymous sign-in and code
+   sends are open endpoints.
+7. SQL editor, once, to confirm the account functions can read what they need:
+   `select has_table_privilege('postgres', 'auth.sessions', 'select');` must be
+   true before running `queue_abandoned_guests`.
+8. After the first real deletion, confirm the user is gone in Authentication >
+   Users and their order rows still exist with an empty user.
 
 ## Scan deletion
 
@@ -150,11 +182,6 @@ erases storage objects and then the rows:
 Schedule it alongside the retention sweep. Checks: `tests/scan_deletion_checks.sql`.
 
 ## TODOs
-
-- **Guest cleanup.** Signed-out guests leave orphaned anonymous users and
-  their scans. Add a service-role sweep deleting anonymous users with no
-  orders older than N days (and their `meshes` objects), alongside the
-  retention sweep.
 
 - **Retention sweep job.** Add a `pg_cron` (or external scheduled worker)
   job that finds delivered orders past the retention window, deletes the
