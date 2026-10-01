@@ -18,12 +18,46 @@ export interface JobRow {
 
 export interface OrderRow {
   id: string;
+  user_id: string;
   status: string;
   amount_cents: number | null;
-  currency: string | null;
   product_id: string;
+  // Flattened from the products join: orders has no currency or name column.
+  product_name: string | null;
+  currency: string | null;
   scan_id_left: string | null;
   scan_id_right: string | null;
+  tracking_carrier: string | null;
+  tracking_number: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrderDetail extends OrderRow {
+  address: Record<string, unknown> | null;
+  customer_email: string | null;
+  jobs: Pick<JobRow, 'id' | 'scan_id' | 'step' | 'status'>[];
+  history: AuditRow[];
+}
+
+export interface ProductRow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  base_price_cents: number;
+  currency: string;
+  image_url: string | null;
+  active: boolean;
+  cad_model: Record<string, unknown> | null;
+  updated_at: string;
+}
+
+export interface AuditRow {
+  id: number;
+  actor: string;
+  action: string;
+  detail: Record<string, unknown> | null;
   created_at: string;
 }
 

@@ -1,6 +1,6 @@
 import { MEASUREMENT_KEYS, type MeasurementKey } from '@forms/shared';
 
-import type { JobRow, OrderRow, TriageData } from './types';
+import type { JobRow, OrderDetail, OrderRow, ProductRow, TriageData } from './types';
 
 /**
  * Deterministic placeholder data for when no backend is configured. Clearly
@@ -86,48 +86,109 @@ export const fakeJobs: JobRow[] = [
   },
 ];
 
-export const fakeOrders: OrderRow[] = [
+const C1 = '00000000-0000-4000-8000-0000000000c1';
+const C2 = '00000000-0000-4000-8000-0000000000c2';
+const C3 = '00000000-0000-4000-8000-0000000000c3';
+
+export const fakeProducts: ProductRow[] = [
   {
-    id: '00000000-0000-4000-8000-0000000000a1',
-    status: 'delivered',
-    amount_cents: 8900,
+    id: C1,
+    name: 'FAKE Custom Shin Guard',
+    slug: 'custom-guard',
+    description: 'Printed to your scan. One piece, vented shell.',
+    base_price_cents: 8900,
     currency: 'usd',
-    product_id: '00000000-0000-4000-8000-0000000000c1',
-    scan_id_left: '00000000-0000-4000-8000-0000000000b1',
-    scan_id_right: null,
-    created_at: t('2026-06-28T09:00:00Z'),
+    image_url: null,
+    active: true,
+    cad_model: { provider: 'dry_run', schema_version: '1.0.0', ref: {}, variable_map: null },
+    updated_at: t('2026-06-20T12:00:00Z'),
   },
   {
-    id: '00000000-0000-4000-8000-0000000000a3',
-    status: 'in_production',
-    amount_cents: 12900,
+    id: C2,
+    name: 'FAKE Custom Shin Guard (pair)',
+    slug: 'custom-guard-pair',
+    description: 'Both legs scanned separately.',
+    base_price_cents: 16900,
     currency: 'usd',
-    product_id: '00000000-0000-4000-8000-0000000000c2',
-    scan_id_left: '00000000-0000-4000-8000-0000000000b3',
-    scan_id_right: '00000000-0000-4000-8000-0000000000b6',
-    created_at: t('2026-07-02T07:55:00Z'),
+    image_url: null,
+    active: true,
+    cad_model: null,
+    updated_at: t('2026-06-20T12:00:00Z'),
   },
   {
-    id: '00000000-0000-4000-8000-0000000000a5',
-    status: 'paid',
-    amount_cents: 8900,
+    id: C3,
+    name: 'FAKE Keeper Guard',
+    slug: 'keeper-guard',
+    description: 'Taller shell for goalkeepers.',
+    base_price_cents: 10900,
     currency: 'usd',
-    product_id: '00000000-0000-4000-8000-0000000000c1',
-    scan_id_left: '00000000-0000-4000-8000-0000000000b5',
-    scan_id_right: null,
-    created_at: t('2026-07-02T10:58:00Z'),
-  },
-  {
-    id: '00000000-0000-4000-8000-0000000000a6',
-    status: 'pending_payment',
-    amount_cents: null,
-    currency: 'usd',
-    product_id: '00000000-0000-4000-8000-0000000000c2',
-    scan_id_left: null,
-    scan_id_right: '00000000-0000-4000-8000-0000000000b7',
-    created_at: t('2026-07-02T12:10:00Z'),
+    image_url: null,
+    active: false,
+    cad_model: null,
+    updated_at: t('2026-06-21T09:00:00Z'),
   },
 ];
+
+function fakeOrder(
+  id: string,
+  status: string,
+  productId: string,
+  amount: number | null,
+  left: string | null,
+  right: string | null,
+  created: string,
+  tracking: string | null = null,
+): OrderRow {
+  const product = fakeProducts.find((p) => p.id === productId)!;
+  return {
+    id,
+    user_id: '00000000-0000-4000-8000-0000000000d1',
+    status,
+    amount_cents: amount,
+    product_id: productId,
+    product_name: product.name,
+    currency: product.currency,
+    scan_id_left: left,
+    scan_id_right: right,
+    tracking_carrier: tracking ? 'UPS' : null,
+    tracking_number: tracking,
+    created_at: t(created),
+    updated_at: t(created),
+  };
+}
+
+const B = (n: number) => `00000000-0000-4000-8000-0000000000b${n}`;
+
+export const fakeOrders: OrderRow[] = [
+  fakeOrder('00000000-0000-4000-8000-0000000000a6', 'pending_payment', C2, null, null, B(7), '2026-07-02T12:10:00Z'),
+  fakeOrder('00000000-0000-4000-8000-0000000000a5', 'paid', C1, 8900, B(5), null, '2026-07-02T10:58:00Z'),
+  fakeOrder('00000000-0000-4000-8000-0000000000a3', 'in_production', C2, 16900, B(3), B(6), '2026-07-02T07:55:00Z'),
+  fakeOrder('00000000-0000-4000-8000-0000000000a1', 'delivered', C1, 8900, B(1), null, '2026-06-28T09:00:00Z', 'FAKE1Z999'),
+];
+
+export function fakeOrderDetail(id: string): OrderDetail | null {
+  const order = fakeOrders.find((row) => row.id === id);
+  if (!order) {
+    return null;
+  }
+  return {
+    ...order,
+    address: { name: 'FAKE Customer', line1: '1 Example St', city: 'Springfield', postal_code: '00000', country: 'US' },
+    customer_email: 'fake.customer@example.com',
+    jobs: fakeJobs
+      .filter((job) => job.order_id === id)
+      .map(({ id: jobId, scan_id, step, status }) => ({ id: jobId, scan_id, step, status })),
+    history: [
+      {
+        id: 1,
+        actor: 'stripe-webhook',
+        action: 'order.status',
+        detail: { from: 'pending_payment', to: 'paid' },
+        created_at: order.created_at,
+      },
+    ],
+  };
+}
 
 // A plausible-looking 25-variable payload (millimeters), with the two values
 // that tripped the gates in FAKE_TRIAGE_JOB_ID set to their out-of-range values.

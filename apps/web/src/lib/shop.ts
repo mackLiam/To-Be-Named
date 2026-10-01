@@ -8,6 +8,13 @@ import { ORDER_STATUSES, validateCadModelDescriptor, type OrderStatus } from '@f
 
 import type { StatusMeta } from './view';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Route params reach Postgres uuid columns; a malformed one is a 404, not a 500. */
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
 // ---------------------------------------------------------------------------
 // Products.
 // ---------------------------------------------------------------------------

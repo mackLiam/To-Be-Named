@@ -7,6 +7,7 @@ import {
   centsToPriceInput,
   checkOrderTransition,
   formatMoney,
+  isUuid,
   nextOrderStatuses,
   parsePriceToCents,
   parseProductForm,
@@ -154,5 +155,13 @@ describe('formatMoney', () => {
   it('formats cents with the currency', () => {
     expect(formatMoney(8900, 'usd')).toBe('$89.00');
     expect(formatMoney(null, 'usd')).toBe('-');
+  });
+});
+
+describe('isUuid', () => {
+  it('accepts uuids and rejects anything else', () => {
+    expect(isUuid('00000000-0000-4000-8000-0000000000a1')).toBe(true);
+    expect(isUuid('new')).toBe(false);
+    expect(isUuid("1' or 1=1")).toBe(false);
   });
 });
