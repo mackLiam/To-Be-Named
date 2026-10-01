@@ -11,13 +11,14 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@forms/shared": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.110.0",
-    "@forms/shared": "workspace:*",
     "next": "^15.1.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "stripe": "23.0.0"
   },
   "devDependencies": {
     "@types/node": "^22",

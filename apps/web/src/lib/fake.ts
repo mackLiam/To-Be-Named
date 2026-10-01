@@ -204,8 +204,12 @@ export function fakeOrderDetail(id: string): OrderDetail | null {
   if (!order) {
     return null;
   }
+  const paid = order.status !== 'pending_payment';
   return {
     ...order,
+    stripe_payment_intent: paid ? `pi_FAKE_${order.id.slice(-2)}` : null,
+    paid_at: paid ? order.created_at : null,
+    refunded_at: null,
     address: {
       name: 'FAKE Customer',
       line1: '1 Example St',

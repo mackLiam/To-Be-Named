@@ -130,7 +130,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   const client = await serviceClient();
   const { data, error } = await client
     .from('orders')
-    .select(`${ORDER_COLUMNS}, address`)
+    .select(`${ORDER_COLUMNS}, address, stripe_payment_intent, paid_at, refunded_at`)
     .eq('id', id)
     .maybeSingle();
   if (error) {
@@ -139,9 +139,9 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   if (!data) {
     return null;
   }
-  const { address, ...rest } = data as unknown as OrderQueryRow & {
-    address: Record<string, unknown> | null;
-  };
+  const { address, stripe_payment_intent, paid_at, refunded_at, ...rest } =
+    data as unknown as OrderQueryRow &
+      Pick<OrderDetail, 'address' | 'stripe_payment_intent' | 'paid_at' | 'refunded_at'>;
   const order = flattenOrder(rest);
 
   const [jobs, history, user] = await Promise.all([
@@ -170,6 +170,9 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   return {
     ...order,
     address,
+    stripe_payment_intent,
+    paid_at,
+    refunded_at,
     // A deleted auth user cascades the order away, so a miss here is rare;
     // render the order anyway rather than fail the page on a lookup.
     customer_email: user.data.user?.email ?? null,

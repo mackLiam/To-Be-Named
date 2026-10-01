@@ -4,8 +4,10 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { requireAdmin } from '@/lib/admin-auth';
+import { emailDepsFromEnv, notifyOrderShipped } from '@/lib/email';
 import { shouldUseFake } from '@/lib/data';
-import { isFakeMode } from '@/lib/env';
+import { getStripeSecretKey, isFakeMode } from '@/lib/env';
+import { refundOrder as refundOrderPayment } from '@/lib/refund';
 import { isUuid, parseProductForm, parseTrackingForm } from '@/lib/shop';
 import {
   createProduct,
@@ -14,6 +16,7 @@ import {
   updateOrderTracking,
   updateProduct,
 } from '@/lib/shop-writes';
+import { createStripeClient } from '@/lib/stripe';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 import { createAnonServerClient } from '@/lib/supabase-server';
 
@@ -105,6 +108,11 @@ export async function setOrderStatus(formData: FormData): Promise<void> {
     back(path, READ_ONLY);
   }
   const result = await transitionOrder(w.client, w.actor, id, to);
+  if (!result.error && to === 'shipped') {
+    // Best effort: notifyOrderShipped never throws, and a missed email must
+    // not undo or block the status change.
+    await notifyOrderShipped(w.client, id, emailDepsFromEnv());
+  }
   revalidatePath(path);
   back(path, result.error);
 }
@@ -125,6 +133,25 @@ export async function saveTracking(formData: FormData): Promise<void> {
     back(path, parsed.errors.join(' '));
   }
   const result = await updateOrderTracking(w.client, w.actor, id, parsed.value);
+  revalidatePath(path);
+  back(path, result.error);
+}
+
+export async function refundOrder(formData: FormData): Promise<void> {
+  // Admin gate before anything else, including input parsing: this moves money.
+  const w = await writer();
+  const { id = '' } = fields(formData);
+  if (!isUuid(id)) {
+    back('/admin/orders', 'Unknown order.');
+  }
+  const path = `/admin/orders/${id}`;
+  if (!w) {
+    back(path, READ_ONLY);
+  }
+  if (!getStripeSecretKey()) {
+    back(path, 'Refunds are unavailable: STRIPE_SECRET_KEY is not configured.');
+  }
+  const result = await refundOrderPayment(w.client, createStripeClient(), w.actor, id);
   revalidatePath(path);
   back(path, result.error);
 }

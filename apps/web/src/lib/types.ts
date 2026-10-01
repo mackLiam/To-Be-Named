@@ -35,6 +35,10 @@ export interface OrderRow {
 
 export interface OrderDetail extends OrderRow {
   address: Record<string, unknown> | null;
+  // Payment columns (migration 0013); written only by the Stripe webhook RPCs.
+  stripe_payment_intent: string | null;
+  paid_at: string | null;
+  refunded_at: string | null;
   customer_email: string | null;
   jobs: Pick<JobRow, 'id' | 'scan_id' | 'step' | 'status'>[];
   history: AuditRow[];

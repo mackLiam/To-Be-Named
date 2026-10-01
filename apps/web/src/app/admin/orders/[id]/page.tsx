@@ -4,13 +4,14 @@ import { notFound } from 'next/navigation';
 
 import { BRAND_NAME } from '@forms/shared/brand';
 
-import { saveTracking, setOrderStatus } from '../../actions';
+import { refundOrder, saveTracking, setOrderStatus } from '../../actions';
 import styles from '../../admin.module.css';
 import { AdminShell } from '../../AdminShell';
 import { StatusBadge } from '../../StatusBadge';
 import { requireAdmin } from '@/lib/admin-auth';
 import { getOrderDetail } from '@/lib/data';
 import { firstValue } from '@/lib/pagination';
+import { canRefund } from '@/lib/refund';
 import {
   ORDER_ACTION_LABEL,
   describeAudit,
@@ -79,6 +80,24 @@ export default async function OrderDetailPage({
           <div className={styles.factValue}>{formatDateTime(order.created_at)}</div>
         </div>
         <div className={styles.fact}>
+          <div className={styles.factTerm}>Paid</div>
+          <div className={styles.factValue}>
+            {order.paid_at ? formatDateTime(order.paid_at) : '-'}
+          </div>
+        </div>
+        <div className={styles.fact}>
+          <div className={styles.factTerm}>Stripe payment</div>
+          <div className={`${styles.factValue} ${styles.mono}`}>
+            {order.stripe_payment_intent ?? '-'}
+          </div>
+        </div>
+        {order.refunded_at ? (
+          <div className={styles.fact}>
+            <div className={styles.factTerm}>Refunded</div>
+            <div className={styles.factValue}>{formatDateTime(order.refunded_at)}</div>
+          </div>
+        ) : null}
+        <div className={styles.fact}>
           <div className={styles.factTerm}>Left leg scan</div>
           <div className={`${styles.factValue} ${styles.mono}`}>
             {order.scan_id_left ? shortId(order.scan_id_left) : '-'}
@@ -116,6 +135,21 @@ export default async function OrderDetailPage({
           ) : null}
         </div>
       )}
+
+      {canRefund(order) ? (
+        <>
+          <h2 className={styles.sectionLabel}>Payment</h2>
+          <form action={refundOrder} className={styles.actionBar}>
+            <input type="hidden" name="id" value={order.id} />
+            <button type="submit" className={styles.secondaryBtn}>
+              Refund payment
+            </button>
+            <span className={styles.actionNote}>
+              Full refund through Stripe. Paid or in-production orders are also cancelled.
+            </span>
+          </form>
+        </>
+      ) : null}
 
       <h2 className={styles.sectionLabel}>Shipping</h2>
       <form action={saveTracking} className={styles.form}>
