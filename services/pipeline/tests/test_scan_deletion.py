@@ -1,8 +1,13 @@
 from dataclasses import dataclass, field
 
+import pytest
+
+from forms_pipeline.config import Settings
+from forms_pipeline.jobs.runner import ScanPathError
 from forms_pipeline.jobs.scan_deletion import (
     MESH_BUCKET,
     PendingPurge,
+    PostgresPurgeStore,
     PurgeContext,
     run_scan_purge,
 )
@@ -105,3 +110,28 @@ def test_batch_size_caps_the_run():
     items = [PendingPurge(f"s{i}", USER, None) for i in range(5)]
     ctx, _ = _ctx(items, [])
     assert run_scan_purge(ctx, batch_size=2, armed=True).purged == 2
+
+
+GUEST = "33333333-3333-4333-8333-333333333333"
+
+
+def test_merged_scan_is_purged_under_storage_owner():
+    files = [f"{GUEST}/s1.obj", f"{GUEST}/s1/000.jpg", f"{USER}/s1/000.jpg"]
+    ctx, storage = _ctx([PendingPurge("s1", GUEST, f"{GUEST}/s1.obj")], files)
+    assert run_scan_purge(ctx, batch_size=10, armed=True).purged == 1
+    # Only the storage owner's objects go; the current owner's prefix is untouched.
+    assert sorted(p for _, p in storage.files) == [f"{USER}/s1/000.jpg"]
+
+
+def test_store_selects_storage_user_id(fake_db):
+    store = PostgresPurgeStore(Settings())
+    db = fake_db(store, [("s1", GUEST, None)])
+    assert store.get_scans_pending_purge(limit=5) == [PendingPurge("s1", GUEST, None)]
+    assert db.executed[0][0].startswith("select scan_id, storage_user_id, mesh_path")
+
+
+def test_store_null_storage_owner_raises_not_none_prefix(fake_db):
+    store = PostgresPurgeStore(Settings())
+    fake_db(store, [("s1", None, None)])
+    with pytest.raises(ScanPathError):
+        store.get_scans_pending_purge(limit=5)

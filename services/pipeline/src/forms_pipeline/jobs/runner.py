@@ -35,7 +35,7 @@ from forms_pipeline.cad.dispatch import CadDispatcher
 from forms_pipeline.cad.model import DescriptorError
 from forms_pipeline.cad.providers import ProviderNotFoundError
 from forms_pipeline.config import Settings, get_settings
-from forms_pipeline.contract import SCHEMA_VERSION, validate_measurements
+from forms_pipeline.contract import MEASUREMENT_KEYS, SCHEMA_VERSION, validate_measurements
 from forms_pipeline.extraction.measure import EXTRACTION_VERSION, extract_measurements
 from forms_pipeline.extraction.mesh_loading import MeshValidationError, load_mesh
 from forms_pipeline.jobs.states import guard_transition
@@ -46,6 +46,10 @@ from forms_pipeline.reconstruct.handler import handle_reconstructing
 logger = logging.getLogger(__name__)
 
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
+
+# measurements.extraction_version for user-entered values (0014). One row per
+# scan, upserted on each adjustment.
+MANUAL_EXTRACTION_VERSION = "manual-1"
 
 # Storage list paging. A photo bundle is capped at 120 images + capture.json
 # (plan A2), so 20 pages of 100 is far above any legitimate scan prefix; going
@@ -69,27 +73,38 @@ class ScanPathError(ValueError):
     """Raised when a scan's mesh_path is outside its owner's storage prefix.
 
     Not retriable: scans.mesh_path is client-writable ("scans: update own"
-    RLS), so a path outside `${user_id}/` would make the service-role worker
-    read (or retention delete) another user's object (plan A1).
+    RLS), so a path outside `${storage_user_id}/` would make the service-role
+    worker read (or retention delete) another user's object (plan A1).
     """
 
 
 class ScanInfo(NamedTuple):
-    user_id: str
+    # The storage prefix owner (scans.storage_user_id, 0012), not scans.user_id:
+    # user_id changes on a guest merge and is null after account deletion.
+    storage_user_id: str
     capture_kind: str
     mesh_path: str | None
 
 
-def owned_mesh_path(user_id: str, mesh_path: str) -> str:
-    """Return mesh_path if it is an object inside `${user_id}/`, else raise.
+def storage_owner(value: object) -> str:
+    """scans.storage_user_id as text. The column is NOT NULL (0012), so None
+    means the wrong column was selected; str(None) would build the prefix
+    `None/`, list nothing, and let a sweep mark a scan erased with objects left."""
+    if value is None:
+        raise ScanPathError("scan has no storage owner")
+    return str(value)
+
+
+def owned_mesh_path(storage_user_id: str, mesh_path: str) -> str:
+    """Return mesh_path if it is an object inside `${storage_user_id}/`, else raise.
 
     Dot and empty segments are rejected too: the storage URL is built from the
     path, and an HTTP client normalizes `..`, which would escape the prefix.
     """
     segments = mesh_path.split("/")
     if (
-        not user_id
-        or segments[0] != user_id
+        not storage_user_id
+        or segments[0] != storage_user_id
         or len(segments) < 2
         or any(seg in ("", ".", "..") for seg in segments)
     ):
@@ -125,8 +140,9 @@ class JobStore(Protocol):
         extraction_version: str,
         values: dict[str, float],
         validated: bool,
+        source: str,
     ) -> None: ...
-    def get_measurements(self, scan_id: str, extraction_version: str) -> dict[str, float]: ...
+    def get_measurements(self, scan_id: str) -> dict[str, float]: ...
     def get_cad_model(self, job: Job) -> dict[str, Any] | None: ...
     def advance(
         self, job_id: str, next_step: str, artifacts: dict[str, Any] | None = None
@@ -157,7 +173,7 @@ def get_scan_mesh_path(store: JobStore, scan_id: str) -> str:
     scan = store.get_scan(scan_id)
     if scan.mesh_path is None:
         raise LookupError(f"scan {scan_id} has no mesh_path")
-    return owned_mesh_path(scan.user_id, scan.mesh_path)
+    return owned_mesh_path(scan.storage_user_id, scan.mesh_path)
 
 
 def handle_measuring(job: Job, ctx: JobContext) -> None:
@@ -171,6 +187,10 @@ def handle_measuring(job: Job, ctx: JobContext) -> None:
     same job after a crash overwrites the prior (possibly partial) result
     rather than creating a duplicate row.
     """
+    if job.artifacts.get("source") == "manual":
+        _measure_manual(job, ctx)
+        return
+
     mesh_path = get_scan_mesh_path(ctx.store, job.scan_id)
     data = ctx.storage.download("meshes", mesh_path)
 
@@ -193,6 +213,7 @@ def handle_measuring(job: Job, ctx: JobContext) -> None:
         extraction_version=EXTRACTION_VERSION,
         values=result.values,
         validated=True,
+        source="scan",
     )
     guard_transition(job.step, "measured")
     ctx.store.complete(
@@ -200,6 +221,40 @@ def handle_measuring(job: Job, ctx: JobContext) -> None:
         "measured",
         artifacts={"needs_scale_confirmation": result.needs_scale_confirmation},
     )
+
+
+def _measure_manual(job: Job, ctx: JobContext) -> None:
+    """Gate client-entered values (submit_manual_measurements, 0014) exactly like
+    extracted ones. The values are untrusted: the RPC only checked shape, so
+    every failure here is non-retriable (same input, same verdict)."""
+    values = job.artifacts.get("values")
+    if not isinstance(values, dict):
+        raise GateViolationError("Manual measurements are missing or not an object")
+    keys = set(values)
+    expected = set(MEASUREMENT_KEYS)
+    if keys != expected:
+        raise GateViolationError(
+            "Manual measurements must have exactly the schema's keys: "
+            f"missing {sorted(expected - keys)}, unknown {sorted(keys - expected)}"
+        )
+    violations = validate_measurements(values)
+    if violations:
+        raise GateViolationError(
+            "Manual measurements outside plausible range: " + "; ".join(violations)
+        )
+
+    ctx.store.upsert_measurements(
+        scan_id=job.scan_id,
+        schema_version=SCHEMA_VERSION,
+        extraction_version=MANUAL_EXTRACTION_VERSION,
+        # Coerced only after the gates, which accept ints and reject bools and
+        # non-numbers, so float() cannot fail or overflow here.
+        values={key: float(values[key]) for key in MEASUREMENT_KEYS},
+        validated=True,
+        source="manual",
+    )
+    guard_transition(job.step, "measured")
+    ctx.store.complete(job.id, "measured")
 
 
 def handle_generating_cad(job: Job, ctx: JobContext) -> None:
@@ -215,7 +270,9 @@ def handle_generating_cad(job: Job, ctx: JobContext) -> None:
     Idempotent: the STL is uploaded with upsert semantics to a path derived
     from `scan_id`/`job_id`, so a re-run overwrites the same object.
     """
-    values = ctx.store.get_measurements(job.scan_id, EXTRACTION_VERSION)
+    # The scan's most recent validated row, scan or manual: an adjustment made
+    # after the scan supersedes it.
+    values = ctx.store.get_measurements(job.scan_id)
     cad_model = ctx.store.get_cad_model(job)
 
     result = ctx.cad.generate(job.id, values, cad_model)
@@ -361,13 +418,15 @@ class PostgresJobStore:
     def get_scan(self, scan_id: str) -> ScanInfo:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "select user_id, capture_kind, mesh_path from public.scans where id = %s",
+                "select storage_user_id, capture_kind, mesh_path from public.scans where id = %s",
                 (scan_id,),
             )
             row = cur.fetchone()
         if row is None:
             raise LookupError(f"scan {scan_id} not found")
-        return ScanInfo(user_id=str(row[0]), capture_kind=row[1], mesh_path=row[2])
+        return ScanInfo(
+            storage_user_id=storage_owner(row[0]), capture_kind=row[1], mesh_path=row[2]
+        )
 
     def set_scan_mesh_path(self, scan_id: str, path: str) -> None:
         with self._connect() as conn, conn.cursor() as cur:
@@ -381,6 +440,7 @@ class PostgresJobStore:
         extraction_version: str,
         values: dict[str, float],
         validated: bool,
+        source: str,
     ) -> None:
         import json
 
@@ -388,25 +448,35 @@ class PostgresJobStore:
             cur.execute(
                 """
                 insert into public.measurements
-                    (scan_id, schema_version, extraction_version, "values", validated)
-                values (%s, %s, %s, %s, %s)
+                    (scan_id, schema_version, extraction_version, "values", validated, source)
+                values (%s, %s, %s, %s, %s, %s)
                 on conflict (scan_id, extraction_version)
-                do update set "values" = excluded."values", validated = excluded.validated
+                do update set "values" = excluded."values", validated = excluded.validated,
+                    source = excluded.source, created_at = now()
                 """,
-                (scan_id, schema_version, extraction_version, json.dumps(values), validated),
+                (
+                    scan_id,
+                    schema_version,
+                    extraction_version,
+                    json.dumps(values),
+                    validated,
+                    source,
+                ),
             )
             conn.commit()
 
-    def get_measurements(self, scan_id: str, extraction_version: str) -> dict[str, float]:
+    def get_measurements(self, scan_id: str) -> dict[str, float]:
+        """The scan's most recent validated row, whatever its source or version."""
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 'select "values" from public.measurements '
-                "where scan_id = %s and extraction_version = %s",
-                (scan_id, extraction_version),
+                "where scan_id = %s and validated = true "
+                "order by created_at desc limit 1",
+                (scan_id,),
             )
             row = cur.fetchone()
         if row is None:
-            raise LookupError(f"no measurements for scan {scan_id} at version {extraction_version}")
+            raise LookupError(f"no validated measurements for scan {scan_id}")
         return dict(row[0])
 
     def get_cad_model(self, job: Job) -> dict[str, Any] | None:

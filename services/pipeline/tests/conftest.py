@@ -134,3 +134,46 @@ def degenerate_obj_path(tmp_path: Path, degenerate_mesh: trimesh.Trimesh) -> Pat
     path = tmp_path / "degenerate.obj"
     degenerate_mesh.export(path)
     return path
+
+
+class FakeDb:
+    """Stand-in for a psycopg connection + cursor: records every execute and
+    returns `rows` from fetchall/fetchone. Lets the Postgres store classes'
+    SQL text and row mapping be tested with no database."""
+
+    def __init__(self, rows: list[tuple] | None = None) -> None:
+        self.rows = rows or []
+        self.executed: list[tuple[str, tuple]] = []
+
+    def __enter__(self) -> FakeDb:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def cursor(self) -> FakeDb:
+        return self
+
+    def commit(self) -> None:
+        return None
+
+    def execute(self, sql: str, params: tuple) -> None:
+        self.executed.append((sql, params))
+
+    def fetchall(self) -> list[tuple]:
+        return self.rows
+
+    def fetchone(self) -> tuple | None:
+        return self.rows[0] if self.rows else None
+
+
+@pytest.fixture
+def fake_db():
+    """Factory: fake_db(store, rows) points store._connect at a FakeDb."""
+
+    def attach(store: object, rows: list[tuple] | None = None) -> FakeDb:
+        db = FakeDb(rows)
+        store._connect = lambda: db  # type: ignore[attr-defined]
+        return db
+
+    return attach

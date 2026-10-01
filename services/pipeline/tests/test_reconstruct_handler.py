@@ -52,7 +52,7 @@ class FakeStore:
 
     def get_scan(self, scan_id: str) -> ScanInfo:
         # The runner's real row type, so a shape change there breaks this suite.
-        return ScanInfo(user_id=USER, capture_kind=self.capture_kind, mesh_path=None)
+        return ScanInfo(storage_user_id=USER, capture_kind=self.capture_kind, mesh_path=None)
 
     def set_scan_mesh_path(self, scan_id: str, path: str) -> None:
         self.mesh_paths[scan_id] = path

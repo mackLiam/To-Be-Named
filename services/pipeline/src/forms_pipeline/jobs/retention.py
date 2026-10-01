@@ -13,7 +13,7 @@ sweep. Idempotent by construction:
 - `get_meshes_pending_deletion` (supabase/migrations/0004_retention.sql)
   only returns scans where `mesh_deleted_at is null`, so an already-deleted
   scan never reappears in a later batch.
-- Everything under the scan's derived prefix `${user_id}/${scan_id}/` (the
+- Everything under the scan's derived prefix `${storage_user_id}/${scan_id}/` (the
   photo bundle, plan A1/A8) is deleted along with mesh_path, so a photos scan
   leaves no images behind.
 - Storage deletion is itself idempotent: a 404 (object already gone --
@@ -38,7 +38,12 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from forms_pipeline.config import Settings, get_settings
-from forms_pipeline.jobs.runner import StorageClient, SupabaseStorageClient, owned_mesh_path
+from forms_pipeline.jobs.runner import (
+    StorageClient,
+    SupabaseStorageClient,
+    owned_mesh_path,
+    storage_owner,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +56,7 @@ class PendingMesh:
     """One row returned by `get_meshes_pending_deletion`."""
 
     scan_id: str
-    user_id: str
+    storage_user_id: str
     mesh_path: str
     job_completed_at: datetime | str | None
 
@@ -89,7 +94,7 @@ def run_retention_sweep(
 
     In dry-run mode (the default -- see `Settings.retention_dry_run`), only
     the read-only batch fetch happens; no storage or database mutation is
-    made. Never logs `mesh_path` (it embeds the owning user_id as a storage
+    made. Never logs `mesh_path` (it embeds the storage_user_id as a storage
     path prefix, per supabase/migrations/0003_storage.sql) -- only scan_id
     and the completion timestamp, which is enough to audit the sweep without
     putting scan-owning-user identifiers in worker logs.
@@ -131,8 +136,8 @@ def run_retention_sweep(
 def _delete_one(ctx: RetentionContext, item: PendingMesh) -> None:
     # Validate before deleting anything: mesh_path is client-writable, and the
     # service role would otherwise delete another user's object.
-    mesh_path = owned_mesh_path(item.user_id, item.mesh_path)
-    for path in ctx.storage.list(MESH_BUCKET, f"{item.user_id}/{item.scan_id}/"):
+    mesh_path = owned_mesh_path(item.storage_user_id, item.mesh_path)
+    for path in ctx.storage.list(MESH_BUCKET, f"{item.storage_user_id}/{item.scan_id}/"):
         ctx.storage.delete(MESH_BUCKET, path)
     ctx.storage.delete(MESH_BUCKET, mesh_path)
     ctx.store.mark_mesh_deleted(
@@ -167,7 +172,7 @@ class PostgresRetentionStore:
     def get_meshes_pending_deletion(self, retention_days: int, limit: int) -> list[PendingMesh]:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "select p.scan_id, s.user_id, p.mesh_path, p.job_completed_at "
+                "select p.scan_id, s.storage_user_id, p.mesh_path, p.job_completed_at "
                 "from get_meshes_pending_deletion(%s, %s) p "
                 "join public.scans s on s.id = p.scan_id",
                 (retention_days, limit),
@@ -175,7 +180,10 @@ class PostgresRetentionStore:
             rows = cur.fetchall()
         return [
             PendingMesh(
-                scan_id=str(r[0]), user_id=str(r[1]), mesh_path=str(r[2]), job_completed_at=r[3]
+                scan_id=str(r[0]),
+                storage_user_id=storage_owner(r[1]),
+                mesh_path=str(r[2]),
+                job_completed_at=r[3],
             )
             for r in rows
         ]

@@ -14,6 +14,7 @@ from forms_pipeline.jobs.runner import (
     STEP_HANDLERS,
     Job,
     JobContext,
+    PostgresJobStore,
     ScanInfo,
     ScanPathError,
     SupabaseStorageClient,
@@ -40,6 +41,9 @@ class FakeJobStore:
         self.scan_owners: dict[str, str] = {}
         self.claim_steps: list[tuple[str, ...]] = []
         self.measurements: dict[tuple[str, str], dict[str, float]] = {}
+        # (scan_id, extraction_version) -> (write sequence, validated, source).
+        # The sequence stands in for created_at, refreshed on every upsert.
+        self.measurement_meta: dict[tuple[str, str], tuple[int, bool, str]] = {}
         # Per-job CAD model descriptor dicts; a missing entry means None
         # (dispatcher falls back to the env default model).
         self.cad_models: dict[str, dict[str, Any] | None] = {}
@@ -58,7 +62,7 @@ class FakeJobStore:
     def get_scan(self, scan_id: str) -> ScanInfo:
         mesh_path = self.scans[scan_id]
         owner = self.scan_owners.get(scan_id, mesh_path.split("/")[0])
-        return ScanInfo(user_id=owner, capture_kind="mesh", mesh_path=mesh_path)
+        return ScanInfo(storage_user_id=owner, capture_kind="mesh", mesh_path=mesh_path)
 
     def set_scan_mesh_path(self, scan_id: str, path: str) -> None:
         self.scans[scan_id] = path
@@ -70,12 +74,26 @@ class FakeJobStore:
         extraction_version: str,
         values: dict[str, float],
         validated: bool,
+        source: str,
     ) -> None:
-        self.measurements[(scan_id, extraction_version)] = values
         self.measurement_write_count += 1
+        self.measurements[(scan_id, extraction_version)] = values
+        self.measurement_meta[(scan_id, extraction_version)] = (
+            self.measurement_write_count,
+            validated,
+            source,
+        )
 
-    def get_measurements(self, scan_id: str, extraction_version: str) -> dict[str, float]:
-        return self.measurements[(scan_id, extraction_version)]
+    def get_measurements(self, scan_id: str) -> dict[str, float]:
+        # Mirrors the Postgres query: latest validated row for the scan.
+        rows = [
+            (seq, key)
+            for key, (seq, validated, _source) in self.measurement_meta.items()
+            if key[0] == scan_id and validated
+        ]
+        if not rows:
+            raise LookupError(f"no validated measurements for scan {scan_id}")
+        return self.measurements[max(rows)[1]]
 
     def get_cad_model(self, job: Job) -> dict[str, Any] | None:
         return self.cad_models.get(job.id)
@@ -206,7 +224,9 @@ def _seed_measurements(store: FakeJobStore, scan_id: str) -> None:
     from forms_pipeline.contract import MEASUREMENT_KEYS
     from forms_pipeline.extraction.measure import EXTRACTION_VERSION
 
-    store.measurements[(scan_id, EXTRACTION_VERSION)] = {key: 100.0 for key in MEASUREMENT_KEYS}
+    store.upsert_measurements(
+        scan_id, "1.0.0", EXTRACTION_VERSION, {key: 100.0 for key in MEASUREMENT_KEYS}, True, "scan"
+    )
 
 
 def test_generating_cad_with_per_product_descriptor_uploads_and_completes() -> None:
@@ -416,6 +436,35 @@ def test_foreign_mesh_path_fails_job_non_retriably_without_download() -> None:
     assert store.completed == []
 
 
+GUEST = "33333333-3333-4333-8333-333333333333"
+
+
+def test_merged_scan_uses_storage_owner_not_current_owner() -> None:
+    # After a guest merge scans.user_id is the member, but the objects stay
+    # under the guest's prefix (storage_user_id).
+    store = FakeJobStore()
+    store.scans = {"scan-1": f"{GUEST}/scan-1.obj"}
+    assert runner.get_scan_mesh_path(store, "scan-1") == f"{GUEST}/scan-1.obj"
+
+
+def test_get_scan_selects_storage_user_id(fake_db) -> None:
+    # scans.user_id (a merged member, or null after account deletion) is never
+    # read; only storage_user_id decides the prefix.
+    store = PostgresJobStore(Settings())
+    db = fake_db(store, [(GUEST, "mesh", f"{GUEST}/scan-1.obj")])
+    scan = store.get_scan("scan-1")
+    sql = db.executed[0][0]
+    assert sql.startswith("select storage_user_id,") and " user_id" not in sql
+    assert scan == ScanInfo(GUEST, "mesh", f"{GUEST}/scan-1.obj")
+
+
+def test_get_scan_null_storage_owner_raises_not_none_prefix(fake_db) -> None:
+    store = PostgresJobStore(Settings())
+    fake_db(store, [(None, "mesh", "None/scan-1.obj")])
+    with pytest.raises(ScanPathError):
+        store.get_scan("scan-1")
+
+
 # ---------------------------------------------------------------------------
 # SupabaseStorageClient.list
 # ---------------------------------------------------------------------------
@@ -525,3 +574,186 @@ def test_reconstructing_is_registered_and_quality_errors_dead_letter() -> None:
 
     [(_job_id, _error, retriable)] = store.failed
     assert retriable is False
+
+
+# ---------------------------------------------------------------------------
+# Manual measurements (submit_manual_measurements, 0014)
+# ---------------------------------------------------------------------------
+
+
+def _plausible_values() -> dict[str, float]:
+    from forms_pipeline.contract import MEASUREMENT_KEYS, SCHEMA
+
+    # Midpoint of every schema range, so the test never restates a range.
+    return {
+        key: (SCHEMA["properties"][key]["minimum"] + SCHEMA["properties"][key]["maximum"]) / 2
+        for key in MEASUREMENT_KEYS
+    }
+
+
+def _manual_job(values: Any, job_id: str = "job-m") -> Job:
+    return Job(
+        id=job_id,
+        scan_id="scan-1",
+        order_id=None,
+        step="measuring",
+        status="running",
+        attempts=1,
+        max_attempts=3,
+        artifacts={"source": "manual", "values": values},
+    )
+
+
+class NoDownloadStorage(FakeStorageClient):
+    def download(self, bucket: str, path: str) -> bytes:
+        raise AssertionError("a manual job must never touch the mesh")
+
+
+def test_manual_measurements_happy_path_skips_mesh() -> None:
+    store = FakeJobStore()  # no scan registered: get_scan would KeyError
+    values = _plausible_values()
+    # JSON integers arrive as int; the stored row is all floats.
+    first_key = next(iter(values))
+    values[first_key] = int(values[first_key])
+    ctx = JobContext(store=store, storage=NoDownloadStorage(), cad=_dry_run_cad())
+
+    process_job(_manual_job(values), ctx)
+
+    assert store.failed == []
+    assert store.completed == [("job-m", "measured", None)]
+    row = store.measurements[("scan-1", runner.MANUAL_EXTRACTION_VERSION)]
+    assert row == {key: float(v) for key, v in values.items()}
+    assert all(type(v) is float for v in row.values())
+    _seq, validated, source = store.measurement_meta[("scan-1", "manual-1")]
+    assert (validated, source) == (True, "manual")
+
+
+def _assert_manual_dead_letters(values: Any, reason_fragment: str) -> None:
+    store = FakeJobStore()
+    ctx = JobContext(store=store, storage=NoDownloadStorage(), cad=_dry_run_cad())
+
+    process_job(_manual_job(values), ctx)
+
+    [(job_id, error, retriable)] = store.failed
+    assert job_id == "job-m"
+    assert retriable is False
+    assert reason_fragment in error["reason"]
+    assert store.measurements == {}
+    assert store.completed == []
+
+
+def test_manual_measurements_missing_key_dead_letters() -> None:
+    values = _plausible_values()
+    dropped = next(iter(values))
+    del values[dropped]
+    _assert_manual_dead_letters(values, f"missing ['{dropped}']")
+
+
+def test_manual_measurements_unknown_key_dead_letters() -> None:
+    values = _plausible_values()
+    values["S5_ISW"] = 100.0
+    _assert_manual_dead_letters(values, "unknown ['S5_ISW']")
+
+
+def test_manual_measurements_out_of_range_dead_letters() -> None:
+    from forms_pipeline.contract import SCHEMA
+
+    values = _plausible_values()
+    key = next(iter(values))
+    values[key] = SCHEMA["properties"][key]["maximum"] + 1
+    _assert_manual_dead_letters(values, "outside plausible range")
+
+
+@pytest.mark.parametrize("bad", ["120", True, None, [1.0]])
+def test_manual_measurements_non_numeric_dead_letters(bad: Any) -> None:
+    values: dict[str, Any] = _plausible_values()
+    values[next(iter(values))] = bad
+    _assert_manual_dead_letters(values, "expected a number")
+
+
+def test_manual_measurements_non_object_dead_letters() -> None:
+    _assert_manual_dead_letters([1.0, 2.0], "not an object")
+
+
+def test_scan_path_writes_source_scan(frustum_mesh: trimesh.Trimesh) -> None:
+    from forms_pipeline.extraction.measure import EXTRACTION_VERSION
+
+    store = FakeJobStore()
+    storage = FakeStorageClient(
+        files={("meshes", "user-1/scan.obj"): _frustum_obj_bytes(frustum_mesh)}
+    )
+    store.scans = {"scan-1": "user-1/scan.obj"}
+
+    handle_measuring(_measuring_job("job-1", "scan-1"), JobContext(store, storage, _dry_run_cad()))
+
+    assert store.measurement_meta[("scan-1", EXTRACTION_VERSION)][1:] == (True, "scan")
+
+
+class RecordingCad:
+    def __init__(self) -> None:
+        self.values: dict[str, float] | None = None
+
+    def generate(self, job_id: str, values: dict[str, float], model: Any) -> Any:
+        self.values = values
+        return _dry_run_cad().generate(job_id, values, model)
+
+
+def test_cad_uses_latest_validated_row_manual_over_scan() -> None:
+    store = FakeJobStore()
+    _seed_measurements(store, "scan-1")  # scan row, all 100.0
+    manual = _plausible_values()
+    process_job(_manual_job(manual), JobContext(store, NoDownloadStorage(), _dry_run_cad()))
+    cad = RecordingCad()
+
+    handle_generating_cad(
+        _cad_job("job-c", "scan-1", order_id=None),
+        JobContext(store, FakeStorageClient(), cad),  # type: ignore[arg-type]
+    )
+
+    assert cad.values == manual
+
+
+def test_cad_ignores_unvalidated_and_rescan_after_manual_wins() -> None:
+    from forms_pipeline.contract import MEASUREMENT_KEYS
+
+    store = FakeJobStore()
+    manual = _plausible_values()
+    process_job(_manual_job(manual), JobContext(store, NoDownloadStorage(), _dry_run_cad()))
+    store.upsert_measurements(
+        "scan-1", "1.0.0", "x", {k: 1.0 for k in MEASUREMENT_KEYS}, False, "scan"
+    )
+    assert store.get_measurements("scan-1") == manual
+
+    # A second adjustment re-upserts the same manual-1 key and becomes latest again.
+    _seed_measurements(store, "scan-1")
+    adjusted = {k: v + 1 for k, v in manual.items()}
+    process_job(_manual_job(adjusted), JobContext(store, NoDownloadStorage(), _dry_run_cad()))
+    assert store.get_measurements("scan-1") == adjusted
+
+
+def test_postgres_get_measurements_selects_latest_validated(fake_db) -> None:
+    store = PostgresJobStore(Settings())
+    db = fake_db(store, [({"Leg_Length": 400.0},)])
+
+    assert store.get_measurements("scan-1") == {"Leg_Length": 400.0}
+    sql, params = db.executed[0]
+    assert "validated = true" in sql and "order by created_at desc limit 1" in sql
+    assert params == ("scan-1",)
+
+
+def test_postgres_get_measurements_none_raises(fake_db) -> None:
+    store = PostgresJobStore(Settings())
+    fake_db(store, [])
+    with pytest.raises(LookupError):
+        store.get_measurements("scan-1")
+
+
+def test_postgres_upsert_refreshes_created_at_and_writes_source(fake_db) -> None:
+    store = PostgresJobStore(Settings())
+    db = fake_db(store)
+
+    store.upsert_measurements("scan-1", "1.0.0", "manual-1", {"Leg_Length": 400.0}, True, "manual")
+
+    sql, params = db.executed[0]
+    assert "created_at = now()" in sql and "source = excluded.source" in sql
+    assert params[-1] == "manual"

@@ -1,8 +1,8 @@
 """Reconstructing step: photo bundle in storage -> metric ankle-to-knee OBJ (mm).
 
 Runs only on a macOS worker with the forms-reconstruct CLI built
-(services/reconstruct). Storage keys are derived from the scan row's user_id and
-scan_id, never from client input (A1), and every write is an upsert to a key
+(services/reconstruct). Storage keys are derived from the scan row's storage_user_id
+and scan_id, never from client input (A1), and every write is an upsert to a key
 derived from them, so re-running a job lands in the same state.
 """
 
@@ -55,7 +55,7 @@ class ScanRow(Protocol):
     """The scan fields this step reads; jobs.runner.ScanInfo satisfies it."""
 
     @property
-    def user_id(self) -> str: ...
+    def storage_user_id(self) -> str: ...
     @property
     def capture_kind(self) -> str: ...
 
@@ -175,8 +175,8 @@ def handle_reconstructing(
     scan = ctx.store.get_scan(job.scan_id)
     if scan.capture_kind != PHOTO_CAPTURE_KIND:
         raise BundleValidationError("This scan is not a photo capture and cannot be reconstructed.")
-    user_id, scan_id = _uuid(scan.user_id), _uuid(job.scan_id)
-    prefix = f"{user_id}/{scan_id}/"
+    owner, scan_id = _uuid(scan.storage_user_id), _uuid(job.scan_id)
+    prefix = f"{owner}/{scan_id}/"
 
     bundle = parse_capture(ctx.storage.download(BUCKET, f"{prefix}capture.json"))
 
@@ -203,7 +203,11 @@ def handle_reconstructing(
         vertices=alignment.apply(np.asarray(model.vertices)), faces=model.faces, process=False
     )
     cameras = np.array([img.camera_to_world[:3, 3] for img in bundle.images])
-    segment = segment_leg(aligned, cameras)
+    # alignment.apply maps photogrammetry INTO ARKit world, the frame anchor_world is
+    # already in (capture contract), so the anchor needs no transform here.
+    capture = bundle.capture
+    anchor = np.array(capture.anchor_world) if capture is not None else None
+    segment = segment_leg(aligned, cameras, anchor_world=anchor)
 
     obj = export_obj_mm(segment.mesh)
     if len(obj) > settings.max_mesh_bytes:
@@ -211,7 +215,8 @@ def handle_reconstructing(
             f"Reconstructed mesh exceeds the {settings.max_mesh_mb}MB limit. Please rescan."
         )
 
-    mesh_path = f"{user_id}/{scan_id}.obj"
+    # Under storage_user_id: the scans RLS WITH CHECK pins mesh_path to it (0012).
+    mesh_path = f"{owner}/{scan_id}.obj"
     ctx.storage.upload(BUCKET, mesh_path, obj, content_type="model/obj")
     ctx.store.set_scan_mesh_path(job.scan_id, mesh_path)
 
@@ -223,6 +228,13 @@ def handle_reconstructing(
         "pose_convention": alignment.convention,
         "ankle_found": segment.confidence["ankle_found"],
         "knee_found": segment.confidence["knee_found"],
+        "mode": capture.mode if capture is not None else None,
+        "finished_early": capture.finished_early if capture is not None else None,
+        "coverage": capture.coverage if capture is not None else None,
+        "axis_source": segment.confidence["axis_source"],
+        "span_min_deg": segment.confidence["span_min_deg"],
+        "span_median_deg": segment.confidence["span_median_deg"],
+        "back_coverage_low": segment.confidence["back_coverage_low"],
     }
     logger.info(
         "job %s: reconstructed %d/%d cameras, residual %.4fm, convention %s",

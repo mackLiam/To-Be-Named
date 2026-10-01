@@ -3,12 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
+
 from forms_pipeline.config import Settings
 from forms_pipeline.jobs.retention import (
     PendingMesh,
+    PostgresRetentionStore,
     RetentionContext,
     run_retention_sweep,
 )
+from forms_pipeline.jobs.runner import ScanPathError
 
 
 @dataclass
@@ -69,10 +73,10 @@ class FakeStorageClient:
         return sorted(p for b, p in self.files if b == bucket and p.startswith(prefix))
 
 
-def _pending(scan_id: str, mesh_path: str, user_id: str | None = None) -> PendingMesh:
+def _pending(scan_id: str, mesh_path: str, storage_user_id: str | None = None) -> PendingMesh:
     return PendingMesh(
         scan_id=scan_id,
-        user_id=user_id or mesh_path.split("/")[0],
+        storage_user_id=storage_user_id or mesh_path.split("/")[0],
         mesh_path=mesh_path,
         job_completed_at="2026-06-01T00:00:00Z",
     )
@@ -236,7 +240,9 @@ def test_photo_bundle_prefix_deleted_with_mesh() -> None:
 def test_foreign_mesh_path_deletes_nothing_and_is_not_marked() -> None:
     # scans.mesh_path is client-writable: a path into another user's prefix
     # must never be deleted by the service-role sweep.
-    store = FakeRetentionStore(items=[_pending("scan-1", "user-2/scan-9.obj", user_id="user-1")])
+    store = FakeRetentionStore(
+        items=[_pending("scan-1", "user-2/scan-9.obj", storage_user_id="user-1")]
+    )
     storage = FakeStorageClient(files={("meshes", "user-2/scan-9.obj"): b"theirs"})
     ctx = RetentionContext(store=store, storage=storage)
 
@@ -263,3 +269,40 @@ def test_listing_failure_leaves_scan_unmarked_for_retry() -> None:
     assert result.failed == 1
     assert store.marked == []
     assert ("meshes", "user-1/scan-1.obj") in storage.files
+
+
+GUEST = "33333333-3333-4333-8333-333333333333"
+
+
+def test_merged_scan_is_erased_under_storage_owner() -> None:
+    # A merged scan's row now belongs to the member, but its objects are under
+    # the guest's prefix; that prefix is the one listed and erased.
+    store = FakeRetentionStore(items=[_pending("scan-1", f"{GUEST}/scan-1.obj")])
+    storage = FakeStorageClient(
+        files={("meshes", f"{GUEST}/scan-1.obj"): b"m", ("meshes", f"{GUEST}/scan-1/0.jpg"): b"p"}
+    )
+    ctx = RetentionContext(store=store, storage=storage)
+
+    result = run_retention_sweep(ctx, retention_days=30, batch_size=100, dry_run=False)
+
+    assert result.deleted == 1
+    assert storage.listed == [("meshes", f"{GUEST}/scan-1/")]
+    assert storage.files == {}
+
+
+def test_store_joins_storage_user_id_tolerating_null_owner(fake_db) -> None:
+    # The scan's user_id may be null (account deleted) or another user (merged);
+    # the query never reads it.
+    store = PostgresRetentionStore(Settings())
+    db = fake_db(store, [("scan-1", GUEST, f"{GUEST}/scan-1.obj", None)])
+    [item] = store.get_meshes_pending_deletion(retention_days=30, limit=10)
+    sql = db.executed[0][0]
+    assert "s.storage_user_id" in sql and "s.user_id" not in sql
+    assert item.storage_user_id == GUEST
+
+
+def test_store_null_storage_owner_raises_not_none_prefix(fake_db) -> None:
+    store = PostgresRetentionStore(Settings())
+    fake_db(store, [("scan-1", None, "None/scan-1.obj", None)])
+    with pytest.raises(ScanPathError):
+        store.get_meshes_pending_deletion(retention_days=30, limit=10)

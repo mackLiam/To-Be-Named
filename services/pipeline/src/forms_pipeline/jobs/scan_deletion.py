@@ -25,7 +25,12 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from forms_pipeline.config import Settings, get_settings
-from forms_pipeline.jobs.runner import StorageClient, SupabaseStorageClient, owned_mesh_path
+from forms_pipeline.jobs.runner import (
+    StorageClient,
+    SupabaseStorageClient,
+    owned_mesh_path,
+    storage_owner,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +43,7 @@ class PendingPurge:
     """One row returned by `get_scans_pending_purge`."""
 
     scan_id: str
-    user_id: str
+    storage_user_id: str
     mesh_path: str | None
 
 
@@ -89,14 +94,22 @@ def run_scan_purge(ctx: PurgeContext, batch_size: int, armed: bool = False) -> P
     return result
 
 
-def _purge_one(ctx: PurgeContext, item: PendingPurge) -> None:
+def erase_scan_objects(
+    storage: StorageClient, storage_user_id: str, scan_id: str, mesh_path: str | None
+) -> None:
+    """Delete every object under `<storage_user_id>/<scan_id>/` plus mesh_path.
+    Storage 404 is success, so a re-run converges."""
     # Validate before deleting anything: mesh_path is client-writable, and the
     # service role would otherwise delete another user's object.
-    mesh_path = owned_mesh_path(item.user_id, item.mesh_path) if item.mesh_path else None
-    for path in ctx.storage.list(MESH_BUCKET, f"{item.user_id}/{item.scan_id}/"):
-        ctx.storage.delete(MESH_BUCKET, path)
-    if mesh_path:
-        ctx.storage.delete(MESH_BUCKET, mesh_path)
+    owned = owned_mesh_path(storage_user_id, mesh_path) if mesh_path else None
+    for path in storage.list(MESH_BUCKET, f"{storage_user_id}/{scan_id}/"):
+        storage.delete(MESH_BUCKET, path)
+    if owned:
+        storage.delete(MESH_BUCKET, owned)
+
+
+def _purge_one(ctx: PurgeContext, item: PendingPurge) -> None:
+    erase_scan_objects(ctx.storage, item.storage_user_id, item.scan_id, item.mesh_path)
     # Last: once the row is gone the scan never reappears in a batch, so
     # storage must already be clean.
     ctx.store.delete_scan(item.scan_id)
@@ -118,10 +131,14 @@ class PostgresPurgeStore:
     def get_scans_pending_purge(self, limit: int) -> list[PendingPurge]:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "select scan_id, user_id, mesh_path from get_scans_pending_purge(%s)", (limit,)
+                "select scan_id, storage_user_id, mesh_path from get_scans_pending_purge(%s)",
+                (limit,),
             )
             rows = cur.fetchall()
-        return [PendingPurge(scan_id=str(r[0]), user_id=str(r[1]), mesh_path=r[2]) for r in rows]
+        return [
+            PendingPurge(scan_id=str(r[0]), storage_user_id=storage_owner(r[1]), mesh_path=r[2])
+            for r in rows
+        ]
 
     def delete_scan(self, scan_id: str) -> None:
         """Delete the row and write an audit entry, atomically. Idempotent: the
