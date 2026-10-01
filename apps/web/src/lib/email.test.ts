@@ -22,9 +22,10 @@ function deps(over: Partial<EmailDeps> = {}): EmailDeps {
 
 afterEach(() => vi.restoreAllMocks());
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function firstCall(d: EmailDeps): any[] {
-  return (d.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0] ?? [];
+function firstCall(
+  d: EmailDeps,
+): [string, RequestInit & { body: string; headers: Record<string, string> }] {
+  return (d.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as never;
 }
 
 describe('sendEmail', () => {
