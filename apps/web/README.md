@@ -3,21 +3,35 @@
 Next.js (TypeScript) on Vercel.
 
 - `zells.com`: marketing / SEO pages.
-- `/admin`: internal panel - order queue, pipeline job status, failed-scan triage,
-  break-glass STL download. Server-side only; uses the Supabase service role via
-  server components / route handlers. Admin secrets never reach the client.
+- `/admin`: internal panel. Server-side only; uses the Supabase service role via
+  server components / server actions. Admin secrets never reach the client.
+  - `/admin/orders`: orders by status; the order page moves status (mark paid
+    manually, start production, ship, deliver, cancel), edits tracking, and
+    shows customer, address, pipeline jobs and audit history.
+  - `/admin/products`: the catalog the app Shop tab sells. Create/edit name,
+    slug, price, description, image URL, availability, CAD descriptor.
+  - `/admin`: pipeline queue, failed-scan triage, break-glass STL download.
+- `/login`: staff sign-in (email + password).
 
 The customer-facing product web app is NOT here - it's the Expo web build from
 `apps/app` (see `docs/DESIGN.md` §5).
 
 ## Status
 
-- Landing page: done (static, self-hosted fonts via next/font, no client JS beyond React).
-- Admin logic layer (`src/lib`): done and unit tested - access decisions, bounded
-  data queries, pagination, break-glass STL download with mandatory audit write,
-  env gating with a hard "no NEXT_PUBLIC secrets" assertion.
-- Admin pages/routes (`src/app/admin/...`): not built yet; they are thin adapters
-  over the lib layer above.
+- Landing page: done.
+- Admin: done for orders, products and the pipeline queue. Every write
+  re-checks admin server-side and writes an `audit_log` row; order moves follow
+  `ORDER_TRANSITIONS` in `src/lib/shop.ts` (shipping requires tracking).
+- Not built yet: Stripe refunds (cancel reminds you to refund in Stripe),
+  customer emails on status change, image upload (paste an https URL).
+
+## Running the live panel
+
+1. Apply migrations through `0009_shop_admin.sql`.
+2. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY` (server-side only) and `ADMIN_ALLOWLIST`.
+3. Create the admin user with a password in the Supabase dashboard
+   (Authentication > Users), then sign in at `/login`.
 
 ## Admin access
 

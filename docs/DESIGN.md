@@ -186,8 +186,11 @@ pipeline, and the pipeline can be tested without any phone at all.
   Primary path stays the guided iPhone capture (best quality, known scale);
   upload is the fallback/compatibility path, not the default.
 - **Next.js stays, but smaller:** `zells.com` marketing/SEO pages and the
-  **internal admin panel** (order queue, pipeline job status, failed-scan
-  triage, break-glass STL download). These want SEO and server-side secrets
+  **internal admin panel** (orders: status moves, tracking, history;
+  products: catalog, price, availability, CAD descriptor; pipeline job
+  status, failed-scan triage, break-glass STL download). The panel writes
+  the same Supabase tables the app's Shop and Orders tabs read, through the
+  service role; there is no separate shop backend. These want SEO and server-side secrets
   respectively - the two things Expo web is worst at.
 - **Scan reuse & reorder:** a validated scan's 25 measurements are small JSON
   kept indefinitely (only the heavy raw mesh is deleted per the retention policy

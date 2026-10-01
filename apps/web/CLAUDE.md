@@ -15,7 +15,8 @@ own all privileged access; client components receive only rendered data.
 ## Structural rule: logic layer first, UI second
 
 All behavior lives in src/lib as small pure functions with Vitest coverage
-(access.ts, data.ts, pagination.ts, stl.ts, admin-auth.ts, env.ts, fake.ts).
+(access.ts, data.ts, pagination.ts, stl.ts, shop.ts, shop-writes.ts,
+admin-auth.ts, env.ts, fake.ts).
 Pages and route handlers are thin composition over that layer and are allowed
 to stay untested precisely because they contain no logic. When adding admin
 features: write the lib function and its tests, then the page. If a page
