@@ -757,3 +757,36 @@ def test_postgres_upsert_refreshes_created_at_and_writes_source(fake_db) -> None
     sql, params = db.executed[0]
     assert "created_at = now()" in sql and "source = excluded.source" in sql
     assert params[-1] == "manual"
+
+
+def test_poll_delay_backs_off_on_claim_errors_and_recovers() -> None:
+    class FlakyStore(FakeJobStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def claim_jobs(self, *args: Any, **kwargs: Any) -> list[Job]:
+            self.calls += 1
+            if self.calls <= 3:
+                raise ConnectionError("connection timeout expired")
+            return []
+
+    store = FlakyStore()
+    ctx = JobContext(store=store, storage=FakeStorageClient(), cad=_dry_run_cad())
+    delays = []
+    error = 0.0
+    for _ in range(4):
+        delay, error = runner.poll_delay("w", ctx, ALL_STEPS, 2.0, error)
+        delays.append(delay)
+    assert delays == [2.0, 4.0, 8.0, 2.0]
+    assert error == 0.0
+
+
+def test_poll_delay_caps_backoff() -> None:
+    class DownStore(FakeJobStore):
+        def claim_jobs(self, *args: Any, **kwargs: Any) -> list[Job]:
+            raise ConnectionError("down")
+
+    ctx = JobContext(store=DownStore(), storage=FakeStorageClient(), cad=_dry_run_cad())
+    delay, _ = runner.poll_delay("w", ctx, ALL_STEPS, 2.0, 50.0)
+    assert delay == runner.MAX_ERROR_BACKOFF_SECONDS

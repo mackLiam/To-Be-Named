@@ -355,20 +355,45 @@ def run_once(worker_id: str, ctx: JobContext, steps: tuple[str, ...], limit: int
     return len(jobs)
 
 
+# A queue/database outage must never end the worker: the claim is retried with
+# capped backoff, so the worker resumes by itself once Postgres is reachable
+# (device run 2026-09-30: one connection timeout killed the thread while the
+# health endpoint kept answering).
+MAX_ERROR_BACKOFF_SECONDS = 60.0
+
+
+def poll_delay(
+    worker_id: str,
+    ctx: JobContext,
+    steps: tuple[str, ...],
+    poll_interval: float,
+    previous_error_delay: float,
+) -> tuple[float, float]:
+    """Run one poll. Returns (seconds to sleep, error delay to carry forward)."""
+    try:
+        claimed = run_once(worker_id, ctx, steps, limit=1)
+    except Exception:
+        delay = min(MAX_ERROR_BACKOFF_SECONDS, max(poll_interval, previous_error_delay * 2))
+        logger.exception("worker %s: claim failed, retrying in %.0fs", worker_id, delay)
+        return delay, delay
+    return (0.0 if claimed else poll_interval), 0.0
+
+
 def run_forever(
     worker_id: str,
     ctx: JobContext,
     poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
     steps: tuple[str, ...] | None = None,
-) -> None:  # pragma: no cover - infinite loop; run_once is exercised directly in tests
-    """Poll the queue forever, sleeping between empty polls."""
+) -> None:  # pragma: no cover - infinite loop; poll_delay is exercised directly in tests
+    """Poll the queue forever, sleeping between empty polls and backing off on errors."""
     if steps is None:
         steps = resolve_worker_steps(get_settings())
     logger.info("worker %s claiming steps %s", worker_id, ",".join(steps))
+    error_delay = 0.0
     while True:
-        claimed = run_once(worker_id, ctx, steps, limit=1)
-        if claimed == 0:
-            time.sleep(poll_interval)
+        sleep_for, error_delay = poll_delay(worker_id, ctx, steps, poll_interval, error_delay)
+        if sleep_for:
+            time.sleep(sleep_for)
 
 
 # ---------------------------------------------------------------------------
