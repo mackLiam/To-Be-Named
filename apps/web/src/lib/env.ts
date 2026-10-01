@@ -24,7 +24,10 @@ export function hasSupabaseConfig(): boolean {
  * apps/app/src/lib/api.ts USE_FAKE_DATA.
  */
 export function isFakeMode(): boolean {
-  return !hasSupabaseConfig();
+  // A deploy with the service key but a missing public var must fail closed:
+  // fake mode lets admin routes through, and the STL route would then mint
+  // real signed URLs with that key for anyone.
+  return !hasSupabaseConfig() && !hasServiceRoleConfig();
 }
 
 /**

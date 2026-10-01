@@ -49,6 +49,13 @@ describe('supabase config gating', () => {
     expect(isFakeMode()).toBe(false);
   });
 
+  it('is never fake mode while a service key is configured', () => {
+    process.env.SUPABASE_URL = 'https://example.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key';
+    expect(hasSupabaseConfig()).toBe(false);
+    expect(isFakeMode()).toBe(false);
+  });
+
   it('needs a service key and a url for service role config', () => {
     expect(hasServiceRoleConfig()).toBe(false);
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key';
