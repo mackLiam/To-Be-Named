@@ -440,6 +440,51 @@ function isPositiveInt(value: unknown, max: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= max;
 }
 
+function validateDevice(value: unknown): void {
+  const device = value as Record<string, unknown> | null | undefined;
+  if (
+    typeof device !== 'object' ||
+    device === null ||
+    typeof device.model !== 'string' ||
+    typeof device.os !== 'string'
+  ) {
+    throw invalidBundle('device must have string model and os');
+  }
+}
+
+/** Per-image fields shared by v1 and v2. Returns the image as a record. */
+function validateImageFields(
+  raw: unknown,
+  where: string,
+  seen: Set<string>,
+  maxLongSidePx: number,
+): Record<string, unknown> {
+  const image = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+  if (typeof image.file !== 'string' || !IMAGE_FILE_PATTERN.test(image.file)) {
+    throw invalidBundle(`${where}.file must match NNN.jpg`);
+  }
+  if (seen.has(image.file)) {
+    throw invalidBundle(`${where}.file is duplicated`);
+  }
+  seen.add(image.file);
+  if (typeof image.timestamp !== 'number' || !Number.isFinite(image.timestamp)) {
+    throw invalidBundle(`${where}.timestamp must be a number`);
+  }
+  if (!isFiniteNumberArray(image.camera_to_world, 16)) {
+    throw invalidBundle(`${where}.camera_to_world must be 16 numbers`);
+  }
+  if (!isFiniteNumberArray(image.intrinsics, 4)) {
+    throw invalidBundle(`${where}.intrinsics must be 4 numbers`);
+  }
+  if (!isPositiveInt(image.width, maxLongSidePx) || !isPositiveInt(image.height, maxLongSidePx)) {
+    throw invalidBundle(`${where} size must be positive and at most ${maxLongSidePx} px`);
+  }
+  if (typeof image.tracking !== 'string') {
+    throw invalidBundle(`${where}.tracking must be a string`);
+  }
+  return image;
+}
+
 /** Validate a parsed capture.json against the v1 contract and caps. Throws
  * ERR_UPLOAD_INVALID_BUNDLE naming the first violation. */
 export function validatePhotoManifest(value: unknown): PhotoManifest {
@@ -453,15 +498,7 @@ export function validatePhotoManifest(value: unknown): PhotoManifest {
   if (manifest.version !== 1) {
     throw invalidBundle('unsupported version');
   }
-  const device = manifest.device as Record<string, unknown> | null | undefined;
-  if (
-    typeof device !== 'object' ||
-    device === null ||
-    typeof device.model !== 'string' ||
-    typeof device.os !== 'string'
-  ) {
-    throw invalidBundle('device must have string model and os');
-  }
+  validateDevice(manifest.device);
   const images = manifest.images;
   if (!Array.isArray(images)) {
     throw invalidBundle('images must be an array');
@@ -472,35 +509,145 @@ export function validatePhotoManifest(value: unknown): PhotoManifest {
   }
   const seen = new Set<string>();
   images.forEach((raw: unknown, index) => {
-    const image = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
-    const where = `images[${index}]`;
-    if (typeof image.file !== 'string' || !IMAGE_FILE_PATTERN.test(image.file)) {
-      throw invalidBundle(`${where}.file must match NNN.jpg`);
-    }
-    if (seen.has(image.file)) {
-      throw invalidBundle(`${where}.file is duplicated`);
-    }
-    seen.add(image.file);
-    if (typeof image.timestamp !== 'number' || !Number.isFinite(image.timestamp)) {
-      throw invalidBundle(`${where}.timestamp must be a number`);
-    }
-    if (!isFiniteNumberArray(image.camera_to_world, 16)) {
-      throw invalidBundle(`${where}.camera_to_world must be 16 numbers`);
-    }
-    if (!isFiniteNumberArray(image.intrinsics, 4)) {
-      throw invalidBundle(`${where}.intrinsics must be 4 numbers`);
-    }
-    if (!isPositiveInt(image.width, maxLongSidePx) || !isPositiveInt(image.height, maxLongSidePx)) {
-      throw invalidBundle(`${where} size must be positive and at most ${maxLongSidePx} px`);
-    }
-    if (typeof image.tracking !== 'string') {
-      throw invalidBundle(`${where}.tracking must be a string`);
-    }
+    validateImageFields(raw, `images[${index}]`, seen, maxLongSidePx);
   });
   if (manifest.capture !== undefined) {
     validateCaptureBlock(manifest.capture);
   }
   return value as PhotoManifest;
+}
+
+/** Caps from the "forms.photo-capture" v2 (silhouette) contract. minImages is
+ * 4 because "Finish with 4" sends four stations. The server re-validates. */
+export const SILHOUETTE_BUNDLE_LIMITS = {
+  minImages: 4,
+  maxImages: 12,
+  maxImageBytes: 2 * 1024 * 1024,
+  maxMaskBytes: 1024 * 1024,
+  maxLongSidePx: 2048,
+  maxManifestBytes: 1024 * 1024,
+} as const;
+
+export const SILHOUETTE_STATIONS = [
+  'front',
+  'front_inner',
+  'inner',
+  'front_outer',
+  'outer',
+] as const;
+export type SilhouetteStationName = (typeof SILHOUETTE_STATIONS)[number];
+
+/** [u, v, confidence]: pixels of the written image (u right, v down, origin
+ * top-left, the mask's convention), confidence 0..1. */
+export type SilhouetteJoint = [number, number, number];
+
+export interface SilhouetteManifestImage extends PhotoManifestImage {
+  /** NNN.png with the same NNN as file: 8-bit grayscale, same size, 255 = leg. */
+  mask: string;
+  station: SilhouetteStationName;
+  /** Optional: Vision body pose for the captured leg; null when not seen. */
+  joints?: { knee: SilhouetteJoint | null; ankle: SilhouetteJoint | null };
+}
+
+export interface SilhouetteManifest {
+  format: 'forms.photo-capture';
+  version: 2;
+  method: 'silhouette';
+  device: { model: string; os: string };
+  capture: PhotoManifestCapture;
+  /** World y of the floor plane (ARKit meters), or null when none was found. */
+  floor_y: number | null;
+  images: SilhouetteManifestImage[];
+}
+
+const JOINT_KEYS = ['ankle', 'knee'];
+
+function validateJoints(value: unknown, where: string, width: number, height: number): void {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw invalidBundle(`${where}.joints must be an object`);
+  }
+  const joints = value as Record<string, unknown>;
+  if (Object.keys(joints).sort().join(',') !== JOINT_KEYS.join(',')) {
+    throw invalidBundle(`${where}.joints must have exactly knee and ankle`);
+  }
+  for (const key of JOINT_KEYS) {
+    const joint = joints[key];
+    if (joint === null) {
+      continue;
+    }
+    if (!isFiniteNumberArray(joint, 3)) {
+      throw invalidBundle(`${where}.joints.${key} must be null or 3 numbers`);
+    }
+    const [u, v, confidence] = joint as [number, number, number];
+    if (u < 0 || u > width || v < 0 || v > height) {
+      throw invalidBundle(`${where}.joints.${key} is outside the image`);
+    }
+    if (confidence < 0 || confidence > 1) {
+      throw invalidBundle(`${where}.joints.${key} confidence must be between 0 and 1`);
+    }
+  }
+}
+
+/** Validate a parsed capture.json against the v2 silhouette contract and caps.
+ * Throws ERR_UPLOAD_INVALID_BUNDLE naming the first violation. */
+export function validateSilhouetteManifest(value: unknown): SilhouetteManifest {
+  if (typeof value !== 'object' || value === null) {
+    throw invalidBundle('capture.json is not an object');
+  }
+  const manifest = value as Record<string, unknown>;
+  if (manifest.format !== 'forms.photo-capture') {
+    throw invalidBundle('unknown format');
+  }
+  if (manifest.version !== 2) {
+    throw invalidBundle('unsupported version');
+  }
+  if (manifest.method !== 'silhouette') {
+    throw invalidBundle('method must be silhouette');
+  }
+  validateDevice(manifest.device);
+  validateCaptureBlock(manifest.capture);
+  const floorY = manifest.floor_y;
+  if (floorY !== null && !(typeof floorY === 'number' && Number.isFinite(floorY))) {
+    throw invalidBundle('floor_y must be a number or null');
+  }
+  const images = manifest.images;
+  if (!Array.isArray(images)) {
+    throw invalidBundle('images must be an array');
+  }
+  const { minImages, maxImages } = SILHOUETTE_BUNDLE_LIMITS;
+  if (images.length < minImages || images.length > maxImages) {
+    throw invalidBundle(`expected ${minImages} to ${maxImages} images, got ${images.length}`);
+  }
+  const seenFiles = new Set<string>();
+  const seenStations = new Set<string>();
+  images.forEach((raw: unknown, index) => {
+    const where = `images[${index}]`;
+    const image = validateImageFields(
+      raw,
+      where,
+      seenFiles,
+      SILHOUETTE_BUNDLE_LIMITS.maxLongSidePx,
+    );
+    const stem = (image.file as string).slice(0, 3);
+    if (image.mask !== `${stem}.png`) {
+      throw invalidBundle(`${where}.mask must be ${stem}.png`);
+    }
+    const station = image.station;
+    if (
+      typeof station !== 'string' ||
+      !(SILHOUETTE_STATIONS as readonly string[]).includes(station)
+    ) {
+      throw invalidBundle(`${where}.station is not a known station`);
+    }
+    if (seenStations.has(station)) {
+      throw invalidBundle(`${where}.station is duplicated`);
+    }
+    seenStations.add(station);
+    if (image.joints !== undefined) {
+      validateJoints(image.joints, where, image.width as number, image.height as number);
+    }
+  });
+  return value as SilhouetteManifest;
 }
 
 /** Join a sandbox directory and a relative name into a file:// URI. */
@@ -582,11 +729,66 @@ export async function uploadPhotoBundleWith(
   deps: PhotoBundleDeps,
   params: UploadPhotoBundleParams,
 ): Promise<UploadPhotoBundleResult> {
+  const manifestText = await readManifestText(deps, params, PHOTO_BUNDLE_LIMITS.maxManifestBytes);
+  const manifest = validatePhotoManifest(parseManifest(manifestText));
+  const files: BundleFile[] = manifest.images.map((image) => ({
+    relative: `images/${image.file}`,
+    maxBytes: PHOTO_BUNDLE_LIMITS.maxImageBytes,
+    contentType: 'image/jpeg',
+    kind: 'photo',
+  }));
+  return uploadBundleFiles(deps, params, manifestText, files, manifest.images.length);
+}
+
+/**
+ * Silhouette (capture.json v2) counterpart of uploadPhotoBundleWith: the same
+ * order and retry contract, with each image's mask (masks/NNN.png) uploaded
+ * alongside the images under the same concurrency bound, capture.json still
+ * last.
+ */
+export async function uploadSilhouetteBundleWith(
+  deps: PhotoBundleDeps,
+  params: UploadPhotoBundleParams,
+): Promise<UploadPhotoBundleResult> {
+  const manifestText = await readManifestText(
+    deps,
+    params,
+    SILHOUETTE_BUNDLE_LIMITS.maxManifestBytes,
+  );
+  const manifest = validateSilhouetteManifest(parseManifest(manifestText));
+  const files: BundleFile[] = manifest.images.flatMap((image): BundleFile[] => [
+    {
+      relative: `images/${image.file}`,
+      maxBytes: SILHOUETTE_BUNDLE_LIMITS.maxImageBytes,
+      contentType: 'image/jpeg',
+      kind: 'photo',
+    },
+    {
+      relative: `masks/${image.mask}`,
+      maxBytes: SILHOUETTE_BUNDLE_LIMITS.maxMaskBytes,
+      contentType: 'image/png',
+      kind: 'mask',
+    },
+  ]);
+  return uploadBundleFiles(deps, params, manifestText, files, manifest.images.length);
+}
+
+/** One bundle file, relative to both the local bundle dir and the storage prefix. */
+interface BundleFile {
+  relative: string;
+  maxBytes: number;
+  contentType: string;
+  kind: 'photo' | 'mask';
+}
+
+async function readManifestText(
+  deps: PhotoBundleDeps,
+  params: UploadPhotoBundleParams,
+  maxBytes: number,
+): Promise<string> {
   if (params.leg !== 'L' && params.leg !== 'R') {
     throw new UploadError('ERR_UPLOAD_UNKNOWN', `Invalid leg: ${String(params.leg)}`);
   }
-
-  // 1. Manifest: read, cap, parse, validate.
   let manifestText: string;
   try {
     manifestText = await deps.readText(bundleFileUri(params.bundleDir, 'capture.json'));
@@ -594,17 +796,28 @@ export async function uploadPhotoBundleWith(
     throw new UploadError('ERR_UPLOAD_READ', 'Could not read capture.json from the device.', error);
   }
   const manifestBytes = new TextEncoder().encode(manifestText).length;
-  if (manifestBytes > PHOTO_BUNDLE_LIMITS.maxManifestBytes) {
+  if (manifestBytes > maxBytes) {
     throw invalidBundle(`capture.json is ${manifestBytes} bytes`);
   }
-  let parsed: unknown;
+  return manifestText;
+}
+
+function parseManifest(manifestText: string): unknown {
   try {
-    parsed = JSON.parse(manifestText);
+    return JSON.parse(manifestText);
   } catch {
     throw invalidBundle('capture.json is not valid JSON');
   }
-  const manifest = validatePhotoManifest(parsed);
+}
 
+/** Steps 2 to 6 shared by both bundle formats. */
+async function uploadBundleFiles(
+  deps: PhotoBundleDeps,
+  params: UploadPhotoBundleParams,
+  manifestText: string,
+  files: readonly BundleFile[],
+  imageCount: number,
+): Promise<UploadPhotoBundleResult> {
   // 2. Owner prefix (storage RLS requires `${auth.uid()}/`).
   let userId: string;
   try {
@@ -620,26 +833,35 @@ export async function uploadPhotoBundleWith(
   const bundlePath = `${userId}/${scanId}`;
   const bucket = deps.client.storage.from(MESHES_BUCKET);
 
-  // 3. Images, bounded concurrency.
-  await mapWithConcurrency(manifest.images, PHOTO_UPLOAD_CONCURRENCY, async (image) => {
+  // 3. Files, bounded concurrency.
+  await mapWithConcurrency(files, PHOTO_UPLOAD_CONCURRENCY, async (entry) => {
+    const noun = entry.kind === 'photo' ? 'Photo' : 'Mask';
     let file: UploadFile;
     try {
-      file = await deps.readFile(bundleFileUri(params.bundleDir, `images/${image.file}`));
+      file = await deps.readFile(bundleFileUri(params.bundleDir, entry.relative));
     } catch (error) {
-      throw new UploadError('ERR_UPLOAD_READ', 'Could not read a photo from the device.', error);
-    }
-    if (file.size > PHOTO_BUNDLE_LIMITS.maxImageBytes) {
       throw new UploadError(
-        'ERR_UPLOAD_TOO_LARGE',
-        `Photo is ${file.size} bytes, over the ${PHOTO_BUNDLE_LIMITS.maxImageBytes} byte limit.`,
+        'ERR_UPLOAD_READ',
+        `Could not read a ${entry.kind} from the device.`,
+        error,
       );
     }
-    const uploaded = await bucket.upload(`${bundlePath}/images/${image.file}`, file.body, {
-      contentType: 'image/jpeg',
+    if (file.size > entry.maxBytes) {
+      throw new UploadError(
+        'ERR_UPLOAD_TOO_LARGE',
+        `${noun} is ${file.size} bytes, over the ${entry.maxBytes} byte limit.`,
+      );
+    }
+    const uploaded = await bucket.upload(`${bundlePath}/${entry.relative}`, file.body, {
+      contentType: entry.contentType,
       upsert: true,
     });
     if (uploaded.error) {
-      throw new UploadError('ERR_UPLOAD_STORAGE', 'Failed to upload a photo.', uploaded.error);
+      throw new UploadError(
+        'ERR_UPLOAD_STORAGE',
+        `Failed to upload a ${entry.kind}.`,
+        uploaded.error,
+      );
     }
   });
 
@@ -691,7 +913,7 @@ export async function uploadPhotoBundleWith(
   }
 
   const jobId = typeof enqueued.data === 'string' ? enqueued.data : null;
-  return { scanId, bundlePath, imageCount: manifest.images.length, jobId, fake: false };
+  return { scanId, bundlePath, imageCount, jobId, fake: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -765,7 +987,7 @@ async function simulateUpload(params: UploadScanParams): Promise<UploadScanResul
   };
 }
 
-/** FAKE MODE for photo bundles: same contract as simulateUpload. */
+/** FAKE MODE for photo and silhouette bundles: same contract as simulateUpload. */
 async function simulatePhotoBundleUpload(
   params: UploadPhotoBundleParams,
 ): Promise<UploadPhotoBundleResult> {
@@ -794,6 +1016,17 @@ export async function uploadScan(params: UploadScanParams): Promise<UploadScanRe
     return simulateUpload(params);
   }
   return uploadScanWith(defaultUploadDeps(), params);
+}
+
+/** Upload a silhouette bundle (capture.json v2): images, masks, capture.json,
+ * scan row, job. Simulated success in fake mode, like uploadPhotoBundle. */
+export async function uploadSilhouetteBundle(
+  params: UploadPhotoBundleParams,
+): Promise<UploadPhotoBundleResult> {
+  if (USE_FAKE_DATA) {
+    return simulatePhotoBundleUpload(params);
+  }
+  return uploadSilhouetteBundleWith(defaultPhotoBundleDeps(), params);
 }
 
 /** Upload a photo bundle: images + capture.json to storage, scan row, job.

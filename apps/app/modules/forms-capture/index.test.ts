@@ -83,7 +83,29 @@ describe('photo capture when the native module is absent', () => {
   it('startPhotoCapture rejects with CaptureUnavailableError', async () => {
     await expect(capture.startPhotoCapture()).rejects.toBeInstanceOf(CaptureUnavailableError);
   });
+
+  it('startSilhouetteCapture rejects with CaptureUnavailableError', async () => {
+    await expect(capture.startSilhouetteCapture({ leg: 'L' })).rejects.toBeInstanceOf(
+      CaptureUnavailableError,
+    );
+  });
+
+  it('addSilhouetteStatsListener returns a removable no-op', () => {
+    expect(() => capture.addSilhouetteStatsListener(() => {}).remove()).not.toThrow();
+  });
 });
+
+const SILHOUETTE_RESULT = {
+  method: 'silhouette' as const,
+  sessionId: 'sil-1',
+  bundleDir: '/d/sil-1',
+  manifestPath: '/d/sil-1/capture.json',
+  imageCount: 5,
+  coverage: 1,
+  mode: 'solo' as const,
+  finishedEarly: false,
+  floorFound: true,
+};
 
 describe('when the native module is present', () => {
   const makeNative = (over: Partial<FormsCaptureNativeModule> = {}): FormsCaptureNativeModule => ({
@@ -99,6 +121,7 @@ describe('when the native module is present', () => {
     cancel: vi.fn(async () => {}),
     isPhotoCaptureSupported: vi.fn(async () => true),
     startPhotoCapture: vi.fn(async () => PHOTO_RESULT),
+    startSilhouetteCapture: vi.fn(async () => SILHOUETTE_RESULT),
     addListener: vi.fn(() => ({ remove: vi.fn() })),
     ...over,
   });
@@ -227,5 +250,31 @@ describe('when the native module is present', () => {
     await expect(capture.startPhotoCapture()).rejects.toMatchObject({
       code: 'ERR_CAPTURE_CAMERA_DENIED',
     });
+  });
+
+  it('startSilhouetteCapture forwards the leg and resolves the bundle result', async () => {
+    const native = makeNative();
+    mocks.native = native;
+    await expect(capture.startSilhouetteCapture({ leg: 'R' })).resolves.toEqual(SILHOUETTE_RESULT);
+    expect(native.startSilhouetteCapture).toHaveBeenCalledWith({ leg: 'R' });
+  });
+
+  it('startSilhouetteCapture maps the switch-to-manual rejection to its code', async () => {
+    mocks.native = makeNative({
+      startSilhouetteCapture: vi.fn(async () => {
+        throw { code: 'ERR_CAPTURE_SWITCH_TO_MANUAL', message: 'Switching to hand measurement.' };
+      }),
+    });
+    await expect(capture.startSilhouetteCapture({ leg: 'L' })).rejects.toMatchObject({
+      code: 'ERR_CAPTURE_SWITCH_TO_MANUAL',
+    });
+  });
+
+  it('addSilhouetteStatsListener subscribes to onSilhouetteStats', () => {
+    const native = makeNative();
+    mocks.native = native;
+    const listener = () => {};
+    capture.addSilhouetteStatsListener(listener);
+    expect(native.addListener).toHaveBeenCalledWith('onSilhouetteStats', listener);
   });
 });

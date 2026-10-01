@@ -17,6 +17,8 @@ vi.mock('../../modules/forms-capture', async () => {
     addCaptureStateListener: vi.fn(),
     addReconstructionProgressListener: vi.fn(),
     addPhotoCaptureStatsListener: vi.fn(),
+    addSilhouetteStatsListener: vi.fn(),
+    startSilhouetteCapture: vi.fn(),
   };
 });
 vi.mock('../lib/nativeCapture', () => ({
@@ -29,6 +31,8 @@ import type {
   PhotoCaptureResult,
   PhotoCaptureStatsEvent,
   ReconstructResult,
+  SilhouetteCaptureResult,
+  SilhouetteStatsEvent,
 } from '../../modules/forms-capture';
 import { UploadError } from '../lib/upload';
 import type {
@@ -42,6 +46,8 @@ import {
   CaptureFlowController,
   captureErrorMessage,
   captureStatsLogger,
+  flowLogger,
+  silhouetteStatsLogger,
   type CaptureFlowDeps,
   type CaptureFlowState,
 } from './useCaptureFlow';
@@ -79,6 +85,18 @@ const PHOTO_UPLOAD_RESULT: UploadPhotoBundleResult = {
 function photoUploadMock() {
   return vi.fn((_params: UploadPhotoBundleParams) => Promise.resolve(PHOTO_UPLOAD_RESULT));
 }
+
+const SILHOUETTE_RESULT: SilhouetteCaptureResult = {
+  method: 'silhouette',
+  sessionId: 'sil-session-1',
+  bundleDir: '/sandbox/photo-captures/sil-session-1',
+  manifestPath: '/sandbox/photo-captures/sil-session-1/capture.json',
+  imageCount: 5,
+  coverage: 1,
+  mode: 'solo',
+  finishedEarly: false,
+  floorFound: true,
+};
 
 const CAPTURE_RESULT: CaptureResult = {
   sessionId: 'session-1',
@@ -121,6 +139,7 @@ function makeDeps(overrides: Partial<CaptureFlowDeps> = {}) {
       mode: 'object' as const,
     })),
     startPhotoCapture: vi.fn(async () => PHOTO_RESULT),
+    startSilhouetteCapture: vi.fn(async () => SILHOUETTE_RESULT),
     startCapture: vi.fn(async () => CAPTURE_RESULT),
     reconstruct: vi.fn(async () => RECONSTRUCT_RESULT),
     cancel: vi.fn(async () => {}),
@@ -751,6 +770,7 @@ describe('pair mode (left then right)', () => {
       uploadPhotoBundle,
     });
     const controller = await pairController(deps);
+    controller.choosePhotoMode('helper');
     const pairId = controller.getState().session?.pairId;
     await controller.start();
     controller.nextLeg();
@@ -785,8 +805,9 @@ describe('photos mode (non-LiDAR)', () => {
     const { deps } = photoDeps();
     const { controller, phases } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     await controller.start();
-    expect(phases()).toEqual(['checking', 'ready', 'capturing', 'done']);
+    expect(phases()).toEqual(['checking', 'ready', 'ready', 'capturing', 'done']);
     expect(deps.startPhotoCapture).toHaveBeenCalledOnce();
     expect(deps.startCapture).not.toHaveBeenCalled();
     expect(deps.reconstruct).not.toHaveBeenCalled();
@@ -809,8 +830,17 @@ describe('photos mode (non-LiDAR)', () => {
     const { deps } = photoDeps({ uploadPhotoBundle, uploadScan });
     const { controller, phases } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     await controller.start();
-    expect(phases()).toEqual(['checking', 'ready', 'capturing', 'done', 'uploading', 'uploaded']);
+    expect(phases()).toEqual([
+      'checking',
+      'ready',
+      'ready',
+      'capturing',
+      'done',
+      'uploading',
+      'uploaded',
+    ]);
     expect(uploadScan).not.toHaveBeenCalled();
     const params = uploadPhotoBundle.mock.calls[0]?.[0];
     expect(params).toMatchObject({
@@ -837,6 +867,7 @@ describe('photos mode (non-LiDAR)', () => {
     });
     const { controller } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     await controller.start();
     expect(controller.getState()).toMatchObject({ phase: 'ready', error: null, mode: 'photos' });
   });
@@ -849,6 +880,7 @@ describe('photos mode (non-LiDAR)', () => {
     });
     const { controller } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     await controller.start();
     expect(controller.getState().phase).toBe('failed');
     expect(controller.getState().error?.code).toBe('ERR_CAPTURE_CAMERA_DENIED');
@@ -861,6 +893,7 @@ describe('photos mode (non-LiDAR)', () => {
     const { deps } = photoDeps({ uploadPhotoBundle });
     const { controller } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     await controller.start();
     expect(controller.getState().phase).toBe('upload_failed');
     expect(controller.getState().uploadError?.code).toBe('ERR_UPLOAD_STORAGE');
@@ -878,6 +911,7 @@ describe('photos mode (non-LiDAR)', () => {
     const { deps } = photoDeps({ startPhotoCapture: vi.fn(() => call.promise) });
     const { controller } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     const started = controller.start();
     controller.dispose();
     call.resolve(PHOTO_RESULT);
@@ -886,13 +920,14 @@ describe('photos mode (non-LiDAR)', () => {
     expect(controller.getState().phase).toBe('capturing');
   });
 
-  it('defaults to solo when no photo mode was chosen', async () => {
+  it('defaults to solo (the silhouette capture) when no photo mode was chosen', async () => {
     const { deps } = photoDeps();
     const { controller } = makeController(deps);
     await controller.initialize();
     expect(controller.getState().photoMode).toBeNull();
     await controller.start();
-    expect(deps.startPhotoCapture).toHaveBeenCalledWith({ mode: 'solo' });
+    expect(deps.startSilhouetteCapture).toHaveBeenCalledWith({ leg: 'L' });
+    expect(deps.startPhotoCapture).not.toHaveBeenCalled();
   });
 
   it('passes the chosen mode and keeps it for the second leg', async () => {
@@ -941,6 +976,7 @@ describe('photos mode (non-LiDAR)', () => {
     });
     const { controller } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     expect(deps.addPhotoCaptureStatsListener).not.toHaveBeenCalled();
     const started = controller.start();
     const stats: PhotoCaptureStatsEvent = {
@@ -972,6 +1008,7 @@ describe('photos mode (non-LiDAR)', () => {
     });
     const { controller } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     await controller.start();
     expect(failing.remove).toHaveBeenCalledOnce();
 
@@ -983,6 +1020,7 @@ describe('photos mode (non-LiDAR)', () => {
     });
     const second = makeController(hung.deps).controller;
     await second.initialize();
+    second.choosePhotoMode('helper');
     void second.start();
     second.dispose();
     expect(pending.remove).toHaveBeenCalledOnce();
@@ -992,6 +1030,7 @@ describe('photos mode (non-LiDAR)', () => {
     const { deps } = photoDeps({ addPhotoCaptureStatsListener: vi.fn() });
     const { controller } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     await controller.start();
     expect(deps.addPhotoCaptureStatsListener).not.toHaveBeenCalled();
   });
@@ -1008,11 +1047,224 @@ describe('photos mode (non-LiDAR)', () => {
     });
     const { controller } = makeController(deps);
     await controller.initialize();
+    controller.choosePhotoMode('helper');
     await controller.start();
     expect(uploadPhotoBundle.mock.calls[0]?.[0]?.captureMeta).toMatchObject({
       photoMode: 'helper',
       finishedEarly: true,
     });
+  });
+});
+
+describe('photos mode, solo: silhouette capture', () => {
+  function soloDeps(overrides: Partial<CaptureFlowDeps> = {}) {
+    return makeDeps({
+      getAvailability: vi.fn(async () => ({
+        supported: true,
+        reason: 'ok' as const,
+        mode: 'photos' as const,
+      })),
+      ...overrides,
+    });
+  }
+
+  function silhouetteUploadMock() {
+    return vi.fn((params: UploadPhotoBundleParams) =>
+      Promise.resolve({ ...PHOTO_UPLOAD_RESULT, scanId: params.scanId ?? 'missing' }),
+    );
+  }
+
+  it('solo routes to the silhouette capture and uploads via uploadSilhouetteBundle', async () => {
+    const uploadSilhouetteBundle = silhouetteUploadMock();
+    const uploadPhotoBundle = photoUploadMock();
+    const { deps } = soloDeps({ uploadSilhouetteBundle, uploadPhotoBundle });
+    const { controller, phases } = makeController(deps);
+    await controller.initialize();
+    controller.choosePhotoMode('solo');
+    await controller.start();
+    expect(phases()).toEqual([
+      'checking',
+      'ready',
+      'ready',
+      'capturing',
+      'done',
+      'uploading',
+      'uploaded',
+    ]);
+    expect(deps.startSilhouetteCapture).toHaveBeenCalledWith({ leg: 'L' });
+    expect(deps.startPhotoCapture).not.toHaveBeenCalled();
+    expect(uploadPhotoBundle).not.toHaveBeenCalled();
+    expect(controller.getState().photoCapture).toEqual(SILHOUETTE_RESULT);
+    expect(uploadSilhouetteBundle.mock.calls[0]?.[0]).toMatchObject({
+      bundleDir: SILHOUETTE_RESULT.bundleDir,
+      leg: 'L',
+      pairId: null,
+      captureMeta: {
+        sessionId: 'sil-session-1',
+        imageCount: 5,
+        coverage: 1,
+        photoMode: 'solo',
+        finishedEarly: false,
+        captureKind: 'photos',
+        captureMethod: 'silhouette',
+        floorFound: true,
+      },
+    });
+  });
+
+  it('helper routes to the 3D photo sweep', async () => {
+    const { deps } = soloDeps();
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    controller.choosePhotoMode('helper');
+    await controller.start();
+    expect(deps.startPhotoCapture).toHaveBeenCalledWith({ mode: 'helper' });
+    expect(deps.startSilhouetteCapture).not.toHaveBeenCalled();
+  });
+
+  it('without uploadSilhouetteBundle the machine stops at done (opt-in)', async () => {
+    const { deps } = soloDeps({ uploadPhotoBundle: photoUploadMock() });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(controller.getState().phase).toBe('done');
+    expect(deps.uploadPhotoBundle).not.toHaveBeenCalled();
+  });
+
+  it('pair mode passes each leg to the native capture and stamps one pair id', async () => {
+    const uploadSilhouetteBundle = silhouetteUploadMock();
+    const { deps } = soloDeps({ uploadSilhouetteBundle });
+    const controller = new CaptureFlowController(deps, () => {}, { pair: true });
+    await controller.initialize();
+    const pairId = controller.getState().session?.pairId;
+    await controller.start();
+    controller.nextLeg();
+    await controller.start();
+    expect(deps.startSilhouetteCapture).toHaveBeenNthCalledWith(1, { leg: 'L' });
+    expect(deps.startSilhouetteCapture).toHaveBeenNthCalledWith(2, { leg: 'R' });
+    const [left, right] = uploadSilhouetteBundle.mock.calls.map((call) => call[0]);
+    expect(left).toMatchObject({ leg: 'L', pairId });
+    expect(right).toMatchObject({ leg: 'R', pairId });
+    expect(controller.getState().session?.uploaded).toEqual({ L: true, R: true });
+  });
+
+  it('upload failure then retryUpload reuses the scan id and the silhouette bundle', async () => {
+    const uploadSilhouetteBundle = silhouetteUploadMock().mockRejectedValueOnce(
+      new UploadError('ERR_UPLOAD_STORAGE', 'net'),
+    );
+    const { deps } = soloDeps({ uploadSilhouetteBundle });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(controller.getState().phase).toBe('upload_failed');
+    await controller.retryUpload();
+    expect(controller.getState().phase).toBe('uploaded');
+    expect(deps.startSilhouetteCapture).toHaveBeenCalledOnce();
+    const [first, second] = uploadSilhouetteBundle.mock.calls.map((call) => call[0]);
+    expect(second?.scanId).toBe(first?.scanId);
+    expect(second?.bundleDir).toBe(SILHOUETTE_RESULT.bundleDir);
+  });
+
+  it('switch to manual lands in the manual phase on the same leg, not failed', async () => {
+    const { deps } = soloDeps({
+      startSilhouetteCapture: vi.fn(async () => {
+        throw { code: 'ERR_CAPTURE_SWITCH_TO_MANUAL', message: 'by hand' };
+      }),
+    });
+    const controller = new CaptureFlowController(deps, () => {}, { pair: true });
+    await controller.initialize();
+    await controller.start();
+    expect(controller.getState()).toMatchObject({ phase: 'manual', leg: 'L', error: null });
+    expect(controller.getState().session?.pairId).toBeTruthy();
+  });
+
+  it('cancel returns to ready', async () => {
+    const { deps } = soloDeps({
+      startSilhouetteCapture: vi.fn(async () => {
+        throw { code: 'ERR_CAPTURE_CANCELLED', message: 'cancelled' };
+      }),
+    });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(controller.getState().phase).toBe('ready');
+  });
+
+  it('forwards silhouette stats only while the capture runs, never photo stats', async () => {
+    const call = deferred<SilhouetteCaptureResult>();
+    const sub = { remove: vi.fn() };
+    let emit: ((stats: SilhouetteStatsEvent) => void) | undefined;
+    const logSilhouetteStats = vi.fn();
+    const { deps } = soloDeps({
+      startSilhouetteCapture: vi.fn(() => call.promise),
+      addSilhouetteStatsListener: vi.fn((listener) => {
+        emit = listener;
+        return sub;
+      }),
+      logSilhouetteStats,
+      addPhotoCaptureStatsListener: vi.fn(),
+      logCaptureStats: vi.fn(),
+    });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    const started = controller.start();
+    const stats: SilhouetteStatsEvent = {
+      stationsCaptured: 2,
+      currentStation: 'inner',
+      azimuthOffsetDeg: 8,
+      distanceM: 0.5,
+      levelDeg: 10,
+      maskValid: true,
+      floorFound: false,
+      failures: { mask: 4 },
+      torchOn: true,
+      ambientIntensity: 350,
+    };
+    emit?.(stats);
+    expect(logSilhouetteStats).toHaveBeenCalledWith(stats);
+    expect(deps.addPhotoCaptureStatsListener).not.toHaveBeenCalled();
+    call.resolve(SILHOUETTE_RESULT);
+    await started;
+    expect(sub.remove).toHaveBeenCalledOnce();
+  });
+});
+
+describe('flowLogger', () => {
+  it('is silent outside dev builds', () => {
+    expect(flowLogger(false)).toBeUndefined();
+    expect(silhouetteStatsLogger(false)).toBeUndefined();
+  });
+
+  it('traces phase transitions and error codes in dev builds', async () => {
+    const lines: string[] = [];
+    const { deps } = makeDeps({
+      getAvailability: vi.fn(async () => ({
+        supported: true,
+        reason: 'ok' as const,
+        mode: 'photos' as const,
+      })),
+      uploadSilhouetteBundle: vi.fn(async () => {
+        throw new UploadError('ERR_UPLOAD_INVALID_BUNDLE', 'Invalid photo bundle: floor_y');
+      }),
+      logFlow: (line) => lines.push(line),
+    });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(lines).toEqual([
+      'checking -> ready',
+      'ready -> capturing',
+      'capturing -> done',
+      'done -> uploading',
+      'upload error ERR_UPLOAD_INVALID_BUNDLE: Invalid photo bundle: floor_y',
+      'uploading -> upload_failed',
+    ]);
+  });
+
+  it('prefixes lines with the [capture-flow] tag', () => {
+    const log = vi.fn();
+    flowLogger(true, log)?.('ready -> capturing');
+    expect(log).toHaveBeenCalledWith('[capture-flow] ready -> capturing');
   });
 });
 

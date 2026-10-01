@@ -26,6 +26,9 @@ import type {
   ReconstructOptions,
   ReconstructResult,
   ReconstructionProgressEvent,
+  SilhouetteCaptureOptions,
+  SilhouetteCaptureResult,
+  SilhouetteStatsEvent,
 } from './src/types';
 
 export { CaptureError, CaptureUnavailableError, mapNativeError } from './src/errors';
@@ -46,6 +49,11 @@ export type {
   ReconstructResult,
   ReconstructionProgressEvent,
   FormsCaptureNativeModule,
+  SilhouetteCaptureOptions,
+  SilhouetteCaptureResult,
+  SilhouetteCondition,
+  SilhouetteStation,
+  SilhouetteStatsEvent,
 } from './src/types';
 
 /** True when the native module is linked into the running binary. */
@@ -126,6 +134,27 @@ export async function startPhotoCapture(
 }
 
 /**
+ * Present solo silhouette capture (five still photos with on-device leg
+ * masks) and write a capture.json v2 bundle into the app sandbox. Resolves on
+ * Done; rejects with ERR_CAPTURE_CANCELLED on Cancel and with
+ * ERR_CAPTURE_SWITCH_TO_MANUAL when the user picks hand measurement.
+ */
+export async function startSilhouetteCapture(
+  options: SilhouetteCaptureOptions,
+): Promise<SilhouetteCaptureResult> {
+  if (!FormsCaptureNative) {
+    throw new CaptureUnavailableError(
+      'Silhouette capture is unavailable on this device (native module not linked).',
+    );
+  }
+  try {
+    return await FormsCaptureNative.startSilhouetteCapture(options);
+  } catch (error) {
+    throw mapNativeError(error);
+  }
+}
+
+/**
  * Run PhotogrammetrySession over the captured images and return both the USDZ
  * and the OBJ converted from it (the OBJ is what the Python pipeline consumes).
  * Subscribe to progress via {@link addReconstructionProgressListener}.
@@ -189,4 +218,14 @@ export function addPhotoCaptureStatsListener(
     return NOOP_SUBSCRIPTION;
   }
   return FormsCaptureNative.addListener('onPhotoCaptureStats', listener);
+}
+
+/** Subscribe to once-a-second silhouette capture diagnostics (tuning only). */
+export function addSilhouetteStatsListener(
+  listener: (event: SilhouetteStatsEvent) => void,
+): EventSubscription {
+  if (!FormsCaptureNative) {
+    return NOOP_SUBSCRIPTION;
+  }
+  return FormsCaptureNative.addListener('onSilhouetteStats', listener);
 }

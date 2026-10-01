@@ -19,6 +19,10 @@
  * uploading, and the bundle is reconstructed server-side. Same phases, same
  * cancel and retry rules. Before the first photos capture the screen asks who
  * holds the phone (choosePhotoMode); the answer is kept for the second leg.
+ * Solo runs the silhouette capture (five still stations, capture.json v2);
+ * helper runs the 3D photo sweep (capture.json v1). Choosing hand measurement
+ * inside the native capture ends in 'manual' (capturing -> manual), which the
+ * screen turns into navigation to the measure screen.
  *
  * The upload leg is opt-in via CaptureFlowDeps.uploadScan: when it is absent
  * (the default in unit tests, and any non-configured build) the machine stops at
@@ -49,12 +53,14 @@ import {
   addCaptureStateListener,
   addPhotoCaptureStatsListener,
   addReconstructionProgressListener,
+  addSilhouetteStatsListener,
   cancel as cancelCapture,
   CaptureError,
   mapNativeError,
   reconstruct,
   startCapture,
   startPhotoCapture,
+  startSilhouetteCapture,
 } from '../../modules/forms-capture';
 import type {
   CaptureErrorCode,
@@ -68,6 +74,9 @@ import type {
   ReconstructionProgressEvent,
   ReconstructOptions,
   ReconstructResult,
+  SilhouetteCaptureOptions,
+  SilhouetteCaptureResult,
+  SilhouetteStatsEvent,
 } from '../../modules/forms-capture';
 import {
   allocateScanId,
@@ -83,7 +92,13 @@ import type {
   CaptureMode,
   CaptureUnavailableReason,
 } from '../lib/nativeCapture';
-import { asUploadError, newScanId, uploadPhotoBundle, uploadScan } from '../lib/upload';
+import {
+  asUploadError,
+  newScanId,
+  uploadPhotoBundle,
+  uploadScan,
+  uploadSilhouetteBundle,
+} from '../lib/upload';
 import type {
   Leg,
   UploadError,
@@ -107,7 +122,9 @@ export type CaptureFlowPhase =
   | 'uploading'
   | 'uploaded'
   | 'upload_failed'
-  | 'failed';
+  | 'failed'
+  /** The user chose hand measurement inside the capture; the screen navigates. */
+  | 'manual';
 
 /** Device/OS context stamped onto the scan's capture_meta. Gathered by the
  * screen (which already imports react-native) and injected, so this module and
@@ -136,8 +153,9 @@ export interface CaptureFlowState {
   capture: CaptureResult | null;
   /** Result of the reconstruction; set from the 'done' phase onward. */
   result: ReconstructResult | null;
-  /** Photos mode only: the captured bundle; set from the 'done' phase onward. */
-  photoCapture: PhotoCaptureResult | null;
+  /** Photos mode only: the captured bundle (v1 sweep or v2 silhouette); set
+   * from the 'done' phase onward. */
+  photoCapture: PhotoCaptureResult | SilhouetteCaptureResult | null;
   /** Typed capture error; set only in the 'failed' phase. */
   error: CaptureError | null;
   /** Typed upload error; set only in the 'upload_failed' phase. */
@@ -198,6 +216,7 @@ export const CAPTURE_ERROR_MESSAGES: Record<CaptureErrorCode, string> = {
   ERR_CAPTURE_CAMERA_DENIED: `${BRAND_NAME} cannot use the camera. Allow camera access in Settings, then try again.`,
   ERR_CAPTURE_WRITE_FAILED:
     'The photos could not be saved on this phone. Free up some storage, then scan again.',
+  ERR_CAPTURE_SWITCH_TO_MANUAL: 'You chose to enter the measurements by hand.',
   ERR_CAPTURE_UNKNOWN: 'Something went wrong during the scan. Run it again.',
 };
 
@@ -225,6 +244,15 @@ export interface CaptureFlowDeps {
   ) => EventSubscription;
   /** Sink for those diagnostics; undefined disables the subscription. */
   logCaptureStats?: (stats: PhotoCaptureStatsEvent) => void;
+  /** Photos mode, solo: still photos at five stations with on-device masks. */
+  startSilhouetteCapture(options: SilhouetteCaptureOptions): Promise<SilhouetteCaptureResult>;
+  /** Silhouette diagnostics; subscribed only while a silhouette capture runs. */
+  addSilhouetteStatsListener?: (
+    listener: (event: SilhouetteStatsEvent) => void,
+  ) => EventSubscription;
+  logSilhouetteStats?: (stats: SilhouetteStatsEvent) => void;
+  /** Dev-only flow trace (phase transitions, error codes); undefined is silent. */
+  logFlow?: (line: string) => void;
   reconstruct(options?: ReconstructOptions): Promise<ReconstructResult>;
   cancel(): Promise<void>;
   addCaptureStateListener(listener: (event: CaptureStateEvent) => void): EventSubscription;
@@ -239,6 +267,8 @@ export interface CaptureFlowDeps {
   uploadScan?: (params: UploadScanParams) => Promise<UploadScanResult>;
   /** Photos-mode counterpart of uploadScan; same opt-in rule. */
   uploadPhotoBundle?: (params: UploadPhotoBundleParams) => Promise<UploadPhotoBundleResult>;
+  /** Silhouette bundle counterpart of uploadPhotoBundle; same opt-in rule. */
+  uploadSilhouetteBundle?: (params: UploadPhotoBundleParams) => Promise<UploadPhotoBundleResult>;
   /** Gather device/OS context for capture_meta. Optional; injected by the
    * screen so this module never imports react-native. */
   captureEnv?: () => CaptureMetaEnv;
@@ -247,6 +277,7 @@ export interface CaptureFlowDeps {
 /** The real module wired into the deps shape. captureEnv is supplied by the
  * screen (capture.tsx), which already imports react-native. */
 export function defaultCaptureFlowDeps(captureEnv?: () => CaptureMetaEnv): CaptureFlowDeps {
+  const dev = typeof __DEV__ !== 'undefined' && __DEV__;
   return {
     getAvailability: getCaptureAvailability,
     startCapture,
@@ -259,7 +290,12 @@ export function defaultCaptureFlowDeps(captureEnv?: () => CaptureMetaEnv): Captu
     uploadPhotoBundle,
     captureEnv,
     addPhotoCaptureStatsListener,
-    logCaptureStats: captureStatsLogger(typeof __DEV__ !== 'undefined' && __DEV__),
+    logCaptureStats: captureStatsLogger(dev),
+    startSilhouetteCapture,
+    addSilhouetteStatsListener,
+    logSilhouetteStats: silhouetteStatsLogger(dev),
+    uploadSilhouetteBundle,
+    logFlow: flowLogger(dev),
   };
 }
 
@@ -273,6 +309,31 @@ export function captureStatsLogger(
     return undefined;
   }
   return (stats) => log('[capture-stats]', JSON.stringify(stats));
+}
+
+/** Dev builds only, same rule as captureStatsLogger: SilhouetteStatsEvent is
+ * scalars only. */
+export function silhouetteStatsLogger(
+  dev: boolean,
+  log: (...args: unknown[]) => void = console.log,
+): ((stats: SilhouetteStatsEvent) => void) | undefined {
+  if (!dev) {
+    return undefined;
+  }
+  return (stats) => log('[silhouette-stats]', JSON.stringify(stats));
+}
+
+/** Dev builds only: one '[capture-flow] ...' line per phase transition and per
+ * capture or upload failure (code and message). Callers pass no file contents,
+ * paths, poses or ids. */
+export function flowLogger(
+  dev: boolean,
+  log: (...args: unknown[]) => void = console.log,
+): ((line: string) => void) | undefined {
+  if (!dev) {
+    return undefined;
+  }
+  return (line) => log(`[capture-flow] ${line}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +366,7 @@ export class CaptureFlowController {
   /** Reconstruction result of the current attempt, so retryUpload can reuse it. */
   private lastResult: ReconstructResult | null = null;
   /** Photo bundle of the current attempt (photos mode), for retryUpload. */
-  private lastPhotoCapture: PhotoCaptureResult | null = null;
+  private lastPhotoCapture: PhotoCaptureResult | SilhouetteCaptureResult | null = null;
   /** Scan id reused across upload retries so a partial failure is idempotent. */
   private uploadScanId: string | null = null;
 
@@ -429,23 +490,18 @@ export class CaptureFlowController {
     this.patch({ photoMode });
   }
 
-  /** Photos mode: capturing -> done (bundle on disk) -> upload. */
+  /** Photos mode: capturing -> done (bundle on disk) -> upload. Solo runs the
+   * silhouette capture, helper the 3D sweep. */
   private async runPhotoCapture(): Promise<void> {
-    const { addPhotoCaptureStatsListener: addStats, logCaptureStats } = this.deps;
-    const stats = addStats && logCaptureStats ? addStats(logCaptureStats) : null;
-    if (stats) {
-      // Also tracked so dispose() removes it if the native call never settles.
-      this.subscriptions.push(stats);
-    }
-    const stopStats = () => {
-      if (stats && this.subscriptions.includes(stats)) {
-        stats.remove();
-        this.subscriptions = this.subscriptions.filter((sub) => sub !== stats);
-      }
-    };
-    let photoCapture: PhotoCaptureResult;
+    const solo = (this.state.photoMode ?? 'solo') === 'solo';
+    const stopStats = solo
+      ? this.subscribeStats(this.deps.addSilhouetteStatsListener, this.deps.logSilhouetteStats)
+      : this.subscribeStats(this.deps.addPhotoCaptureStatsListener, this.deps.logCaptureStats);
+    let photoCapture: PhotoCaptureResult | SilhouetteCaptureResult;
     try {
-      photoCapture = await this.deps.startPhotoCapture({ mode: this.state.photoMode ?? 'solo' });
+      photoCapture = solo
+        ? await this.deps.startSilhouetteCapture({ leg: this.leg })
+        : await this.deps.startPhotoCapture({ mode: 'helper' });
     } catch (error) {
       stopStats();
       this.settleFailure(error);
@@ -457,9 +513,26 @@ export class CaptureFlowController {
     }
     this.lastPhotoCapture = photoCapture;
     this.patch({ phase: 'done', photoCapture });
-    if (this.deps.uploadPhotoBundle && !this.disposed) {
-      await this.runPhotoUpload(photoCapture);
+    await this.runPhotoUpload(photoCapture);
+  }
+
+  /** Subscribe a stats sink for one capture; returns the unsubscribe. Also
+   * tracked so dispose() removes it if the native call never settles. */
+  private subscribeStats<E>(
+    add: ((listener: (event: E) => void) => EventSubscription) | undefined,
+    log: ((event: E) => void) | undefined,
+  ): () => void {
+    const stats = add && log ? add(log) : null;
+    if (!stats) {
+      return () => {};
     }
+    this.subscriptions.push(stats);
+    return () => {
+      if (this.subscriptions.includes(stats)) {
+        stats.remove();
+        this.subscriptions = this.subscriptions.filter((sub) => sub !== stats);
+      }
+    };
   }
 
   /**
@@ -530,24 +603,33 @@ export class CaptureFlowController {
     );
   }
 
-  /** Upload the photo bundle: done -> uploading -> uploaded | upload_failed. */
-  private async runPhotoUpload(photoCapture: PhotoCaptureResult): Promise<void> {
-    const uploadPhotoBundle = this.deps.uploadPhotoBundle;
-    if (this.disposed || !uploadPhotoBundle) {
+  /** Upload the photo bundle: done -> uploading -> uploaded | upload_failed.
+   * Each bundle kind is opt-in through its own dep, like uploadScan. */
+  private async runPhotoUpload(
+    photoCapture: PhotoCaptureResult | SilhouetteCaptureResult,
+  ): Promise<void> {
+    const silhouette = 'method' in photoCapture && photoCapture.method === 'silhouette';
+    const upload = silhouette ? this.deps.uploadSilhouetteBundle : this.deps.uploadPhotoBundle;
+    if (this.disposed || !upload) {
       return;
     }
+    const meta: Record<string, unknown> = {
+      sessionId: photoCapture.sessionId,
+      imageCount: photoCapture.imageCount,
+      coverage: photoCapture.coverage,
+      photoMode: photoCapture.mode,
+      finishedEarly: photoCapture.finishedEarly,
+      captureKind: 'photos',
+    };
+    if (silhouette) {
+      meta.captureMethod = 'silhouette';
+      meta.floorFound = photoCapture.floorFound;
+    }
     await this.uploadWith((scanId) =>
-      uploadPhotoBundle({
+      upload({
         bundleDir: photoCapture.bundleDir,
         leg: this.leg,
-        captureMeta: this.buildCaptureMeta({
-          sessionId: photoCapture.sessionId,
-          imageCount: photoCapture.imageCount,
-          coverage: photoCapture.coverage,
-          photoMode: photoCapture.mode,
-          finishedEarly: photoCapture.finishedEarly,
-          captureKind: 'photos',
-        }),
+        captureMeta: this.buildCaptureMeta(meta),
         scanId,
         pairId: this.session?.pairId ?? null,
       }),
@@ -555,7 +637,9 @@ export class CaptureFlowController {
   }
 
   /** Shared upload leg for both modes. */
-  private async uploadWith(upload: (scanId: string) => Promise<{ scanId: string }>): Promise<void> {
+  private async uploadWith(
+    upload: (scanId: string) => Promise<{ scanId: string; fake: boolean }>,
+  ): Promise<void> {
     // Allocate the scan id once and reuse it across retries: a retry then
     // overwrites the same objects, upserts the same row, and returns the same
     // active job instead of orphaning a partially-uploaded scan.
@@ -571,19 +655,22 @@ export class CaptureFlowController {
       }
     }
     this.patch({ phase: 'uploading', uploadError: null, session: this.session });
-    let uploaded: { scanId: string };
+    let uploaded: { scanId: string; fake: boolean };
     try {
       uploaded = await upload(this.uploadScanId);
     } catch (error) {
       if (this.disposed) {
         return;
       }
-      this.patch({ phase: 'upload_failed', uploadError: asUploadError(error) });
+      const uploadError = asUploadError(error);
+      this.deps.logFlow?.(`upload error ${uploadError.code}: ${uploadError.message}`);
+      this.patch({ phase: 'upload_failed', uploadError });
       return;
     }
     if (this.disposed) {
       return;
     }
+    this.deps.logFlow?.(`upload ok fake=${String(uploaded.fake)}`);
     this.uploadScanId = uploaded.scanId;
     if (this.session) {
       this.session = markUploaded(this.session, this.leg, uploaded.scanId);
@@ -659,6 +746,11 @@ export class CaptureFlowController {
       return;
     }
     const mapped = mapNativeError(error);
+    this.deps.logFlow?.(`capture error ${mapped.code}: ${mapped.message}`);
+    if (mapped.code === 'ERR_CAPTURE_SWITCH_TO_MANUAL') {
+      this.patch({ phase: 'manual', captureState: null });
+      return;
+    }
     if (mapped.code === 'ERR_CAPTURE_CANCELLED') {
       // Backing out of the native UI is a normal path, not a failure.
       this.patch({ phase: 'ready', captureState: null, progress: 0, progressStage: null });
@@ -671,7 +763,11 @@ export class CaptureFlowController {
     if (this.disposed) {
       return;
     }
+    const from = this.state.phase;
     this.state = { ...this.state, ...partial };
+    if (this.state.phase !== from) {
+      this.deps.logFlow?.(`${from} -> ${this.state.phase}`);
+    }
     this.onChange(this.state);
   }
 }

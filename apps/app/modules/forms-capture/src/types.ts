@@ -114,6 +114,64 @@ export interface PhotoCaptureStatsEvent {
   aimed: boolean;
 }
 
+/**
+ * Solo silhouette stations around the leg axis, relative to the aim (front)
+ * azimuth: front 0, front_inner and front_outer at 45 degrees, inner and outer
+ * at 90 degrees. capture.json v2 "station" values.
+ */
+export type SilhouetteStation = 'front' | 'front_inner' | 'inner' | 'front_outer' | 'outer';
+
+export interface SilhouetteCaptureOptions {
+  /** Which leg; decides which side of the front is inner. */
+  leg: 'L' | 'R';
+}
+
+/**
+ * Result of a completed solo silhouette capture. The bundle is
+ * `${bundleDir}/capture.json` plus `images/NNN.jpg` and `masks/NNN.png`, the
+ * "forms.photo-capture" v2 contract (method "silhouette") validated in
+ * src/lib/upload.ts.
+ */
+export interface SilhouetteCaptureResult {
+  method: 'silhouette';
+  sessionId: string;
+  bundleDir: string;
+  manifestPath: string;
+  /** Stations captured (4 or 5). */
+  imageCount: number;
+  /** Stations captured / 5. */
+  coverage: number;
+  mode: 'solo';
+  /** True when finished with 4 stations. */
+  finishedEarly: boolean;
+  /** Whether a floor plane was found (capture.json floor_y is not null). */
+  floorFound: boolean;
+}
+
+/** Auto-capture conditions counted in {@link SilhouetteStatsEvent.failures}. */
+export type SilhouetteCondition =
+  'tracking' | 'spot' | 'distance' | 'level' | 'still' | 'mask' | 'blur';
+
+/**
+ * Payload for 'onSilhouetteStats', emitted once a second during silhouette
+ * capture for tuning. Scalars only: never images, masks, poses or positions.
+ */
+export interface SilhouetteStatsEvent {
+  stationsCaptured: number;
+  currentStation: SilhouetteStation | null;
+  /** Signed camera azimuth minus the current station's azimuth; null before the aim. */
+  azimuthOffsetDeg: number | null;
+  distanceM: number | null;
+  /** Optical axis angle from horizontal. */
+  levelDeg: number | null;
+  maskValid: boolean;
+  floorFound: boolean;
+  /** Evaluation ticks each condition failed, cumulative. */
+  failures: Partial<Record<SilhouetteCondition, number>>;
+  torchOn: boolean;
+  ambientIntensity: number | null;
+}
+
 /** Result of a completed reconstruction. All paths are inside the app sandbox. */
 export interface ReconstructResult {
   /** Session this reconstruction belongs to. */
@@ -152,6 +210,7 @@ export interface CaptureEventsMap {
   onCaptureStateChange: CaptureStateEvent;
   onReconstructionProgress: ReconstructionProgressEvent;
   onPhotoCaptureStats: PhotoCaptureStatsEvent;
+  onSilhouetteStats: SilhouetteStatsEvent;
 }
 
 export type CaptureEventName = keyof CaptureEventsMap;
@@ -173,6 +232,8 @@ export interface FormsCaptureNativeModule {
   /** ARWorldTrackingConfiguration.isSupported: any ARKit iPhone, no LiDAR. */
   isPhotoCaptureSupported(): Promise<boolean>;
   startPhotoCapture(options: PhotoCaptureOptions): Promise<PhotoCaptureResult>;
+  /** Solo silhouette capture (any ARKit iPhone, iOS 17+ Vision masks). */
+  startSilhouetteCapture(options: SilhouetteCaptureOptions): Promise<SilhouetteCaptureResult>;
   reconstruct(options: ReconstructOptions): Promise<ReconstructResult>;
   cancel(): Promise<void>;
   /** Inherited from the Expo NativeModule/EventEmitter base. */

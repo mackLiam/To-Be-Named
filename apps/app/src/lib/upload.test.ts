@@ -17,6 +17,10 @@ import {
   uploadScan,
   uploadScanWith,
   validatePhotoManifest,
+  SILHOUETTE_BUNDLE_LIMITS,
+  uploadSilhouetteBundle,
+  uploadSilhouetteBundleWith,
+  validateSilhouetteManifest,
   type PhotoBundleDeps,
   type UploadDeps,
 } from './upload';
@@ -400,6 +404,21 @@ describe('validatePhotoManifest', () => {
     expect(validatePhotoManifest(manifest()).images).toHaveLength(24);
   });
 
+  it('accepts a Finish anyway bundle: 20 images with finished_early true', () => {
+    const early = {
+      ...manifest(PHOTO_BUNDLE_LIMITS.minImages),
+      capture: {
+        mode: 'solo',
+        anchor_world: [0, 0.3, -0.5],
+        front_azimuth_rad: 1.2,
+        coverage: 0.3,
+        finished_early: true,
+      },
+    };
+    expect(PHOTO_BUNDLE_LIMITS.minImages).toBe(20);
+    expect(validatePhotoManifest(early).images).toHaveLength(20);
+  });
+
   it('enforces the image count caps', () => {
     expect(() => validatePhotoManifest(manifest(PHOTO_BUNDLE_LIMITS.minImages - 1))).toThrow(
       /20 to 120/,
@@ -709,5 +728,265 @@ describe('uploadPhotoBundle: fake mode', () => {
   it('simulates success and reuses a provided scan id', async () => {
     const res = await uploadPhotoBundle({ ...BUNDLE, scanId: 'fixed' });
     expect(res).toMatchObject({ scanId: 'fixed', fake: true, jobId: 'fake-job-fixed' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Silhouette bundle (capture.json v2)
+// ---------------------------------------------------------------------------
+
+const STATIONS = ['front', 'front_inner', 'inner', 'front_outer', 'outer'] as const;
+
+function silhouetteImage(index: number) {
+  const stem = String(index).padStart(3, '0');
+  return { ...manifestImage(index), mask: `${stem}.png`, station: STATIONS[index] };
+}
+
+function silhouetteManifest(imageCount = 5) {
+  return {
+    format: 'forms.photo-capture',
+    version: 2,
+    method: 'silhouette',
+    device: { model: 'iPhone17,3', os: '26.6.1' },
+    capture: {
+      mode: 'solo',
+      anchor_world: [0.1, 0.25, -0.6],
+      front_azimuth_rad: 1.57,
+      coverage: imageCount / 5,
+      finished_early: imageCount < 5,
+    },
+    floor_y: -0.02,
+    images: Array.from({ length: imageCount }, (_, i) => silhouetteImage(i)),
+  };
+}
+
+function silhouetteHarness(options: PhotoHarnessOptions = {}) {
+  return photoHarness({ manifestText: JSON.stringify(silhouetteManifest()), ...options });
+}
+
+describe('validateSilhouetteManifest', () => {
+  it('accepts a contract-conforming manifest, and floor_y null', () => {
+    expect(validateSilhouetteManifest(silhouetteManifest()).images).toHaveLength(5);
+    expect(validateSilhouetteManifest({ ...silhouetteManifest(), floor_y: null }).floor_y).toBe(
+      null,
+    );
+  });
+
+  it('accepts Finish with 4 and enforces 4..12 images', () => {
+    expect(SILHOUETTE_BUNDLE_LIMITS.minImages).toBe(4);
+    expect(validateSilhouetteManifest(silhouetteManifest(4)).capture.finished_early).toBe(true);
+    expect(() => validateSilhouetteManifest(silhouetteManifest(3))).toThrow(/4 to 12/);
+    const many = {
+      ...silhouetteManifest(),
+      images: Array.from({ length: 13 }, (_, i) => ({
+        ...silhouetteImage(0),
+        file: `${String(i).padStart(3, '0')}.jpg`,
+        mask: `${String(i).padStart(3, '0')}.png`,
+      })),
+    };
+    expect(() => validateSilhouetteManifest(many)).toThrow(/4 to 12/);
+  });
+
+  it('rejects v1, a wrong method, and a missing or bad floor_y', () => {
+    expect(() => validateSilhouetteManifest(manifest())).toThrow(/version/);
+    expect(() => validateSilhouetteManifest({ ...silhouetteManifest(), method: 'sweep' })).toThrow(
+      /method/,
+    );
+    const { floor_y: _omit, ...noFloor } = silhouetteManifest();
+    expect(() => validateSilhouetteManifest(noFloor)).toThrow(/floor_y/);
+    expect(() => validateSilhouetteManifest({ ...silhouetteManifest(), floor_y: 'x' })).toThrow(
+      /floor_y/,
+    );
+  });
+
+  it('requires the capture block with exactly its keys', () => {
+    const { capture: _omit, ...noCapture } = silhouetteManifest();
+    expect(() => validateSilhouetteManifest(noCapture)).toThrow(/capture/);
+    const extra = silhouetteManifest();
+    expect(() =>
+      validateSilhouetteManifest({ ...extra, capture: { ...extra.capture, leg: 'L' } }),
+    ).toThrow(/unknown fields/);
+  });
+
+  it.each([
+    [{ mask: '001.png' }, /mask must be 000.png/],
+    [{ mask: '000.jpg' }, /mask/],
+    [{ station: 'back' }, /station/],
+    [{ file: '0.jpg' }, /NNN.jpg/],
+    [{ camera_to_world: [1, 2] }, /camera_to_world/],
+    [{ width: 4096 }, /2048/],
+  ])('rejects a bad image field %o', (patch, pattern) => {
+    const bad = silhouetteManifest();
+    bad.images[0] = { ...bad.images[0], ...patch } as (typeof bad.images)[0];
+    expect(() => validateSilhouetteManifest(bad)).toThrow(pattern);
+  });
+
+  it('accepts optional joints: absent, null, or [u, v, confidence] inside the image', () => {
+    const ok = silhouetteManifest();
+    ok.images[0] = { ...ok.images[0], joints: { knee: [960.5, 300, 0.8], ankle: null } } as never;
+    ok.images[1] = { ...ok.images[1], joints: { knee: null, ankle: null } } as never;
+    expect(validateSilhouetteManifest(ok).images[0]?.joints?.knee).toEqual([960.5, 300, 0.8]);
+    expect(validateSilhouetteManifest(silhouetteManifest()).images[0]?.joints).toBeUndefined();
+  });
+
+  it.each([
+    [{ knee: [1, 2, 0.5] }, /exactly knee and ankle/],
+    [{ knee: null, ankle: null, hip: null }, /exactly knee and ankle/],
+    [{ knee: [1, 2], ankle: null }, /3 numbers/],
+    [{ knee: [2000, 2, 0.5], ankle: null }, /outside the image/],
+    [{ knee: [1, -1, 0.5], ankle: null }, /outside the image/],
+    [{ knee: null, ankle: [1, 1440.5, 0.5] }, /outside the image/],
+    [{ knee: [1, 2, 1.5], ankle: null }, /confidence/],
+    [[1, 2, 3], /object/],
+  ])('rejects bad joints %o', (joints, pattern) => {
+    const bad = silhouetteManifest();
+    bad.images[0] = { ...bad.images[0], joints } as never;
+    expect(() => validateSilhouetteManifest(bad)).toThrow(pattern);
+  });
+
+  it('rejects a station captured twice', () => {
+    const bad = silhouetteManifest();
+    bad.images[1] = { ...silhouetteImage(1), station: 'front' };
+    expect(() => validateSilhouetteManifest(bad)).toThrow(/station is duplicated/);
+  });
+});
+
+describe('uploadSilhouetteBundleWith', () => {
+  it('uploads images and masks, then capture.json last, under ${userId}/${scanId}/', async () => {
+    const h = silhouetteHarness();
+    const res = await uploadSilhouetteBundleWith(h.deps, { ...BUNDLE, pairId: 'pair-1' });
+    const paths = h.uploadCalls.map((c) => c.path);
+    expect(paths).toHaveLength(11);
+    const expected = Array.from({ length: 5 }, (_, i) => {
+      const stem = String(i).padStart(3, '0');
+      return [`user-1/scan-1/images/${stem}.jpg`, `user-1/scan-1/masks/${stem}.png`];
+    }).flat();
+    expect(new Set(paths.slice(0, 10))).toEqual(new Set(expected));
+    expect(paths[10]).toBe('user-1/scan-1/capture.json');
+    for (const call of h.uploadCalls) {
+      expect(call.bucket).toBe(MESHES_BUCKET);
+      expect(call.options.upsert).toBe(true);
+    }
+    const typeOf = (suffix: string) =>
+      h.uploadCalls.find((c) => c.path.endsWith(suffix))?.options.contentType;
+    expect(typeOf('000.jpg')).toBe('image/jpeg');
+    expect(typeOf('000.png')).toBe('image/png');
+    expect(typeOf('capture.json')).toBe('application/json');
+    expect(h.readUris).toContain('file:///sandbox/photo-captures/s1/masks/004.png');
+    expect(h.order.slice(-2)).toEqual(['upsert', 'rpc']);
+    expect(h.upsertCalls[0]?.row).toMatchObject({
+      capture_kind: 'photos',
+      mesh_path: null,
+      pair_id: 'pair-1',
+      status: 'uploaded',
+    });
+    expect(h.rpcCalls[0]).toEqual({
+      name: 'enqueue_measure_job',
+      params: { p_scan_id: 'scan-1' },
+    });
+    expect(res).toMatchObject({ scanId: 'scan-1', bundlePath: 'user-1/scan-1', imageCount: 5 });
+  });
+
+  it('keeps at most PHOTO_UPLOAD_CONCURRENCY files in flight', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const h = silhouetteHarness({
+      readFile: async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        inFlight -= 1;
+        return { size: 10, body: new ArrayBuffer(1) };
+      },
+    });
+    await uploadSilhouetteBundleWith(h.deps, BUNDLE);
+    expect(peak).toBeLessThanOrEqual(PHOTO_UPLOAD_CONCURRENCY);
+  });
+
+  it('an oversize mask fails ERR_UPLOAD_TOO_LARGE before the manifest or row', async () => {
+    const h = silhouetteHarness({
+      readFile: async (uri) => ({
+        size: uri.endsWith('/002.png') ? SILHOUETTE_BUNDLE_LIMITS.maxMaskBytes + 1 : 10,
+        body: new ArrayBuffer(1),
+      }),
+    });
+    await expect(uploadSilhouetteBundleWith(h.deps, BUNDLE)).rejects.toMatchObject({
+      code: 'ERR_UPLOAD_TOO_LARGE',
+      message: expect.stringMatching(/^Mask/),
+    });
+    expect(h.uploadCalls.some((c) => c.path.endsWith('capture.json'))).toBe(false);
+    expect(h.upsertCalls).toHaveLength(0);
+  });
+
+  it('an oversize JPEG fails at the 2 MB cap; a mask at exactly 1 MB passes', async () => {
+    const big = silhouetteHarness({
+      readFile: async (uri) => ({
+        size: uri.endsWith('.jpg') ? SILHOUETTE_BUNDLE_LIMITS.maxImageBytes + 1 : 10,
+        body: new ArrayBuffer(1),
+      }),
+    });
+    await expect(uploadSilhouetteBundleWith(big.deps, BUNDLE)).rejects.toMatchObject({
+      code: 'ERR_UPLOAD_TOO_LARGE',
+    });
+    const exact = silhouetteHarness({
+      readFile: async (uri) => ({
+        size: uri.endsWith('.png') ? SILHOUETTE_BUNDLE_LIMITS.maxMaskBytes : 10,
+        body: new ArrayBuffer(1),
+      }),
+    });
+    await expect(uploadSilhouetteBundleWith(exact.deps, BUNDLE)).resolves.toMatchObject({
+      imageCount: 5,
+    });
+  });
+
+  it('an invalid or v1 manifest fails before any network call', async () => {
+    const h = silhouetteHarness({ manifestText: JSON.stringify(manifest()) });
+    await expect(uploadSilhouetteBundleWith(h.deps, BUNDLE)).rejects.toMatchObject({
+      code: 'ERR_UPLOAD_INVALID_BUNDLE',
+    });
+    expect(h.order).toEqual([]);
+  });
+
+  it('an unreadable mask fails ERR_UPLOAD_READ', async () => {
+    const h = silhouetteHarness({
+      readFile: async (uri) => {
+        if (uri.endsWith('.png')) {
+          throw new Error('gone');
+        }
+        return { size: 10, body: new ArrayBuffer(1) };
+      },
+    });
+    await expect(uploadSilhouetteBundleWith(h.deps, BUNDLE)).rejects.toMatchObject({
+      code: 'ERR_UPLOAD_READ',
+      message: 'Could not read a mask from the device.',
+    });
+  });
+
+  it('retrying with the same scan id after an enqueue failure hits the same paths and row', async () => {
+    const first = silhouetteHarness({ rpcResult: { data: null, error: { message: 'rpc down' } } });
+    await expect(uploadSilhouetteBundleWith(first.deps, BUNDLE)).rejects.toMatchObject({
+      code: 'ERR_UPLOAD_ENQUEUE',
+    });
+    const second = silhouetteHarness({ newScanId: () => 'other' });
+    await uploadSilhouetteBundleWith(second.deps, { ...BUNDLE, scanId: 'scan-1' });
+    expect(second.uploadCalls.map((c) => c.path).sort()).toEqual(
+      first.uploadCalls.map((c) => c.path).sort(),
+    );
+    expect(second.upsertCalls[0]?.row.id).toBe('scan-1');
+  });
+
+  it('a storage error on a mask fails ERR_UPLOAD_STORAGE without writing the row', async () => {
+    const h = silhouetteHarness({ uploadResult: { data: null, error: { message: 'boom' } } });
+    await expect(uploadSilhouetteBundleWith(h.deps, BUNDLE)).rejects.toMatchObject({
+      code: 'ERR_UPLOAD_STORAGE',
+    });
+    expect(h.upsertCalls).toHaveLength(0);
+  });
+});
+
+describe('uploadSilhouetteBundle: fake mode', () => {
+  it('simulates success and reuses a provided scan id', async () => {
+    const res = await uploadSilhouetteBundle({ ...BUNDLE, scanId: 'fixed' });
+    expect(res).toMatchObject({ scanId: 'fixed', fake: true });
   });
 });

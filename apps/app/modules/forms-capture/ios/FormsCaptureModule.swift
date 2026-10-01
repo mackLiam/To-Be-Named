@@ -18,6 +18,8 @@ import RealityKit
    - isPhotoCaptureSupported() / startPhotoCapture(): guided ARKit photo
      capture for iPhones without ObjectCaptureSession; the bundle is
      reconstructed server-side (PhotoCaptureController).
+   - startSilhouetteCapture(): solo still-photo capture at five stations with
+     on-device Vision leg masks (SilhouetteCaptureController).
    - cancel(): tear down whichever session is in flight.
    - Emits 'onCaptureStateChange', 'onReconstructionProgress' and, during
      photo capture, 'onPhotoCaptureStats' (scalars only, once a second).
@@ -36,12 +38,13 @@ public class FormsCaptureModule: Module {
   private var captureController: CaptureSessionController?
   private var reconstructionController: ReconstructionController?
   private var photoController: PhotoCaptureController?
+  private var silhouetteController: SilhouetteCaptureController?
 
   public func definition() -> ModuleDefinition {
     Name("FormsCapture")
 
     // Event names must match modules/forms-capture/src/types.ts CaptureEventsMap.
-    Events("onCaptureStateChange", "onReconstructionProgress", "onPhotoCaptureStats")
+    Events("onCaptureStateChange", "onReconstructionProgress", "onPhotoCaptureStats", "onSilhouetteStats")
 
     // ObjectCaptureSession.isSupported is main-actor isolated (RealityKit
     // _RealityKit_SwiftUI.swiftinterface), so this cannot be a synchronous
@@ -110,6 +113,29 @@ public class FormsCaptureModule: Module {
       }
     }
 
+    // Present solo silhouette capture; resolves with the v2 bundle on Done.
+    AsyncFunction("startSilhouetteCapture") { (options: SilhouetteCaptureOptions, promise: Promise) in
+      guard let leg = SilhouetteLeg(rawValue: options.leg) else {
+        promise.reject(CaptureUnknownException("leg must be L or R"))
+        return
+      }
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        guard ARWorldTrackingConfiguration.isSupported else {
+          promise.reject(CaptureUnsupportedException())
+          return
+        }
+        let controller = SilhouetteCaptureController(
+          leg: leg,
+          onStats: { [weak self] stats in
+            self?.sendEvent("onSilhouetteStats", stats)
+          }
+        )
+        self.silhouetteController = controller
+        controller.start(promise: promise)
+      }
+    }
+
     // Run photogrammetry and export OBJ.
     AsyncFunction("reconstruct") { (options: ReconstructOptions, promise: Promise) in
       guard #available(iOS 17.0, *) else {
@@ -137,6 +163,8 @@ public class FormsCaptureModule: Module {
         self.captureController = nil
         self.photoController?.cancel()
         self.photoController = nil
+        self.silhouetteController?.cancel()
+        self.silhouetteController = nil
       }
     }
   }

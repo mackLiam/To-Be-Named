@@ -42,6 +42,7 @@ describe('mapNativeError', () => {
       'ERR_EXPORT_FAILED',
       'ERR_CAPTURE_CAMERA_DENIED',
       'ERR_CAPTURE_WRITE_FAILED',
+      'ERR_CAPTURE_SWITCH_TO_MANUAL',
     ] as const;
     for (const code of codes) {
       expect(mapNativeError({ code, message: 'm' }).code).toBe(code);
@@ -61,6 +62,9 @@ describe('mapNativeError', () => {
     );
     expect(mapNativeError({ code: 'CaptureWriteFailedException' }).code).toBe(
       'ERR_CAPTURE_WRITE_FAILED',
+    );
+    expect(mapNativeError({ code: 'CaptureSwitchToManualException' }).code).toBe(
+      'ERR_CAPTURE_SWITCH_TO_MANUAL',
     );
   });
 

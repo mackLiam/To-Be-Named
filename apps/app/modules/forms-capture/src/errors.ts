@@ -25,6 +25,8 @@ export type CaptureErrorCode =
   | 'ERR_CAPTURE_CAMERA_DENIED'
   /** Photos or capture.json could not be written (usually the disk is full). */
   | 'ERR_CAPTURE_WRITE_FAILED'
+  /** The user chose to enter measurements by hand from inside the capture. */
+  | 'ERR_CAPTURE_SWITCH_TO_MANUAL'
   /** Anything we could not classify. */
   | 'ERR_CAPTURE_UNKNOWN';
 
@@ -37,6 +39,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<CaptureErrorCode>([
   'ERR_EXPORT_FAILED',
   'ERR_CAPTURE_CAMERA_DENIED',
   'ERR_CAPTURE_WRITE_FAILED',
+  'ERR_CAPTURE_SWITCH_TO_MANUAL',
   'ERR_CAPTURE_UNKNOWN',
 ]);
 
@@ -122,6 +125,9 @@ export function mapNativeError(error: unknown): CaptureError {
   }
 
   const haystack = `${rawCode ?? ''} ${message}`.toLowerCase();
+  if (/switchtomanual|by hand/.test(haystack)) {
+    return new CaptureError('ERR_CAPTURE_SWITCH_TO_MANUAL', message, error);
+  }
   if (/cancel/.test(haystack)) {
     return new CaptureError('ERR_CAPTURE_CANCELLED', message, error);
   }

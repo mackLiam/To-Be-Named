@@ -54,6 +54,13 @@ internal final class CaptureCameraDeniedException: Exception {
   override var reason: String { "Camera access is denied for this app." }
 }
 
+/// Not a failure: the user picked "Enter measurements by hand" inside the
+/// silhouette capture. JS routes to the measure screen.
+internal final class CaptureSwitchToManualException: Exception {
+  override var code: String { "ERR_CAPTURE_SWITCH_TO_MANUAL" }
+  override var reason: String { "Switching to entering measurements by hand." }
+}
+
 internal final class CaptureWriteFailedException: GenericException<String> {
   override var code: String { "ERR_CAPTURE_WRITE_FAILED" }
   override var reason: String { "Could not save the capture to the device: \(param)" }

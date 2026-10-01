@@ -83,11 +83,14 @@ enum PhotoTuning {
   // Aim.
   /// Shin surface to leg center along the horizontal view direction.
   static let surfaceToAxisM: Float = 0.05
-  static let featurePointMaxRayDistanceM: Float = 0.04
-  /// Feature points closer to the camera than this along the ray are ignored.
-  static let featurePointMinDepthM: Float = 0.05
   /// An aim hit farther than this is the floor or a wall, not a leg at arm's length.
   static let maxAimDistanceM: Float = 1.2
+  /// Nearest plausible shin distance at the aim tap; closer hits are noise.
+  static let minAimDepthM: Float = 0.15
+  /// Half angle of the cone around the aim ray that feature points must fall in.
+  static let aimConeHalfAngleRad: Float = 4 * .pi / 180
+  /// Feature points needed in the cone before their median depth is trusted.
+  static let minAimFeaturePoints = 3
   static let anchorLineHeightM: Float = 0.45
 
   // UI cadence.
@@ -195,23 +198,27 @@ enum PhotoCaptureLogic {
   }
 
   /// Point nearest the ray (perpendicular distance), within maxDistance and in front.
-  static func nearestPointToRay(
-    _ points: [SIMD3<Float>], origin: SIMD3<Float>, direction: SIMD3<Float>, maxDistance: Float
+  /// Leg surface point along the aim ray from tracked feature points: the
+  /// median depth of points inside a narrow cone around the ray, between
+  /// minAimDepthM and maxAimDistanceM. A median over the cone is robust to the
+  /// stray near-camera points and false estimated planes that a single
+  /// raycast hit picks up on non-LiDAR phones (device run 2026-09-30: the first
+  /// raycast hit landed at the camera, so every frame read as "too close").
+  static func aimPointFromFeatures(
+    _ points: [SIMD3<Float>], origin: SIMD3<Float>, direction: SIMD3<Float>
   ) -> SIMD3<Float>? {
     let d = simd_normalize(direction)
-    var best: SIMD3<Float>?
-    var bestDistance = maxDistance
+    let cosLimit = cos(PhotoTuning.aimConeHalfAngleRad)
+    var depths: [Float] = []
     for p in points {
       let v = p - origin
       let t = simd_dot(v, d)
-      guard t > PhotoTuning.featurePointMinDepthM else { continue }
-      let perpendicular = simd_length(v - t * d)
-      if perpendicular <= bestDistance {
-        bestDistance = perpendicular
-        best = p
-      }
+      guard t >= PhotoTuning.minAimDepthM, t <= PhotoTuning.maxAimDistanceM else { continue }
+      if t / simd_length(v) >= cosLimit { depths.append(t) }
     }
-    return best
+    guard depths.count >= PhotoTuning.minAimFeaturePoints else { return nil }
+    depths.sort()
+    return origin + d * depths[depths.count / 2]
   }
 
   /// Leg axis point: the shin hit pushed toward the leg center along the

@@ -21,6 +21,14 @@ internal struct ReconstructOptions: Record {
   @Field var sessionDir: String = ""
 }
 
+/// Mirrors the TS `SilhouetteCaptureOptions`.
+internal struct SilhouetteCaptureOptions: Record {
+  init() {}
+
+  /// 'L' or 'R' (SilhouetteLeg).
+  @Field var leg: String = "L"
+}
+
 /// Mirrors the TS `PhotoCaptureOptions`.
 internal struct PhotoCaptureOptions: Record {
   init() {}

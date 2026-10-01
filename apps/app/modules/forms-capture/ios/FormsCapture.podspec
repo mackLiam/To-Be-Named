@@ -29,8 +29,9 @@ Pod::Spec.new do |s|
   # ObjectCaptureSession / PhotogrammetrySession and ARView live in RealityKit;
   # MDLAsset (USDZ -> OBJ) in ModelIO; photo capture uses ARKit world tracking
   # CoreImage for JPEG encoding and Accelerate (vImage/vDSP) for the blur
-  # check. All system frameworks, no extra pods.
-  s.frameworks = 'RealityKit', 'ModelIO', 'ARKit', 'CoreImage', 'UIKit', 'Accelerate'
+  # check; silhouette capture adds Vision (leg masks, body pose), ImageIO (PNG
+  # masks) and AVFoundation (torch). All system frameworks, no extra pods.
+  s.frameworks = 'RealityKit', 'ModelIO', 'ARKit', 'CoreImage', 'UIKit', 'Accelerate', 'Vision', 'ImageIO', 'AVFoundation'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',

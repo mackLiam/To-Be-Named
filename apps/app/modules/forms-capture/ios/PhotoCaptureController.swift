@@ -59,6 +59,7 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
   private var anchor: SIMD3<Float>?
   private var frontAzimuth: Float = 0
   private var aimError = false
+  private var aimDistance: Float?
   private var lineAnchor: AnchorEntity?
 
   // Kept frames.
@@ -204,16 +205,17 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
       return
     }
     var hit: SIMD3<Float>?
-    if let query = arView.makeRaycastQuery(from: center, allowing: .estimatedPlane, alignment: .any),
+    if let points = frame.rawFeaturePoints?.points {
+      hit = PhotoCaptureLogic.aimPointFromFeatures(
+        points, origin: ray.origin, direction: ray.direction)
+    }
+    if hit == nil,
+      let query = arView.makeRaycastQuery(from: center, allowing: .estimatedPlane, alignment: .any),
       let result = arView.session.raycast(query).first
     {
       let t = result.worldTransform.columns.3
-      hit = SIMD3<Float>(t.x, t.y, t.z)
-    }
-    if hit == nil, let points = frame.rawFeaturePoints?.points {
-      hit = PhotoCaptureLogic.nearestPointToRay(
-        points, origin: ray.origin, direction: ray.direction,
-        maxDistance: PhotoTuning.featurePointMaxRayDistanceM)
+      let candidate = SIMD3<Float>(t.x, t.y, t.z)
+      if simd_distance(candidate, ray.origin) >= PhotoTuning.minAimDepthM { hit = candidate }
     }
     guard let hit, simd_distance(hit, ray.origin) <= PhotoTuning.maxAimDistanceM else {
       showAimFailure(now: now)
@@ -222,6 +224,7 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     let axis = PhotoCaptureLogic.axisPoint(hit: hit, rayDirection: ray.direction)
     let cameraPosition = Self.translation(frame.camera.transform)
     anchor = axis
+    aimDistance = simd_distance(hit, ray.origin)
     frontAzimuth = PhotoCaptureLogic.azimuth(of: cameraPosition, around: axis)
     aiming = false
     aimError = false
@@ -447,14 +450,15 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     }
   }
 
-  private enum EncodeOutcome {
+  enum EncodeOutcome {
     case written(width: Int, height: Int, scaleX: Float, scaleY: Float)
     case skipped
     case writeFailed
   }
 
   /// Downscale so the long side is at most maxLongSidePx, encode JPEG, write.
-  private nonisolated static func encodeAndWrite(pixelBuffer: CVPixelBuffer, to url: URL, context: CIContext) -> EncodeOutcome {
+  /// Shared with SilhouetteCaptureController: both bundles use these pixels.
+  nonisolated static func encodeAndWrite(pixelBuffer: CVPixelBuffer, to url: URL, context: CIContext) -> EncodeOutcome {
     let nativeWidth = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
     let nativeHeight = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
     guard nativeWidth > 0, nativeHeight > 0 else { return .skipped }
@@ -526,6 +530,7 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
       "ambientIntensity": lastAmbient.map { Double($0) } ?? NSNull(),
       "mode": mode.rawValue,
       "aimed": anchor != nil && !aiming,
+      "aimDistanceM": aimDistance.map { Double($0) } ?? NSNull(),
     ])
   }
 
@@ -739,7 +744,7 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
 
   // MARK: - Helpers
 
-  private static func trackingMessage(_ state: ARCamera.TrackingState) -> String? {
+  static func trackingMessage(_ state: ARCamera.TrackingState) -> String? {
     switch state {
     case .normal:
       return nil
@@ -756,11 +761,11 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     }
   }
 
-  private static func translation(_ m: simd_float4x4) -> SIMD3<Float> {
+  static func translation(_ m: simd_float4x4) -> SIMD3<Float> {
     SIMD3<Float>(m.columns.3.x, m.columns.3.y, m.columns.3.z)
   }
 
-  private static func deviceModel() -> String {
+  static func deviceModel() -> String {
     var info = utsname()
     uname(&info)
     return withUnsafeBytes(of: &info.machine) { buffer in
@@ -769,7 +774,7 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
   }
 
   /// Same presentation root as CaptureSessionController (single-window app).
-  private static func topViewController() -> UIViewController? {
+  static func topViewController() -> UIViewController? {
     let scenes = UIApplication.shared.connectedScenes
     let windowScene = scenes.first { $0.activationState == .foregroundActive } as? UIWindowScene
     let keyWindow = windowScene?.windows.first { $0.isKeyWindow }
