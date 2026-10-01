@@ -106,7 +106,7 @@ pipeline, and the pipeline can be tested without any phone at all.
 | Worker hosting | **Fly.io or Railway** (Docker) | Cheap always-on container, scale-to-N later. Modal is a good alternative if jobs become bursty/GPU-bound. |
 | CAD generation | **Onshape REST API** (MVP) | Collaborator's parametric model already exists and accepts the 25 variables. See §7 for the scaling caveat and exit strategy. |
 | Payments | **Stripe** (Payment Sheet on mobile, Checkout on web) | Industry default; handles SCA/tax/receipts. Never touch card data. |
-| Auth | **Supabase Auth**: Sign in with Apple + email OTP (+ Google for Android/web later) | Sign in with Apple is required by App Store review when any third-party login is offered. |
+| Auth | **Supabase Auth**: email one-time code (sign-in and sign-up are one flow) + guest mode as Supabase anonymous users; Sign in with Apple once the Apple Developer account exists (+ Google for Android/web later) | Sign in with Apple is required by App Store review when any third-party login is offered. Guests are real auth users so the existing RLS scopes their scans and orders unchanged, and a guest upgrades by attaching an email, keeping the user id, so nothing migrates. Every product screen requires a session (guest or member); see supabase/README.md "Accounts and sign-in". |
 | CI/CD | **GitHub Actions** + **EAS Build/Submit** (mobile), Vercel (web), Docker deploy (worker) | Solves the "no Mac" problem for release builds - EAS builds iOS in the cloud (see §5). |
 | Errors / analytics | **Sentry** (app + worker) · **PostHog** (funnel: scan started → scan succeeded → order) | Scan failure rate is the #1 product metric; instrument it from day one. |
 
