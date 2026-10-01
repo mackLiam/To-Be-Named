@@ -112,4 +112,13 @@ redesign. When reviewing code, flag every instance.
 Add new rules here as Liam gives feedback during builds. Treat every entry as
 binding, same weight as the bans above.
 
-- (none yet)
+- Simple, intuitive, uncluttered (2026-09-30). A screen title plus its content
+  is enough; no explanatory paragraph under every heading. At most one short
+  line where it genuinely helps. Benchmark against real consumer apps (Nike
+  Run Club, Strava, Apple Fitness) and brand sites (Nike, Arc'teryx,
+  Tracksmith), not against templates.
+- No internal or dev language in user-facing UI: no build, phase, backend,
+  module, mesh, reason-code or session-id text.
+- Primary actions are confident: full width or bottom-pinned, sentence case.
+  Settings-style content is a grouped list of tappable rows, not stacks of
+  heading, paragraph and button.

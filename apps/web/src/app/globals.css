@@ -64,6 +64,9 @@
   --space-xxl: 72px;
   --space-xxxl: 112px;
 
+  /* Page side gutter for public pages: 20px at phone width, 56px wide. */
+  --gutter: clamp(20px, 5vw, 56px);
+
   --font-display-stack: var(--font-display), system-ui, sans-serif;
   --font-body-stack: var(--font-body), system-ui, sans-serif;
 }
