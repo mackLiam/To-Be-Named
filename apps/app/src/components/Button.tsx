@@ -25,6 +25,8 @@ export function Button({ children, onPress, variant = 'primary', disabled = fals
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
       style={({ pressed }) => [
         styles.base,
         VARIANT_CONTAINER[variant],

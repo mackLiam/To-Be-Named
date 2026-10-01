@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import type { Measurements } from '@forms/shared';
 
@@ -17,12 +17,14 @@ import {
   SESSION_STATUS_LABEL,
   SLICE_DIMS,
   SLICES,
+  sessionLegs,
   sessionStatus,
   sliceKey,
   type Scan,
+  type ScanSession,
 } from '../../src/lib/library';
 import type { Leg } from '../../src/lib/upload';
-import { colors, spacing } from '../../src/theme/tokens';
+import { colors, spacing, typography } from '../../src/theme/tokens';
 
 /** Slice heights, from the frozen contract (root CLAUDE.md gotcha 2). */
 const SLICE_HEIGHT: Record<(typeof SLICES)[number], string> = {
@@ -73,10 +75,15 @@ export default function ScanDetailScreen() {
         <Button onPress={() => router.navigate('/shop')}>Order guards from this scan</Button>
       )}
       {status === 'one_leg' && (
-        <Button onPress={() => router.navigate('/shop')}>Order a single guard</Button>
+        <View style={styles.actions}>
+          <Button onPress={() => router.navigate('/shop')}>Order a single guard</Button>
+          <Button variant="outline" onPress={() => router.navigate('/')}>
+            Scan the other leg
+          </Button>
+        </View>
       )}
       {status === 'needs_rescan' && (
-        <Button onPress={() => router.navigate('/')}>Scan again</Button>
+        <Button onPress={() => router.navigate('/')}>{rescanLabel(session)}</Button>
       )}
       {status === 'processing' && (
         <Body color={colors.textSecondary}>
@@ -167,25 +174,36 @@ function LegBody({ scan, values }: { scan: Scan | null; values: Measurements | n
         Slices, millimetres, measured up from the ankle
       </Body>
       <View style={{ height: spacing.xs }} />
-      <View style={styles.tableRow}>
-        <Body variant="caption" color={colors.textTertiary} style={styles.sliceCell}>
-          {' '}
-        </Body>
-        {SLICE_DIMS.map((dim) => (
-          <Body key={dim} variant="caption" color={colors.textTertiary} style={styles.cell}>
-            {dim}
+      <View
+        style={styles.tableRow}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        <View style={styles.dimCell} />
+        {SLICES.map((slice) => (
+          <Body key={slice} variant="caption" color={colors.textTertiary} style={styles.cell}>
+            {SLICE_HEIGHT[slice]}
           </Body>
         ))}
       </View>
-      {SLICES.map((slice) => (
-        <View key={slice} style={styles.tableRow}>
-          <Body variant="caption" color={colors.textSecondary} style={styles.sliceCell}>
-            {SLICE_HEIGHT[slice]}
+      {SLICE_DIMS.map((dim) => (
+        <View
+          key={dim}
+          style={styles.tableRow}
+          accessible
+          accessibilityLabel={`${dim}: ${SLICES.map((slice) => values[sliceKey(slice, dim)].toFixed(1)).join(', ')} millimetres, ankle to knee`}
+        >
+          <Body variant="caption" color={colors.textSecondary} style={styles.dimCell}>
+            {dim}
           </Body>
-          {SLICE_DIMS.map((dim) => (
-            <Body key={dim} variant="bodySmall" style={styles.cell}>
+          {SLICES.map((slice) => (
+            <Text
+              key={slice}
+              numberOfLines={1}
+              style={[typography.bodySmall, styles.cell, styles.value]}
+            >
               {values[sliceKey(slice, dim)].toFixed(1)}
-            </Body>
+            </Text>
           ))}
         </View>
       ))}
@@ -193,7 +211,17 @@ function LegBody({ scan, values }: { scan: Scan | null; values: Measurements | n
   );
 }
 
+function rescanLabel(session: ScanSession): string {
+  const failed = sessionLegs(session).filter((scan) => scan.status === 'failed');
+  return failed.length === 1 && failed[0]
+    ? `Rescan ${LEG_LABEL[failed[0].leg].toLowerCase()}`
+    : 'Scan both legs again';
+}
+
 const styles = StyleSheet.create({
+  actions: {
+    gap: spacing.sm,
+  },
   legHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -209,11 +237,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  sliceCell: {
-    width: 36,
+  dimCell: {
+    width: spacing.xl,
   },
   cell: {
     flex: 1,
     textAlign: 'right',
+  },
+  value: {
+    color: colors.textPrimary,
+    fontVariant: ['tabular-nums'],
   },
 });

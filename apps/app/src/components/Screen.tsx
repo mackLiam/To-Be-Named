@@ -12,7 +12,7 @@ interface ScreenProps extends PropsWithChildren {
 }
 
 /**
- * Base page frame: white field, generous left-aligned margins, no centered
+ * Base page frame: card yellow field, generous left-aligned margins, no centered
  * max-width container. Every tab screen wraps its content in this so spacing
  * stays consistent without every screen re-deriving it.
  */
@@ -23,6 +23,9 @@ export function Screen({ children, scroll = true, onRefresh, refreshing = false 
         <ScrollView
           style={styles.container}
           contentContainerStyle={styles.content}
+          // A tap on a button while the keyboard is up should press it, not
+          // only dismiss the keyboard (sign-in and profile forms).
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             onRefresh && (
               <RefreshControl

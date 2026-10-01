@@ -18,11 +18,10 @@ describe('data-layer stubs (no backend configured)', () => {
     expect(scans.every((scan) => scan.leg === 'L' || scan.leg === 'R')).toBe(true);
   });
 
-  it('demo scans form left + right sessions covering ready, processing and rescan', async () => {
+  it('demo scans cover every session status', async () => {
     const sessions = groupScanSessions(await listScans());
-    expect(sessions.every((s) => s.left && s.right)).toBe(true);
     expect(new Set(sessions.map(sessionStatus))).toEqual(
-      new Set(['ready', 'processing', 'needs_rescan']),
+      new Set(['ready', 'processing', 'needs_rescan', 'one_leg']),
     );
   });
 

@@ -84,7 +84,7 @@ function SessionRow({ session, onPress }: { session: ScanSession; onPress: () =>
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Scan from ${formatSessionDate(session.createdAt)}, ${SESSION_STATUS_LABEL[status]}`}
+      accessibilityLabel={`Scan from ${formatSessionDate(session.createdAt)}, ${SESSION_STATUS_LABEL[status]}. Left: ${legStatus(session.left)}. Right: ${legStatus(session.right)}.`}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
       <View style={styles.rowHeader}>
@@ -115,10 +115,14 @@ function LegCell({ label, scan }: { label: string; scan: Scan | null }) {
         {label}
       </Body>
       <Body variant="bodySmall" color={failed ? colors.danger : colors.textPrimary}>
-        {scan ? SCAN_STATUS_LABEL[scan.status] : 'Not scanned'}
+        {legStatus(scan)}
       </Body>
     </View>
   );
+}
+
+function legStatus(scan: Scan | null): string {
+  return scan ? SCAN_STATUS_LABEL[scan.status] : 'Not scanned';
 }
 
 const styles = StyleSheet.create({

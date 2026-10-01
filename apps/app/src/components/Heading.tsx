@@ -28,5 +28,9 @@ export function Heading({
   children,
   style,
 }: HeadingProps) {
-  return <Text style={[LEVEL_STYLES[level], { color }, style]}>{children}</Text>;
+  return (
+    <Text accessibilityRole="header" style={[LEVEL_STYLES[level], { color }, style]}>
+      {children}
+    </Text>
+  );
 }

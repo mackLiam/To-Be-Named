@@ -81,8 +81,8 @@ const DEMO_PRODUCTS: Product[] = [
   },
 ];
 
-// Three sessions covering the states the Library must render: a finished
-// pair, a pair still measuring, and a pair where one leg failed.
+// Sessions covering every state the Library renders: a finished pair, a pair
+// still measuring, a pair where one leg failed, and an unpaired single leg.
 const DEMO_SCANS: Scan[] = [
   demoScan('demo-scan-1', 'demo-pair-1', 'L', 'ready', '2026-08-28T17:04:00.000Z'),
   demoScan('demo-scan-2', 'demo-pair-1', 'R', 'ready', '2026-08-28T17:12:00.000Z'),
@@ -90,11 +90,12 @@ const DEMO_SCANS: Scan[] = [
   demoScan('demo-scan-4', 'demo-pair-2', 'R', 'processing', '2026-09-27T10:29:00.000Z'),
   demoScan('demo-scan-5', 'demo-pair-3', 'L', 'failed', '2026-08-21T09:41:00.000Z'),
   demoScan('demo-scan-6', 'demo-pair-3', 'R', 'ready', '2026-08-21T09:50:00.000Z'),
+  demoScan('demo-scan-7', null, 'R', 'ready', '2026-07-30T16:15:00.000Z'),
 ];
 
 function demoScan(
   id: string,
-  pairId: string,
+  pairId: string | null,
   leg: Scan['leg'],
   status: Scan['status'],
   createdAt: string,
@@ -135,6 +136,11 @@ const DEMO_MEASUREMENTS: MeasurementRow[] = [
     scanId: 'demo-scan-6',
     values: demoMeasurements(389, 60),
     createdAt: '2026-08-21T10:05:00.000Z',
+  },
+  {
+    scanId: 'demo-scan-7',
+    values: demoMeasurements(386, 59),
+    createdAt: '2026-07-30T16:30:00.000Z',
   },
 ];
 
