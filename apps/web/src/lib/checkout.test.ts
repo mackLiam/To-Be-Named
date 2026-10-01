@@ -40,6 +40,7 @@ function setup(
     pending?: number;
     stripeFails?: boolean;
     sessionWriteFails?: boolean;
+    deleting?: boolean;
     user?: { id: string; email: string | null; is_anonymous: boolean } | null;
   } = {},
 ) {
@@ -51,6 +52,9 @@ function setup(
     stripeCalls: [] as { params: unknown; options: { idempotencyKey: string } }[],
   };
   const store: CheckoutStore = {
+    async hasDeletionRequest() {
+      return opts.deleting ?? false;
+    },
     async getProduct(id) {
       if (opts.product === null || id !== PRODUCT) {
         return null;
@@ -305,6 +309,16 @@ describe('handleCheckout', () => {
       body: { error: 'account_required' },
     });
     expect(log.inserted).toEqual([]);
+  });
+
+  it('409s a member whose account deletion is pending, before any order exists', async () => {
+    const { deps, log } = setup({ deleting: true });
+    expect(await handleCheckout(deps())).toEqual({
+      status: 409,
+      body: { error: 'account_deleting' },
+    });
+    expect(log.inserted).toEqual([]);
+    expect(log.stripeCalls).toEqual([]);
   });
 
   it('400s a bad body and an oversize body', async () => {

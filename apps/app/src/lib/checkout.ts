@@ -12,11 +12,13 @@ export const CHECKOUT_SERVER_ERRORS = [
   'invalid_request',
   'unauthorized',
   'account_required',
+  'account_deleting',
   'product_unavailable',
   'scan_not_orderable',
   'too_many_pending',
   'payments_not_configured',
   'stripe_error',
+  'internal_error',
 ] as const;
 
 export type CheckoutErrorCode =
@@ -105,6 +107,7 @@ export const CHECKOUT_ERROR_MESSAGES: Record<CheckoutErrorCode, string> = {
   invalid_request: 'Something in this order did not add up. Go back to your scan and start again.',
   unauthorized: 'Your session has expired. Sign in again, then retry.',
   account_required: 'Orders need a saved account. Save your scans to an account in Profile first.',
+  account_deleting: 'Your account is being deleted, so it cannot place orders.',
   product_unavailable: 'That guard is no longer on sale. Pick another one.',
   scan_not_orderable:
     'This scan can no longer be ordered from. Pull down on the scan to refresh it, or rescan.',
@@ -112,6 +115,7 @@ export const CHECKOUT_ERROR_MESSAGES: Record<CheckoutErrorCode, string> = {
     'You have several unpaid orders open. Finish or let one expire before starting another.',
   payments_not_configured: 'Payments are not switched on yet. Try again later.',
   stripe_error: 'The payment page could not be opened. Try again in a minute.',
+  internal_error: 'Something went wrong on our side. Try again in a minute.',
   network: 'Could not reach the payment service. Check your connection and try again.',
   not_configured: 'Payments are not connected in this build.',
 };

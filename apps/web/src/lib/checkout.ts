@@ -28,6 +28,7 @@ export type CheckoutErrorCode =
   | 'invalid_request'
   | 'unauthorized'
   | 'account_required'
+  | 'account_deleting'
   | 'product_unavailable'
   | 'scan_not_orderable'
   | 'too_many_pending'
@@ -39,6 +40,7 @@ export const CHECKOUT_ERROR_STATUS: Record<CheckoutErrorCode, number> = {
   invalid_request: 400,
   unauthorized: 401,
   account_required: 403,
+  account_deleting: 409,
   product_unavailable: 409,
   scan_not_orderable: 409,
   too_many_pending: 429,
@@ -215,6 +217,8 @@ export interface NewOrder {
 
 /** The database access checkout needs; production impl below, fakes in tests. */
 export interface CheckoutStore {
+  /** The user asked to delete their account (0012 account_deletion_requests). */
+  hasDeletionRequest(userId: string): Promise<boolean>;
   getProduct(id: string): Promise<CheckoutProduct | null>;
   getScans(ids: string[]): Promise<CheckoutScan[]>;
   /** Of `ids`, the scans that have at least one validated measurements row. */
@@ -284,6 +288,12 @@ export async function handleCheckout(deps: CheckoutDeps): Promise<CheckoutResult
   }
 
   const store = deps.getStore();
+  // The service role skips the RLS check that refuses orders during account
+  // deletion, so it is repeated here: the deletion worker would otherwise
+  // delete the user while this session is still payable.
+  if (await store.hasDeletionRequest(user.id)) {
+    return fail('account_deleting');
+  }
   const product = await store.getProduct(request.product_id);
   if (!product || !product.active) {
     return fail('product_unavailable');
@@ -422,6 +432,16 @@ export function supabaseCheckoutStore(client: SupabaseClient): CheckoutStore {
     return result.data;
   };
   return {
+    async hasDeletionRequest(userId) {
+      const { count, error } = await client
+        .from('account_deletion_requests')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('user_id', userId);
+      if (error) {
+        throw error;
+      }
+      return (count ?? 0) > 0;
+    },
     async getProduct(id) {
       return check(
         await client

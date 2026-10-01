@@ -107,11 +107,13 @@ describe('startCheckout', () => {
     invalid_request: 400,
     unauthorized: 401,
     account_required: 403,
+    account_deleting: 409,
     product_unavailable: 409,
     scan_not_orderable: 409,
     too_many_pending: 429,
     payments_not_configured: 501,
     stripe_error: 502,
+    internal_error: 500,
   };
 
   it.each(CHECKOUT_SERVER_ERRORS)('passes through the server code %s', async (code) => {
