@@ -1,8 +1,12 @@
-"""Parse and validate an uploaded photo-capture bundle (capture.json + NNN.jpg).
+"""Parse and validate an uploaded photo-capture bundle (capture.json + NNN.jpg [+ NNN.png]).
 
 The client is untrusted: every cap in the capture contract is enforced here,
 server-side, whatever the app claims to have checked. JPEG dimensions are read
-from the file's own SOF header, never from capture.json.
+from the file's own SOF header and mask dimensions from the PNG's IHDR, never
+from capture.json.
+
+Version 1 is the 3D photo capture (photogrammetry). Version 2, method
+"silhouette", is 4..12 station photos, each with an 8-bit grayscale leg mask.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from typing import Any
 import numpy as np
 
 from forms_pipeline.reconstruct import BundleValidationError
+from forms_pipeline.reconstruct.png import COLOR_GRAYSCALE, decode_gray8, png_header
 
 FORMAT = "forms.photo-capture"
 VERSION = 1
@@ -25,6 +30,19 @@ MAX_CAPTURE_JSON_BYTES = 1024 * 1024
 MAX_JPEG_BYTES = 2 * 1024 * 1024
 MAX_IMAGE_SIDE_PX = 2048
 FILE_NAME_RE = re.compile(r"^\d{3}\.jpg$")
+MASK_NAME_RE = re.compile(r"^\d{3}\.png$")
+VERSION_SILHOUETTE = 2
+METHOD_PHOTOGRAMMETRY = "photogrammetry"
+METHOD_SILHOUETTE = "silhouette"
+# The app allows finishing with 4 (front plus one station each side); the
+# silhouette quality gates (views, azimuth span) are the real coverage check.
+MIN_SILHOUETTE_IMAGES = 4
+MAX_SILHOUETTE_IMAGES = 12
+MAX_PNG_BYTES = 1024 * 1024
+STATIONS = frozenset({"front", "front_inner", "inner", "front_outer", "outer"})
+JOINT_NAMES = frozenset({"knee", "ankle"})
+
+Joint = tuple[float, float, float]  # u, v (written-image pixels), confidence 0..1
 CAPTURE_MODES = frozenset({"solo", "helper"})
 _CAPTURE_KEYS = frozenset(
     {"mode", "anchor_world", "front_azimuth_rad", "coverage", "finished_early"}
@@ -41,6 +59,9 @@ class CaptureImage:
     width: int
     height: int
     tracking: str
+    mask: str | None = None  # v2 only: NNN.png with the same stem as file
+    station: str | None = None  # v2 only
+    joints: dict[str, Joint | None] | None = None  # v2 only, optional
 
 
 @dataclass(frozen=True)
@@ -58,6 +79,8 @@ class CaptureInfo:
 class CaptureBundle:
     images: tuple[CaptureImage, ...]
     capture: CaptureInfo | None = None  # None: legacy (pre-v2) capture
+    method: str = METHOD_PHOTOGRAMMETRY
+    floor_y: float | None = None  # v2 only: ARKit world meters
 
     def camera_to_world_by_file(self) -> dict[str, np.ndarray]:
         return {img.file: img.camera_to_world for img in self.images}
@@ -80,7 +103,7 @@ def matrix_from_column_major(values: list[float]) -> np.ndarray:
     return np.asarray(values, dtype=np.float64).reshape(4, 4).T
 
 
-def _parse_image(i: int, raw: Any) -> CaptureImage:
+def _parse_image(i: int, raw: Any, silhouette: bool) -> CaptureImage:
     if not isinstance(raw, dict):
         raise _fail(f"image entry {i} is not an object")
     name = raw.get("file")
@@ -112,6 +135,15 @@ def _parse_image(i: int, raw: Any) -> CaptureImage:
     if not isinstance(tracking, str) or len(tracking) > 32:
         raise _fail(f"{name} has an invalid tracking state")
 
+    mask = station = joints = None
+    if silhouette:
+        mask, station = raw.get("mask"), raw.get("station")
+        if not isinstance(mask, str) or not MASK_NAME_RE.fullmatch(mask) or mask[:3] != name[:3]:
+            raise _fail(f"{name} has an invalid mask file name")
+        if not isinstance(station, str) or station not in STATIONS:
+            raise _fail(f"{name} has an invalid station")
+        joints = _parse_joints(name, raw.get("joints"), width, height)
+
     return CaptureImage(
         file=name,
         camera_to_world=matrix,
@@ -119,7 +151,29 @@ def _parse_image(i: int, raw: Any) -> CaptureImage:
         width=width,
         height=height,
         tracking=tracking,
+        mask=mask,
+        station=station,
+        joints=joints,
     )
+
+
+def _parse_joints(name: str, raw: Any, width: int, height: int) -> dict[str, Joint | None] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or not set(raw) <= JOINT_NAMES:
+        raise _fail(f"{name} has invalid joints")
+    joints: dict[str, Joint | None] = {}
+    for joint, value in raw.items():
+        if value is None:
+            joints[joint] = None
+            continue
+        if not isinstance(value, list) or len(value) != 3 or not all(_is_number(v) for v in value):
+            raise _fail(f"{name} has an invalid {joint} joint")
+        u, v, confidence = (float(x) for x in value)
+        if not (0.0 <= u < width and 0.0 <= v < height and 0.0 <= confidence <= 1.0):
+            raise _fail(f"{name} has an invalid {joint} joint")
+        joints[joint] = (u, v, confidence)
+    return joints
 
 
 def _parse_capture_info(raw: Any) -> CaptureInfo:
@@ -150,7 +204,7 @@ def _parse_capture_info(raw: Any) -> CaptureInfo:
 
 
 def parse_capture(data: bytes) -> CaptureBundle:
-    """Validate capture.json bytes against the forms.photo-capture v1 contract."""
+    """Validate capture.json bytes against the forms.photo-capture v1 or v2 contract."""
     if len(data) > MAX_CAPTURE_JSON_BYTES:
         raise _fail("capture.json is too large")
     try:
@@ -162,8 +216,11 @@ def parse_capture(data: bytes) -> CaptureBundle:
     if doc.get("format") != FORMAT:
         raise _fail("unknown capture format")
     version = doc.get("version")
-    if not _is_int(version) or version != VERSION:
+    if not _is_int(version) or version not in (VERSION, VERSION_SILHOUETTE):
         raise _fail("unsupported capture version")
+    silhouette = version == VERSION_SILHOUETTE
+    if silhouette and doc.get("method") != METHOD_SILHOUETTE:
+        raise _fail("unsupported capture method")
     device = doc.get("device")
     if not isinstance(device, dict) or not all(
         isinstance(device.get(k), str) for k in ("model", "os")
@@ -173,14 +230,32 @@ def parse_capture(data: bytes) -> CaptureBundle:
     raw_images = doc.get("images")
     if not isinstance(raw_images, list):
         raise _fail("missing image list")
-    if not MIN_IMAGES <= len(raw_images) <= MAX_IMAGES:
-        raise _fail(f"expected {MIN_IMAGES} to {MAX_IMAGES} photos, got {len(raw_images)}")
+    lo, hi = (
+        (MIN_SILHOUETTE_IMAGES, MAX_SILHOUETTE_IMAGES) if silhouette else (MIN_IMAGES, MAX_IMAGES)
+    )
+    if not lo <= len(raw_images) <= hi:
+        raise _fail(f"expected {lo} to {hi} photos, got {len(raw_images)}")
 
-    images = tuple(_parse_image(i, raw) for i, raw in enumerate(raw_images))
+    images = tuple(_parse_image(i, raw, silhouette) for i, raw in enumerate(raw_images))
     if len({img.file for img in images}) != len(images):
         raise _fail("duplicate image file names")
-    capture = _parse_capture_info(doc["capture"]) if "capture" in doc else None
-    return CaptureBundle(images=images, capture=capture)
+    if not silhouette:
+        capture = _parse_capture_info(doc["capture"]) if "capture" in doc else None
+        return CaptureBundle(images=images, capture=capture)
+
+    if "capture" not in doc:
+        raise _fail("missing capture info")
+    if "floor_y" not in doc:
+        raise _fail("missing floor height")
+    floor_y = doc["floor_y"]
+    if floor_y is not None and not _is_number(floor_y):
+        raise _fail("invalid floor height")
+    return CaptureBundle(
+        images=images,
+        capture=_parse_capture_info(doc["capture"]),
+        method=METHOD_SILHOUETTE,
+        floor_y=None if floor_y is None else float(floor_y),
+    )
 
 
 # SOF0..SOF15 carry frame dimensions; C4 (DHT), C8 (JPG ext) and CC (DAC) do not.
@@ -225,7 +300,11 @@ def jpeg_dimensions(data: bytes) -> tuple[int, int]:
 
 
 def validate_jpeg(image: CaptureImage, data: bytes) -> None:
-    """Byte cap, real JPEG header, real dimensions within cap and matching capture.json."""
+    """Byte cap, real JPEG header, real dimensions within cap and matching capture.json.
+
+    Run before validate_mask: the mask check relies on image.width/height having
+    been confirmed against the JPEG's own header here.
+    """
     if len(data) > MAX_JPEG_BYTES:
         raise _fail(f"{image.file} is larger than {MAX_JPEG_BYTES // (1024 * 1024)}MB")
     width, height = jpeg_dimensions(data)
@@ -233,3 +312,22 @@ def validate_jpeg(image: CaptureImage, data: bytes) -> None:
         raise _fail(f"{image.file} is larger than {MAX_IMAGE_SIDE_PX}px")
     if (width, height) != (image.width, image.height):
         raise _fail(f"{image.file} dimensions do not match capture.json")
+
+
+def validate_mask(image: CaptureImage, data: bytes) -> np.ndarray:
+    """Byte cap, real PNG header matching the (already validated) JPEG size, decoded pixels."""
+    name = image.mask or "a mask"
+    if len(data) > MAX_PNG_BYTES:
+        raise _fail(f"{name} is larger than {MAX_PNG_BYTES // (1024 * 1024)}MB")
+    try:
+        header = png_header(data)
+    except ValueError as exc:
+        raise _fail(f"{name} is not a valid PNG") from exc
+    if (header.width, header.height) != (image.width, image.height):
+        raise _fail(f"{name} dimensions do not match its photo")
+    if header.bit_depth != 8 or header.color_type != COLOR_GRAYSCALE or header.interlace != 0:
+        raise _fail(f"{name} is not an 8-bit grayscale PNG")
+    try:
+        return decode_gray8(data)
+    except ValueError as exc:
+        raise _fail(f"{name} is not a valid PNG") from exc

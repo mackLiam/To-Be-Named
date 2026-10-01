@@ -217,6 +217,18 @@ def find_landmarks(widths: np.ndarray) -> tuple[int | None, int | None, int | No
     return ankle, calf, None
 
 
+def profile_landmarks(raw: np.ndarray) -> tuple[np.ndarray, tuple[int | None, ...]]:
+    """The one landmark rule for every capture method.
+
+    raw is the equivalent diameter per BIN_M bin from the bottom up, NaN where
+    unmeasured (at least two finite). Returns the gap-filled, smoothed profile and
+    find_landmarks' (ankle, calf, knee) indices into it.
+    """
+    valid = np.isfinite(raw)
+    widths = _smooth(np.interp(np.arange(len(raw)), np.flatnonzero(valid), raw[valid]))
+    return widths, find_landmarks(widths)
+
+
 def segment_leg(
     mesh: trimesh.Trimesh,
     camera_positions: np.ndarray,
@@ -250,9 +262,7 @@ def segment_leg(
     valid = np.isfinite(raw)
     if valid.sum() < 2:
         raise ReconstructionQualityError(f"No leg was found in the middle of the scan. {_RESCAN}")
-    widths = _smooth(np.interp(np.arange(len(raw)), np.flatnonzero(valid), raw[valid]))
-
-    ankle, calf, knee = find_landmarks(widths)
+    widths, (ankle, calf, knee) = profile_landmarks(raw)
     if ankle is None:
         raise ReconstructionQualityError(f"The ankle could not be found. {_RESCAN}")
     if knee is None:

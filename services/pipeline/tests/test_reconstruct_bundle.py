@@ -17,11 +17,18 @@ from forms_pipeline.reconstruct.bundle import (
     MAX_CAPTURE_JSON_BYTES,
     MAX_IMAGES,
     MAX_JPEG_BYTES,
+    MAX_PNG_BYTES,
+    MAX_SILHOUETTE_IMAGES,
+    METHOD_PHOTOGRAMMETRY,
+    METHOD_SILHOUETTE,
     MIN_IMAGES,
+    MIN_SILHOUETTE_IMAGES,
+    STATIONS,
     CaptureInfo,
     jpeg_dimensions,
     parse_capture,
     validate_jpeg,
+    validate_mask,
 )
 
 
@@ -205,3 +212,143 @@ def test_malformed_capture_info_rejected(info) -> None:
     doc["capture"] = info
     with pytest.raises(BundleValidationError, match="capture info.*Please rescan"):
         parse_capture(json.dumps(doc).encode())
+
+
+# --- capture v2 (silhouette) -------------------------------------------------------------
+
+
+def _v2(count: int = 5, **top) -> dict:
+    doc = capture_doc(camera_ring(count), capture=capture_info())
+    doc.update(version=2, method="silhouette", floor_y=-1.05)
+    stations = sorted(STATIONS)
+    for i, image in enumerate(doc["images"]):
+        image["mask"] = image["file"].replace(".jpg", ".png")
+        image["station"] = stations[i % len(stations)]
+    doc.update(top)
+    return doc
+
+
+def _png_header_only(
+    width: int = 1920, height: int = 1440, depth: int = 8, color: int = 0
+) -> bytes:
+    import zlib
+
+    body = width.to_bytes(4, "big") + height.to_bytes(4, "big") + bytes([depth, color, 0, 0, 0])
+    crc = zlib.crc32(b"IHDR" + body).to_bytes(4, "big")
+    return b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + body + crc
+
+
+def test_v2_bundle_parses() -> None:
+    bundle = parse_capture(capture_bytes(_v2()))
+    assert bundle.method == METHOD_SILHOUETTE
+    assert bundle.floor_y == -1.05
+    assert bundle.capture is not None and bundle.capture.mode == "solo"
+    first = bundle.images[0]
+    assert (first.file, first.mask, first.station, first.joints) == (
+        "000.jpg",
+        "000.png",
+        sorted(STATIONS)[0],
+        None,
+    )
+
+
+def test_v1_bundle_stays_photogrammetry() -> None:
+    bundle = parse_capture(capture_bytes(capture_doc(camera_ring(24))))
+    assert bundle.method == METHOD_PHOTOGRAMMETRY and bundle.floor_y is None
+
+
+@pytest.mark.parametrize("count", [MIN_SILHOUETTE_IMAGES, MAX_SILHOUETTE_IMAGES])
+def test_v2_image_count_bounds_inclusive(count: int) -> None:
+    assert len(parse_capture(capture_bytes(_v2(count))).images) == count
+
+
+@pytest.mark.parametrize("count", [MIN_SILHOUETTE_IMAGES - 1, MAX_SILHOUETTE_IMAGES + 1])
+def test_v2_image_count_bounds(count: int) -> None:
+    with pytest.raises(BundleValidationError, match="photos"):
+        parse_capture(capture_bytes(_v2(count)))
+
+
+def test_v2_floor_may_be_null() -> None:
+    assert parse_capture(capture_bytes(_v2(floor_y=None))).floor_y is None
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda d: d.pop("method"),
+        lambda d: d.update(method="photogrammetry"),
+        lambda d: d.pop("floor_y"),
+        lambda d: d.update(floor_y="0"),
+        lambda d: d.update(floor_y=float("inf")),
+        lambda d: d.update(floor_y=True),
+        lambda d: d.pop("capture"),
+        lambda d: d["capture"].pop("coverage"),
+        lambda d: d.update(version=3),
+    ],
+    ids=["no-method", "wrong-method", "no-floor", "floor-str", "floor-inf", "floor-bool",
+         "no-capture", "capture-key", "version3"],
+)  # fmt: skip
+def test_v2_header_violations_rejected(mutate) -> None:
+    doc = _v2()
+    mutate(doc)
+    with pytest.raises(BundleValidationError, match="Please rescan"):
+        parse_capture(json.dumps(doc).encode())
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("mask", None, "mask file name"),
+        ("mask", "001.png", "mask file name"),  # stem must match 000.jpg
+        ("mask", "000.PNG", "mask file name"),
+        ("mask", "../000.png", "mask file name"),
+        ("mask", "000.jpg", "mask file name"),
+        ("station", "back", "station"),
+        ("station", None, "station"),
+        ("joints", [], "joints"),
+        ("joints", {"hip": None}, "joints"),
+        ("joints", {"knee": [1.0, 2.0]}, "knee joint"),
+        ("joints", {"knee": [1.0, 2.0, 1.5]}, "knee joint"),
+        ("joints", {"ankle": [-1.0, 2.0, 0.9]}, "ankle joint"),
+        ("joints", {"ankle": [1920.0, 2.0, 0.9]}, "ankle joint"),
+        ("joints", {"ankle": [1.0, 1440.0, 0.9]}, "ankle joint"),
+        ("joints", {"ankle": [1.0, float("nan"), 0.9]}, "ankle joint"),
+        ("joints", {"ankle": [1.0, True, 0.9]}, "ankle joint"),
+    ],
+)
+def test_v2_bad_image_fields_rejected(field: str, value, match: str) -> None:
+    doc = _v2()
+    doc["images"][0][field] = value
+    with pytest.raises(BundleValidationError, match=match):
+        parse_capture(json.dumps(doc).encode())
+
+
+def test_v2_joints_parse_with_nulls() -> None:
+    doc = _v2()
+    doc["images"][0]["joints"] = {"knee": [100.0, 200.5, 0.8], "ankle": None}
+    doc["images"][1]["joints"] = None
+    images = parse_capture(capture_bytes(doc)).images
+    assert images[0].joints == {"knee": (100.0, 200.5, 0.8), "ankle": None}
+    assert images[1].joints is None
+
+
+def _v2_image():
+    return parse_capture(capture_bytes(_v2())).images[0]
+
+
+@pytest.mark.parametrize(
+    ("data", "match"),
+    [
+        (_png_header_only(960, 1440), "dimensions do not match"),
+        (_png_header_only(color=2), "8-bit grayscale"),
+        (_png_header_only(depth=16), "8-bit grayscale"),
+        (b"\x89PNG\r\n\x1a\nxx", "not a valid PNG"),
+        (fake_jpeg(), "not a valid PNG"),
+        (_png_header_only() + b"\x00" * MAX_PNG_BYTES, "larger than 1MB"),
+        (_png_header_only(), "not a valid PNG"),  # header only: no IEND
+    ],
+    ids=["size", "rgb", "16-bit", "garbled", "jpeg", "oversize", "truncated"],
+)
+def test_validate_mask_rejections(data: bytes, match: str) -> None:
+    with pytest.raises(BundleValidationError, match=match):
+        validate_mask(_v2_image(), data)

@@ -1,7 +1,8 @@
 """Reconstructing step: photo bundle in storage -> metric ankle-to-knee OBJ (mm).
 
-Runs only on a macOS worker with the forms-reconstruct CLI built
-(services/reconstruct). Storage keys are derived from the scan row's storage_user_id
+Capture v1 (photogrammetry) runs only on a macOS worker with the forms-reconstruct
+CLI built (services/reconstruct). Capture v2 (silhouette) is pure Python and runs on
+any worker. Storage keys are derived from the scan row's storage_user_id
 and scan_id, never from client input (A1), and every write is an upsert to a key
 derived from them, so re-running a job lands in the same state.
 """
@@ -27,11 +28,15 @@ from forms_pipeline.reconstruct import BundleValidationError, ReconstructionQual
 from forms_pipeline.reconstruct.align import align_poses
 from forms_pipeline.reconstruct.bundle import (
     FILE_NAME_RE,
+    METHOD_SILHOUETTE,
+    CaptureBundle,
     matrix_from_column_major,
     parse_capture,
     validate_jpeg,
+    validate_mask,
 )
 from forms_pipeline.reconstruct.segment import meters_to_mm, segment_leg
+from forms_pipeline.reconstruct.silhouette import View, reconstruct_silhouette
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +184,9 @@ def handle_reconstructing(
     prefix = f"{owner}/{scan_id}/"
 
     bundle = parse_capture(ctx.storage.download(BUCKET, f"{prefix}capture.json"))
+    if bundle.method == METHOD_SILHOUETTE:
+        _handle_silhouette(job, ctx, settings, bundle, owner, scan_id)
+        return
 
     with tempfile.TemporaryDirectory(prefix="forms-reconstruct-") as tmp:
         images_dir = Path(tmp) / "images"
@@ -209,17 +217,6 @@ def handle_reconstructing(
     anchor = np.array(capture.anchor_world) if capture is not None else None
     segment = segment_leg(aligned, cameras, anchor_world=anchor)
 
-    obj = export_obj_mm(segment.mesh)
-    if len(obj) > settings.max_mesh_bytes:
-        raise MeshValidationError(
-            f"Reconstructed mesh exceeds the {settings.max_mesh_mb}MB limit. Please rescan."
-        )
-
-    # Under storage_user_id: the scans RLS WITH CHECK pins mesh_path to it (0012).
-    mesh_path = f"{owner}/{scan_id}.obj"
-    ctx.storage.upload(BUCKET, mesh_path, obj, content_type="model/obj")
-    ctx.store.set_scan_mesh_path(job.scan_id, mesh_path)
-
     artifacts = {
         "registered": len(photo_poses),
         "total": len(bundle.images),
@@ -244,5 +241,69 @@ def handle_reconstructing(
         alignment.residual_m,
         alignment.convention,
     )
+    _publish(job, ctx, settings, segment.mesh, owner, scan_id, artifacts)
+
+
+def _publish(
+    job: ReconstructJob,
+    ctx: ReconstructContext,
+    settings: Settings,
+    mesh_m: trimesh.Trimesh,
+    owner: str,
+    scan_id: str,
+    artifacts: dict[str, Any],
+) -> None:
+    obj = export_obj_mm(mesh_m)
+    if len(obj) > settings.max_mesh_bytes:
+        raise MeshValidationError(
+            f"Reconstructed mesh exceeds the {settings.max_mesh_mb}MB limit. Please rescan."
+        )
+    # Under storage_user_id: the scans RLS WITH CHECK pins mesh_path to it (0012).
+    mesh_path = f"{owner}/{scan_id}.obj"
+    ctx.storage.upload(BUCKET, mesh_path, obj, content_type="model/obj")
+    ctx.store.set_scan_mesh_path(job.scan_id, mesh_path)
     guard_transition(job.step, NEXT_STEP)
     ctx.store.advance(job.id, NEXT_STEP, artifacts=artifacts)
+
+
+def _handle_silhouette(
+    job: ReconstructJob,
+    ctx: ReconstructContext,
+    settings: Settings,
+    bundle: CaptureBundle,
+    owner: str,
+    scan_id: str,
+) -> None:
+    prefix = f"{owner}/{scan_id}/"
+    views = []
+    for image in bundle.images:
+        # parse_capture pinned image.file / image.mask to ^\d{3}\.(jpg|png)$.
+        validate_jpeg(image, ctx.storage.download(BUCKET, f"{prefix}images/{image.file}"))
+        mask = validate_mask(image, ctx.storage.download(BUCKET, f"{prefix}masks/{image.mask}"))
+        views.append(
+            View(
+                station=str(image.station),
+                mask=mask,
+                camera_to_world=image.camera_to_world,
+                intrinsics=image.intrinsics,
+                tracking=image.tracking,
+                joints=image.joints,
+            )
+        )
+    result = reconstruct_silhouette(views, floor_y=bundle.floor_y)
+    capture = bundle.capture
+    artifacts = {
+        **result.artifacts,
+        "total": len(bundle.images),
+        "mode": capture.mode if capture is not None else None,
+        "finished_early": capture.finished_early if capture is not None else None,
+        "coverage": capture.coverage if capture is not None else None,
+    }
+    logger.info(
+        "job %s: silhouette from %d/%d views, residual %.4fm",
+        job.id,
+        artifacts["views_used"],
+        artifacts["total"],
+        artifacts["residual_median_m"],
+    )
+    _publish(job, ctx, settings, result.mesh, owner, scan_id, artifacts)
