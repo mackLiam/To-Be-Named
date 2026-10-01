@@ -1,6 +1,7 @@
+import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
@@ -11,9 +12,10 @@ import { useCheckout } from '../../src/hooks/useCheckout';
 import { useProducts } from '../../src/hooks/useProducts';
 import { useScanSession } from '../../src/hooks/useScans';
 import type { Product } from '../../src/lib/api';
+import { canPlaceOrder } from '../../src/lib/auth';
 import { checkoutErrorMessage, formatMoney, orderTotalCents } from '../../src/lib/checkout';
 import { LEG_LABEL, orderableLegs } from '../../src/lib/library';
-import { colors, radius, spacing } from '../../src/theme/tokens';
+import { colors, radius, spacing, typography } from '../../src/theme/tokens';
 
 export default function OrderScreen() {
   const router = useRouter();
@@ -65,7 +67,7 @@ export default function OrderScreen() {
   const product: Product | undefined =
     products.data.find((candidate) => candidate.id === pickedId) ?? products.data[0];
 
-  const member = account?.kind === 'member';
+  const member = canPlaceOrder(account);
   const footer = product ? (
     member ? (
       <Button
@@ -75,7 +77,7 @@ export default function OrderScreen() {
         {checkout.busy ? 'Opening payment' : 'Continue to payment'}
       </Button>
     ) : (
-      <Button onPress={() => router.navigate('/profile')}>Save to an account</Button>
+      <Button onPress={() => router.navigate('/profile')}>Save your scans to order</Button>
     )
   ) : undefined;
 
@@ -84,7 +86,7 @@ export default function OrderScreen() {
       <Heading level="display">{legs.length === 1 ? 'Your guard' : 'Your pair'}</Heading>
       <View style={{ height: spacing.sm }} />
       <Body color={colors.textSecondary}>
-        {legs.map((leg) => LEG_LABEL[leg.leg]).join(' and ')}, printed to this scan.
+        {legs.length === 1 && legs[0] ? LEG_LABEL[legs[0].leg] : 'Both legs'}, printed to this scan.
       </Body>
       <View style={{ height: spacing.xl }} />
 
@@ -106,12 +108,22 @@ export default function OrderScreen() {
               onPress={() => setPickedId(option.id)}
               accessibilityRole="radio"
               accessibilityState={{ checked: selected }}
-              style={[styles.option, selected && styles.optionSelected]}
+              style={({ pressed }) => [
+                styles.option,
+                selected && styles.optionSelected,
+                pressed && !selected && styles.optionPressed,
+              ]}
             >
               <View style={styles.optionHeader}>
-                <Heading level="h3" style={styles.optionName}>
-                  {option.name}
-                </Heading>
+                {/* Shape, not only border color, marks the pick. */}
+                <Feather
+                  name={selected ? 'check-square' : 'square'}
+                  size={22}
+                  color={colors.textPrimary}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                />
+                <Text style={[typography.h3, styles.optionName]}>{option.name}</Text>
                 <Body variant="bodyStrong">{formatMoney(option.priceCents, option.currency)}</Body>
               </View>
               <Body variant="bodySmall" color={colors.textSecondary}>
@@ -124,13 +136,13 @@ export default function OrderScreen() {
 
       {product && (
         <View style={styles.total}>
-          <View style={styles.totalRow}>
+          <View style={styles.totalRow} accessible>
             <Body color={colors.textSecondary}>
               {legs.length === 1 ? 'Total, one guard' : 'Total, two guards'}
             </Body>
-            <Heading level="h2">
+            <Text style={[typography.h2, styles.amount]}>
               {formatMoney(orderTotalCents(product.priceCents, legs.length), product.currency)}
-            </Heading>
+            </Text>
           </View>
           <Body variant="caption" color={colors.textSecondary}>
             {member ? 'Secure payment with Stripe.' : 'Ordering needs an account.'}
@@ -161,11 +173,15 @@ const styles = StyleSheet.create({
   },
   optionHeader: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     gap: spacing.md,
+  },
+  optionPressed: {
+    backgroundColor: colors.surfaceMuted,
   },
   optionName: {
     flex: 1,
+    color: colors.textPrimary,
   },
   total: {
     marginTop: spacing.xl,
@@ -173,7 +189,12 @@ const styles = StyleSheet.create({
   },
   totalRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'baseline',
+    gap: spacing.sm,
+  },
+  amount: {
+    color: colors.textPrimary,
   },
 });

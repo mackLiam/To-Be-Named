@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, Image, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
@@ -12,7 +12,7 @@ import { useScanSessions } from '../../src/hooks/useScans';
 import { canPlaceOrder } from '../../src/lib/auth';
 import { formatMoney } from '../../src/lib/checkout';
 import { newestOrderableSessionKey } from '../../src/lib/library';
-import { colors, radius, spacing } from '../../src/theme/tokens';
+import { colors, radius, spacing, typography } from '../../src/theme/tokens';
 
 export default function ShopScreen() {
   const { data: products, loading, error } = useProducts();
@@ -30,6 +30,15 @@ export default function ShopScreen() {
             label="Save your scans to order"
             detail="Ordering needs an account."
             onPress={() => router.push('/profile')}
+          />
+        </ListGroup>
+      )}
+      {member && !orderFrom && (
+        <ListGroup>
+          <ListRow
+            label="Scan your legs to order"
+            detail="Guards are made from a measured scan."
+            onPress={() => router.navigate('/')}
           />
         </ListGroup>
       )}
@@ -56,26 +65,25 @@ export default function ShopScreen() {
             <Heading level="h2" style={styles.name}>
               {product.name}
             </Heading>
-            <Heading level="h3">{formatMoney(product.priceCents, product.currency)}</Heading>
+            <Text style={[typography.h3, styles.price]}>
+              {formatMoney(product.priceCents, product.currency)}
+            </Text>
           </View>
           <Body color={colors.textSecondary}>{product.description}</Body>
-          {member &&
-            (orderFrom ? (
-              <Button
-                onPress={() =>
-                  router.push({
-                    pathname: '/order/[key]',
-                    params: { key: orderFrom, product: product.id },
-                  })
-                }
-              >
-                Order
-              </Button>
-            ) : (
-              <Button variant="outline" onPress={() => router.navigate('/')}>
-                Scan your legs to order
-              </Button>
-            ))}
+          {member && orderFrom && (
+            <Button
+              style={styles.action}
+              accessibilityLabel={`Order ${product.name}`}
+              onPress={() =>
+                router.push({
+                  pathname: '/order/[key]',
+                  params: { key: orderFrom, product: product.id },
+                })
+              }
+            >
+              Order
+            </Button>
+          )}
         </View>
       ))}
     </Screen>
@@ -95,4 +103,6 @@ const styles = StyleSheet.create({
   },
   titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.md },
   name: { flex: 1 },
+  price: { color: colors.textPrimary },
+  action: { marginTop: spacing.sm },
 });

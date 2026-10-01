@@ -1,7 +1,7 @@
 import type { OrderStatus } from '@forms/shared';
+import * as Linking from 'expo-linking';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef } from 'react';
-import * as Linking from 'expo-linking';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
@@ -98,7 +98,8 @@ function Tracking({ carrier, number }: { carrier: string | null; number: string 
   return (
     <Button
       variant="text"
-      onPress={() => Linking.openURL(url)}
+      style={styles.track}
+      onPress={() => void Linking.openURL(url)}
       accessibilityLabel={`Track ${label} on the carrier's site`}
     >
       {`Track ${label}`}
@@ -116,4 +117,6 @@ const styles = StyleSheet.create({
   },
   rowTop: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.md },
   name: { flex: 1 },
+  // Left-aligned with the lines above it, not centered across the row.
+  track: { alignSelf: 'flex-start', paddingHorizontal: 0 },
 });
