@@ -4,10 +4,16 @@ import { BRAND_NAME } from '@forms/shared/brand';
 import type { Measurements, OrderStatus } from '@forms/shared';
 
 import guardKeeper from '../../assets/products/guard-keeper.jpg';
-import guardPair from '../../assets/products/guard-pair.jpg';
 import guardSingle from '../../assets/products/guard-single.jpg';
 
-import { SLICE_DIMS, SLICES, sliceKey, type MeasurementRow, type Scan } from './library';
+import {
+  SLICE_DIMS,
+  SLICES,
+  sliceKey,
+  toFailedStep,
+  type MeasurementRow,
+  type Scan,
+} from './library';
 import { getSupabaseClient, hasSupabaseConfig } from './supabase';
 
 export type { Scan } from './library';
@@ -46,6 +52,8 @@ export interface Product {
   name: string;
   description: string;
   priceCents: number;
+  /** ISO 4217, lower case as Stripe stores it (products.currency). */
+  currency: string;
   // Absent for real rows until the products table carries imagery; screens
   // must render without it. Typed as a source, not a URL, so a bundled asset
   // and a future remote { uri } row both fit the one field.
@@ -68,20 +76,15 @@ const DEMO_PRODUCTS: Product[] = [
     name: `${BRAND_NAME} Custom Shin Guard`,
     description: 'Printed to your scan. One piece, vented shell, no strap gap at the ankle.',
     priceCents: 8900,
+    currency: 'usd',
     image: guardSingle,
-  },
-  {
-    id: 'demo-custom-guard-pair',
-    name: `${BRAND_NAME} Custom Shin Guard (pair)`,
-    description: 'Both legs scanned separately, so the left is not a mirror of the right.',
-    priceCents: 16900,
-    image: guardPair,
   },
   {
     id: 'demo-keeper-guard',
     name: `${BRAND_NAME} Keeper Guard`,
     description: 'Taller shell and a softer liner for goalkeepers taking shots at close range.',
     priceCents: 10900,
+    currency: 'usd',
     image: guardKeeper,
   },
 ];
@@ -93,7 +96,10 @@ const DEMO_SCANS: Scan[] = [
   demoScan('demo-scan-2', 'demo-pair-1', 'R', 'ready', '2026-08-28T17:12:00.000Z'),
   demoScan('demo-scan-3', 'demo-pair-2', 'L', 'ready', '2026-09-27T10:20:00.000Z'),
   demoScan('demo-scan-4', 'demo-pair-2', 'R', 'processing', '2026-09-27T10:29:00.000Z'),
-  demoScan('demo-scan-5', 'demo-pair-3', 'L', 'failed', '2026-08-21T09:41:00.000Z'),
+  {
+    ...demoScan('demo-scan-5', 'demo-pair-3', 'L', 'failed', '2026-08-21T09:41:00.000Z'),
+    failedStep: 'measuring',
+  },
   demoScan('demo-scan-6', 'demo-pair-3', 'R', 'ready', '2026-08-21T09:50:00.000Z'),
   demoScan('demo-scan-7', null, 'R', 'ready', '2026-07-30T16:15:00.000Z'),
 ];
@@ -105,7 +111,7 @@ function demoScan(
   status: Scan['status'],
   createdAt: string,
 ): Scan {
-  return { id, pairId, leg, status, createdAt };
+  return { id, pairId, leg, status, createdAt, failedStep: null };
 }
 
 /** Plausible values inside the schema's ranges (validated in api.test.ts):
@@ -152,9 +158,10 @@ const DEMO_MEASUREMENTS: MeasurementRow[] = [
 const DEMO_ORDERS: Order[] = [
   {
     id: 'demo-order-1',
-    productName: `${BRAND_NAME} Custom Shin Guard (pair)`,
+    productName: `${BRAND_NAME} Custom Shin Guard`,
     status: 'in_production',
-    totalCents: 16900,
+    // A pair: two guards at the per-guard price.
+    totalCents: 17800,
     currency: 'usd',
     trackingCarrier: null,
     trackingNumber: null,
@@ -178,7 +185,7 @@ export async function listScans(): Promise<Scan[]> {
   }
   const { data, error } = await getSupabaseClient()
     .from('scans')
-    .select('id, leg, status, pair_id, created_at')
+    .select('id, leg, status, pair_id, created_at, failed_step')
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(SCAN_LIST_LIMIT);
@@ -191,6 +198,7 @@ export async function listScans(): Promise<Scan[]> {
     status: row.status,
     pairId: row.pair_id,
     createdAt: row.created_at,
+    failedStep: toFailedStep(row.failed_step),
   }));
 }
 
@@ -242,6 +250,7 @@ export interface ProductQueryRow {
   name: string;
   description: string;
   base_price_cents: number;
+  currency: string;
   image_url: string | null;
 }
 
@@ -264,6 +273,7 @@ export function toProduct(row: ProductQueryRow): Product {
     name: row.name,
     description: row.description,
     priceCents: row.base_price_cents,
+    currency: row.currency,
     ...(row.image_url ? { image: { uri: row.image_url } } : {}),
   };
 }
@@ -316,7 +326,7 @@ export async function listProducts(): Promise<Product[]> {
   }
   const { data, error } = await getSupabaseClient()
     .from('products')
-    .select('id, name, description, base_price_cents, image_url')
+    .select('id, name, description, base_price_cents, currency, image_url')
     .eq('active', true)
     .order('base_price_cents')
     .limit(50);

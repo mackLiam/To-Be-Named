@@ -18,6 +18,18 @@ export interface Scan {
   /** Shared by both legs of one session; null for a single-leg scan. */
   pairId: string | null;
   createdAt: string;
+  /** Pipeline step that failed (scans.failed_step, migration 0013); null when
+   * not failed or the step is unknown. */
+  failedStep: FailedStep | null;
+}
+
+/** Values of scans.failed_step (supabase/migrations/0013). */
+export const FAILED_STEPS = ['reconstructing', 'measuring'] as const;
+export type FailedStep = (typeof FAILED_STEPS)[number];
+
+/** Narrows a raw column value; anything unrecognised reads as unknown (null). */
+export function toFailedStep(value: unknown): FailedStep | null {
+  return FAILED_STEPS.find((step) => step === value) ?? null;
 }
 
 export interface ScanSession {
@@ -97,6 +109,32 @@ export const SCAN_STATUS_LABEL: Record<ScanStatus, string> = {
 };
 
 export const LEG_LABEL: Record<Leg, string> = { L: 'Left leg', R: 'Right leg' };
+
+/** Rescan guidance for a failed leg, keyed by the step that failed. */
+export const FAILED_STEP_GUIDANCE: Record<FailedStep, string> = {
+  reconstructing:
+    'We could not build a 3D model from this scan. Scan this leg again with more of it in frame, walking all the way around it in even light.',
+  measuring:
+    'The scan could not be measured, so nothing was sent to print. Scan this leg again with the whole lower leg visible from ankle to knee: wear shorts or roll your trousers up.',
+};
+
+const GENERIC_RESCAN_GUIDANCE =
+  'The measurements did not pass our checks, so nothing was sent to print. Scan this leg again in good light, walking a full circle around it.';
+
+export function failedStepGuidance(step: FailedStep | null): string {
+  return step ? FAILED_STEP_GUIDANCE[step] : GENERIC_RESCAN_GUIDANCE;
+}
+
+/** Legs a checkout may include: measured ('ready') and holding a validated
+ * measurement row. The server re-checks both (scan_not_orderable). */
+export function orderableLegs(
+  session: ScanSession,
+  measurementsByScan: ReadonlyMap<string, Measurements>,
+): Scan[] {
+  return sessionLegs(session).filter(
+    (scan) => scan.status === 'ready' && measurementsByScan.has(scan.id),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Measurements

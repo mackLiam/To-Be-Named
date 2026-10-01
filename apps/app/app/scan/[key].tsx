@@ -6,14 +6,17 @@ import type { Measurements } from '@forms/shared';
 
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
+import { FitPreview } from '../../src/components/FitPreview';
 import { Heading } from '../../src/components/Heading';
 import { Rule } from '../../src/components/Rule';
 import { Screen } from '../../src/components/Screen';
 import { useDeleteScanSession, useScanSession } from '../../src/hooks/useScans';
 import {
+  failedStepGuidance,
   formatMm,
   formatSessionDate,
   LEG_LABEL,
+  orderableLegs,
   SCAN_STATUS_LABEL,
   SESSION_STATUS_LABEL,
   SLICE_DIMS,
@@ -69,6 +72,9 @@ export default function ScanDetailScreen() {
   }
 
   const status = sessionStatus(session);
+  const orderable = orderableLegs(session, measurements);
+  const leftValues = session.left ? measurements.get(session.left.id) : undefined;
+  const rightValues = session.right ? measurements.get(session.right.id) : undefined;
 
   return (
     <Screen onRefresh={reload} refreshing={loading}>
@@ -101,19 +107,25 @@ export default function ScanDetailScreen() {
         </View>
       )}
 
-      {status === 'ready' && (
-        <Button onPress={() => router.navigate('/shop')}>Order guards from this scan</Button>
-      )}
-      {status === 'one_leg' && (
+      {(orderable.length > 0 || status === 'one_leg' || status === 'needs_rescan') && (
         <View style={styles.actions}>
-          <Button onPress={() => router.navigate('/shop')}>Order a single guard</Button>
-          <Button variant="outline" onPress={() => router.navigate('/')}>
-            Scan the other leg
-          </Button>
+          {status === 'needs_rescan' && (
+            <Button onPress={() => router.navigate('/')}>{rescanLabel(session)}</Button>
+          )}
+          {orderable.length > 0 && (
+            <Button
+              variant={status === 'needs_rescan' ? 'outline' : 'primary'}
+              onPress={() => router.navigate(`/order/${session.key}`)}
+            >
+              Order a guard
+            </Button>
+          )}
+          {status === 'one_leg' && (
+            <Button variant="outline" onPress={() => router.navigate('/')}>
+              Scan the other leg
+            </Button>
+          )}
         </View>
-      )}
-      {status === 'needs_rescan' && (
-        <Button onPress={() => router.navigate('/')}>{rescanLabel(session)}</Button>
       )}
       {status === 'processing' && (
         <Body color={colors.textSecondary}>
@@ -129,16 +141,13 @@ export default function ScanDetailScreen() {
       )}
 
       <Rule />
-      <LegSection
-        leg="L"
-        scan={session.left}
-        values={session.left && measurements.get(session.left.id)}
-      />
-      <LegSection
-        leg="R"
-        scan={session.right}
-        values={session.right && measurements.get(session.right.id)}
-      />
+      <LegSection leg="L" scan={session.left} values={leftValues} />
+      <LegSection leg="R" scan={session.right} values={rightValues} />
+
+      <Heading level="h2">Fit preview</Heading>
+      <View style={{ height: spacing.sm }} />
+      <FitPreview left={leftValues} right={rightValues} />
+      <Rule />
 
       {confirmingDelete ? (
         <View accessibilityLiveRegion="polite">
@@ -217,8 +226,7 @@ function LegBody({ scan, values }: { scan: Scan | null; values: Measurements | n
   if (scan.status === 'failed') {
     return (
       <Body color={colors.textSecondary} variant="bodySmall">
-        The measurements did not pass our checks, so nothing was sent to print. Scan this leg again
-        in good light, walking a full circle around it.
+        {failedStepGuidance(scan.failedStep)}
       </Body>
     );
   }

@@ -68,6 +68,14 @@ describe('data-layer stubs (no backend configured)', () => {
     expect(products.length).toBeGreaterThan(0);
     expect(products.every((product) => product.name && product.priceCents > 0)).toBe(true);
     expect(products.every((product) => product.image !== undefined)).toBe(true);
+    expect(products.every((product) => product.currency === 'usd')).toBe(true);
+  });
+
+  it('the failed demo scan carries a failed step, others carry none', async () => {
+    const scans = await listScans();
+    for (const scan of scans) {
+      expect(scan.failedStep).toBe(scan.status === 'failed' ? 'measuring' : null);
+    }
   });
 });
 
@@ -117,6 +125,7 @@ describe('row mappers', () => {
       name: 'Guard',
       description: 'Fits.',
       base_price_cents: 8900,
+      currency: 'usd',
       image_url: 'https://example.com/g.jpg',
     };
     expect(toProduct(row)).toEqual({
@@ -124,6 +133,7 @@ describe('row mappers', () => {
       name: 'Guard',
       description: 'Fits.',
       priceCents: 8900,
+      currency: 'usd',
       image: { uri: 'https://example.com/g.jpg' },
     });
     expect('image' in toProduct({ ...row, image_url: null })).toBe(false);

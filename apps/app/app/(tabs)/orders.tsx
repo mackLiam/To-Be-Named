@@ -1,3 +1,6 @@
+import type { OrderStatus } from '@forms/shared';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useRef } from 'react';
 import { View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
@@ -5,9 +8,10 @@ import { Heading } from '../../src/components/Heading';
 import { Rule } from '../../src/components/Rule';
 import { Screen } from '../../src/components/Screen';
 import { useOrders } from '../../src/hooks/useOrders';
+import { formatMoney } from '../../src/lib/checkout';
 import { colors, spacing } from '../../src/theme/tokens';
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL: Record<OrderStatus, string> = {
   pending_payment: 'Payment pending',
   paid: 'Paid, queued for production',
   in_production: 'In production',
@@ -17,7 +21,18 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function OrdersScreen() {
-  const { data: orders, loading, error } = useOrders();
+  const { data: orders, loading, error, reload } = useOrders();
+  // The first focus is the mount, which already fetches; later focuses
+  // (back from the Stripe page in the browser) refetch.
+  const focusedBefore = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedBefore.current) {
+        reload();
+      }
+      focusedBefore.current = true;
+    }, [reload]),
+  );
 
   return (
     <Screen>
@@ -51,16 +66,11 @@ export default function OrdersScreen() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <Body variant="bodyStrong">{order.productName}</Body>
             {order.totalCents !== null && (
-              <Body>
-                {(order.totalCents / 100).toLocaleString('en-US', {
-                  style: 'currency',
-                  currency: order.currency.toUpperCase(),
-                })}
-              </Body>
+              <Body>{formatMoney(order.totalCents, order.currency)}</Body>
             )}
           </View>
           <Body color={colors.textSecondary} variant="bodySmall">
-            {STATUS_LABEL[order.status] ?? order.status}
+            {STATUS_LABEL[order.status]}
           </Body>
           {order.trackingNumber && (
             <Body color={colors.textSecondary} variant="bodySmall">

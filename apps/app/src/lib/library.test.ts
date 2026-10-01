@@ -2,8 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { MEASUREMENT_KEYS } from '@forms/shared';
 
+import type { Measurements } from '@forms/shared';
+
 import {
   deleteErrorMessage,
+  FAILED_STEP_GUIDANCE,
+  FAILED_STEPS,
+  failedStepGuidance,
+  orderableLegs,
+  toFailedStep,
   groupScanSessions,
   latestMeasurements,
   sessionStatus,
@@ -19,6 +26,7 @@ function scan(overrides: Partial<Scan> & Pick<Scan, 'id'>): Scan {
     status: 'ready',
     pairId: null,
     createdAt: '2026-09-01T10:00:00.000Z',
+    failedStep: null,
     ...overrides,
   };
 }
@@ -129,5 +137,65 @@ describe('deleteErrorMessage', () => {
     expect(deleteErrorMessage({ code: '42501' })).toMatch(/try again/);
     expect(deleteErrorMessage(new Error('network'))).toMatch(/try again/);
     expect(deleteErrorMessage(null)).toMatch(/try again/);
+  });
+});
+
+describe('orderableLegs', () => {
+  const VALUES = { Leg_Length: 390 } as Measurements;
+
+  function session(left: Scan | null, right: Scan | null) {
+    return { key: 'p', left, right, createdAt: '2026-09-01T10:00:00.000Z' };
+  }
+
+  it('includes both legs when both are ready and measured', () => {
+    const l = scan({ id: 'l', leg: 'L', pairId: 'p' });
+    const r = scan({ id: 'r', leg: 'R', pairId: 'p' });
+    const measured = new Map([
+      ['l', VALUES],
+      ['r', VALUES],
+    ]);
+    expect(orderableLegs(session(l, r), measured).map((s) => s.id)).toEqual(['l', 'r']);
+  });
+
+  it('drops failed, processing and unvalidated legs', () => {
+    const failed = scan({ id: 'f', leg: 'L', status: 'failed' });
+    const processing = scan({ id: 'p', leg: 'R', status: 'processing' });
+    // A failed or processing leg is excluded even if a row somehow exists for it.
+    const withRows = new Map([
+      ['f', VALUES],
+      ['p', VALUES],
+    ]);
+    expect(orderableLegs(session(failed, processing), withRows)).toEqual([]);
+
+    const readyNoRow = scan({ id: 'r', leg: 'R' });
+    expect(orderableLegs(session(failed, readyNoRow), new Map())).toEqual([]);
+    expect(orderableLegs(session(failed, readyNoRow), new Map([['r', VALUES]]))).toEqual([
+      readyNoRow,
+    ]);
+  });
+
+  it('handles a single-leg session', () => {
+    const r = scan({ id: 'r', leg: 'R' });
+    expect(orderableLegs(session(null, r), new Map([['r', VALUES]]))).toEqual([r]);
+  });
+});
+
+describe('failed step guidance', () => {
+  it('has copy for every failed_step value and a generic fallback', () => {
+    expect(Object.keys(FAILED_STEP_GUIDANCE).sort()).toEqual([...FAILED_STEPS].sort());
+    const all = [...FAILED_STEPS, null].map(failedStepGuidance);
+    expect(new Set(all).size).toBe(all.length);
+    for (const copy of all) {
+      expect(copy).not.toMatch(/[\u2013\u2014]/);
+    }
+    expect(failedStepGuidance('measuring')).toMatch(/ankle to knee/);
+    expect(failedStepGuidance('reconstructing')).toMatch(/all the way around/);
+  });
+
+  it('reads unknown column values as null', () => {
+    expect(toFailedStep('measuring')).toBe('measuring');
+    expect(toFailedStep('reconstructing')).toBe('reconstructing');
+    expect(toFailedStep(null)).toBeNull();
+    expect(toFailedStep('exporting')).toBeNull();
   });
 });
