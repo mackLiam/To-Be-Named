@@ -37,22 +37,36 @@ grant execute on all functions in schema acct to anon, authenticated;
 \set scan_a 'cccccccc-0000-0000-0000-000000000001'
 
 -- Platform side (service role): two auth users and a product to order.
-insert into auth.users (id) values (:'guest'), (:'member');
+insert into auth.users (id, is_anonymous) values (:'guest', true), (:'member', false);
 insert into public.products (id, name, slug, base_price_cents)
 values ('dddddddd-0000-0000-0000-000000000001', 'Guard', 'acct-guard', 8900);
 
--- The guest scans, uploads and orders with its own session.
+-- The guest scans and uploads with its own session. Ordering needs an account
+-- (0012, "orders: members insert pending own"), so its order is refused.
 begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', :'guest', true);
+select set_config('request.jwt.claims', '{"is_anonymous": true}', true);
 insert into public.scans (id, user_id, leg, status, mesh_path)
 values (:'scan_a', :'guest', 'L', 'uploaded', :'guest' || '/scan.obj');
 insert into storage.objects (bucket_id, name) values ('meshes', :'guest' || '/scan.obj');
+select acct.denied(
+  format('insert into public.orders (user_id, product_id, scan_id_left) values (%L, %L, %L)',
+    '33333333-3333-3333-3333-333333333333', 'dddddddd-0000-0000-0000-000000000001', 'cccccccc-0000-0000-0000-000000000001'),
+  'guest cannot place an order');
+select acct.eq((select count(*) from public.scans), 1, 'guest sees its own scan');
+select acct.eq((select count(*) from storage.objects), 1, 'guest sees its own mesh');
+commit;
+
+-- The guest upgrades (same user id, now a member) and orders.
+update auth.users set is_anonymous = false, email = 'guest@example.com' where id = :'guest';
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', :'guest', true);
+select set_config('request.jwt.claims', '{"is_anonymous": false}', true);
 insert into public.orders (user_id, product_id, scan_id_left)
 values (:'guest', 'dddddddd-0000-0000-0000-000000000001', :'scan_a');
-select acct.eq((select count(*) from public.scans), 1, 'guest sees its own scan');
-select acct.eq((select count(*) from public.orders), 1, 'guest sees its own order');
-select acct.eq((select count(*) from storage.objects), 1, 'guest sees its own mesh');
+select acct.eq((select count(*) from public.orders), 1, 'upgraded guest sees its own order');
 commit;
 
 -- The worker writes a measurement (service role, as in production).
@@ -63,6 +77,7 @@ values (:'scan_a', '1.0.0', 'test', '{}'::jsonb, true);
 begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', :'member', true);
+select set_config('request.jwt.claims', '{"is_anonymous": false}', true);
 select acct.eq((select count(*) from public.scans), 0, 'member cannot see the guest scan');
 select acct.eq((select count(*) from public.orders), 0, 'member cannot see the guest order');
 select acct.eq((select count(*) from public.measurements), 0, 'member cannot see the guest measurements');
