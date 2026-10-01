@@ -8,13 +8,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 import trimesh
 from test_reconstruct_synthetic import (
     EXPECTED_LEG_LENGTH_MM,
+    camera_arc,
     camera_ring,
     capture_bytes,
     capture_doc,
+    capture_info,
     fake_jpeg,
     make_leg_scene,
     similarity,
@@ -80,13 +83,19 @@ class Ctx:
     storage: FakeStorage
 
 
-def _fake_cli(tmp_path: Path, exit_code: int = 0, convention: str = CAMERA_TO_WORLD) -> Path:
+def _fake_cli(
+    tmp_path: Path,
+    exit_code: int = 0,
+    convention: str = CAMERA_TO_WORLD,
+    cameras: dict[str, np.ndarray] | None = None,
+    arc_deg: float = 360.0,
+) -> Path:
     """A stand-in forms-reconstruct: copies a synthetic photogrammetry result into --out."""
-    arkit = camera_ring()
+    arkit = cameras if cameras is not None else camera_ring()
     s, rot, t = similarity()
     src = tmp_path / "cli-src"
     src.mkdir(exist_ok=True)
-    scene = make_leg_scene()
+    scene = make_leg_scene(arc_deg=arc_deg)
     scene.vertices = to_photo_points(scene.vertices, s, rot, t)
     (src / "model.obj").write_bytes(write_obj(scene))
     poses = to_photo_poses(arkit, s, rot, t, convention=convention, noise_m=0.002)
@@ -106,12 +115,22 @@ def _fake_cli(tmp_path: Path, exit_code: int = 0, convention: str = CAMERA_TO_WO
     return script
 
 
-def _setup(tmp_path: Path, **cli: Any) -> tuple[Ctx, Settings]:
+def _setup(
+    tmp_path: Path,
+    cameras: dict[str, np.ndarray] | None = None,
+    capture: dict[str, Any] | None = None,
+    **cli: Any,
+) -> tuple[Ctx, Settings]:
+    cameras = cameras if cameras is not None else camera_ring()
     storage = FakeStorage()
-    storage.files[("meshes", f"{PREFIX}capture.json")] = capture_bytes(capture_doc())
-    for name in camera_ring():
+    storage.files[("meshes", f"{PREFIX}capture.json")] = capture_bytes(
+        capture_doc(cameras, capture=capture)
+    )
+    for name in cameras:
         storage.files[("meshes", f"{PREFIX}images/{name}")] = fake_jpeg()
-    settings = Settings(reconstruct_cli=_fake_cli(tmp_path, **cli), reconstruct_timeout_s=60)
+    settings = Settings(
+        reconstruct_cli=_fake_cli(tmp_path, cameras=cameras, **cli), reconstruct_timeout_s=60
+    )
     return Ctx(FakeStore(), storage), settings
 
 
@@ -259,3 +278,66 @@ def test_malformed_poses_are_retriable(tmp_path: Path, private_tmp: Path) -> Non
     (tmp_path / "cli-src" / "poses.json").write_text(json.dumps({"../x": [0] * 16}))
     with pytest.raises(ReconstructCliError, match="malformed"):
         handle_reconstructing(Job(), ctx, settings)
+
+
+def test_legacy_bundle_records_circle_fit_and_no_capture_info(
+    tmp_path: Path, private_tmp: Path
+) -> None:
+    ctx, settings = _setup(tmp_path)
+    handle_reconstructing(Job(), ctx, settings)
+    artifacts = ctx.store.advanced[-1][2]
+    assert (artifacts["mode"], artifacts["finished_early"], artifacts["coverage"]) == (
+        None,
+        None,
+        None,
+    )
+    assert artifacts["axis_source"] == "circle_fit"
+    assert artifacts["span_min_deg"] > 350.0
+    assert artifacts["back_coverage_low"] is False
+
+
+@pytest.mark.parametrize("finished_early", [False, True])
+def test_solo_partial_arc_uses_anchor_and_records_capture(
+    tmp_path: Path, private_tmp: Path, finished_early: bool
+) -> None:
+    info = capture_info(finished_early=finished_early, coverage=0.55)
+    ctx, settings = _setup(
+        tmp_path, cameras=camera_arc(150.0, taper_m=0.15), capture=info, arc_deg=200.0
+    )
+
+    handle_reconstructing(Job(), ctx, settings)
+
+    (_, step, artifacts) = ctx.store.advanced[-1]
+    assert step == "measuring"
+    assert artifacts["mode"] == "solo"
+    assert artifacts["finished_early"] is finished_early
+    assert artifacts["coverage"] == 0.55
+    assert artifacts["axis_source"] == "anchor"
+    assert artifacts["span_median_deg"] == pytest.approx(200.0, abs=1.0)
+    assert artifacts["back_coverage_low"] is True
+    json.dumps(artifacts)
+
+    mesh = trimesh.load(
+        io.BytesIO(ctx.storage.files[("meshes", f"{USER}/{SCAN}.obj")]),
+        file_type="obj",
+        process=False,
+    )
+    assert extract_measurements(mesh).values[LEG_LENGTH_KEY] == pytest.approx(
+        EXPECTED_LEG_LENGTH_MM, abs=12
+    )
+
+
+def test_partial_arc_without_anchor_is_rescan(tmp_path: Path, private_tmp: Path) -> None:
+    ctx, settings = _setup(tmp_path, cameras=camera_arc(150.0))
+    with pytest.raises(ReconstructionQualityError, match="did not circle the leg"):
+        handle_reconstructing(Job(), ctx, settings)
+    assert ctx.store.advanced == []
+
+
+def test_malformed_capture_info_fails_before_download_of_photos(
+    tmp_path: Path, private_tmp: Path
+) -> None:
+    ctx, settings = _setup(tmp_path, capture=capture_info(mode="tripod"))
+    with pytest.raises(BundleValidationError, match="capture info"):
+        handle_reconstructing(Job(), ctx, settings)
+    assert ctx.storage.downloads == [("meshes", f"{PREFIX}capture.json")]

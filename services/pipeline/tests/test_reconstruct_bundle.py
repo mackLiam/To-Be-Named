@@ -4,7 +4,13 @@ import json
 
 import numpy as np
 import pytest
-from test_reconstruct_synthetic import camera_ring, capture_bytes, capture_doc, fake_jpeg
+from test_reconstruct_synthetic import (
+    camera_ring,
+    capture_bytes,
+    capture_doc,
+    capture_info,
+    fake_jpeg,
+)
 
 from forms_pipeline.reconstruct import BundleValidationError
 from forms_pipeline.reconstruct.bundle import (
@@ -12,6 +18,7 @@ from forms_pipeline.reconstruct.bundle import (
     MAX_IMAGES,
     MAX_JPEG_BYTES,
     MIN_IMAGES,
+    CaptureInfo,
     jpeg_dimensions,
     parse_capture,
     validate_jpeg,
@@ -143,3 +150,58 @@ def test_jpeg_real_dimensions_override_declared() -> None:
         validate_jpeg(_image(), fake_jpeg(4032, 3024))
     with pytest.raises(BundleValidationError, match="do not match"):
         validate_jpeg(_image(), fake_jpeg(1440, 1920))
+
+
+def test_legacy_bundle_has_no_capture_info() -> None:
+    assert parse_capture(capture_bytes(capture_doc(camera_ring(24)))).capture is None
+
+
+@pytest.mark.parametrize("mode", ["solo", "helper"])
+def test_capture_info_parses(mode: str) -> None:
+    info = capture_info(mode=mode, coverage=1, finished_early=True, front_azimuth_rad=-3)
+    bundle = parse_capture(capture_bytes(capture_doc(camera_ring(24), capture=info)))
+    assert bundle.capture == CaptureInfo(
+        mode=mode,
+        anchor_world=(0.30, 0.30, -0.20),
+        front_azimuth_rad=-3.0,
+        coverage=1.0,
+        finished_early=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "info",
+    [
+        None,
+        [],
+        "solo",
+        capture_info(mode="tripod"),
+        capture_info(mode=None),
+        capture_info(anchor_world=[0.0, 0.0]),
+        capture_info(anchor_world=[0.0, 0.0, 0.0, 0.0]),
+        capture_info(anchor_world=[0.0, float("nan"), 0.0]),
+        capture_info(anchor_world=[0.0, True, 0.0]),
+        capture_info(anchor_world=[0.0, "1", 0.0]),
+        capture_info(anchor_world={"x": 0}),
+        capture_info(front_azimuth_rad=float("inf")),
+        capture_info(front_azimuth_rad="0"),
+        capture_info(coverage=-0.01),
+        capture_info(coverage=1.01),
+        capture_info(coverage=True),
+        capture_info(finished_early=0),
+        capture_info(finished_early="false"),
+        capture_info(extra=1),
+        {k: v for k, v in capture_info().items() if k != "coverage"},
+    ],
+    ids=[
+        "null", "list", "string", "mode-unknown", "mode-null", "anchor-short", "anchor-long",
+        "anchor-nan", "anchor-bool", "anchor-str", "anchor-dict", "azimuth-inf", "azimuth-str",
+        "coverage-neg", "coverage-over", "coverage-bool", "early-int", "early-str",
+        "unknown-key", "missing-key",
+    ],
+)  # fmt: skip
+def test_malformed_capture_info_rejected(info) -> None:
+    doc = capture_doc(camera_ring(24))
+    doc["capture"] = info
+    with pytest.raises(BundleValidationError, match="capture info.*Please rescan"):
+        parse_capture(json.dumps(doc).encode())

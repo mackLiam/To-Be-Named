@@ -4,11 +4,16 @@ Input is in ARKit world: meters, Y up. extraction/measure.py assumes its mesh is
 ONLY the ankle-to-knee segment, so everything else (background, floor, foot,
 thigh) is cut away here:
 
-1. Orbit axis: the vertical line through the least-squares circle center of the
-   camera XZ positions (the user walks around the leg).
+1. Orbit axis: the vertical line through the capture's AR anchor when the client
+   sent one (capture v2), else through the least-squares circle center of the
+   camera XZ positions. A circle fit is ill-conditioned on a partial arc (a solo
+   user covers half to two thirds of the circle), so it is only trusted when the
+   cameras span MIN_CIRCLE_ARC_DEG and sit close to the fitted circle.
 2. Keep geometry within ORBIT_RADIUS_M of that axis.
 3. Drop the floor: geometry within FLOOR_CLEARANCE_M above the lowest dense band.
-4. Width profile from horizontal cross-sections every BIN_M. Ankle = narrowest
+4. (after cropping) Angular coverage: per BIN_M slice, the span of vertex azimuths
+   around the axis. Partial back coverage is recorded, never failed on.
+5. Width profile from horizontal cross-sections every BIN_M. Ankle = narrowest
    bin above the foot (the wide low region) in the lower ANKLE_SEARCH_FRACTION of
    the height; calf = first width maximum above it; knee = first width minimum
    above the calf whose ankle-to-knee length is within the schema's plausible
@@ -37,6 +42,14 @@ ANKLE_SEARCH_FRACTION = 0.4
 SMOOTH_BINS = 5
 EXTREMUM_WINDOW_BINS = 4
 MIN_WIDTH_CHANGE_FRACTION = 0.03
+MIN_CIRCLE_ARC_DEG = 200.0
+MAX_CIRCLE_RESIDUAL_FRACTION = 0.15  # RMS radial residual / fitted radius
+# Below this median slice span the back of the calf is missing or hallucinated,
+# so downstream treats depth values (OD/ISD/ICD) as lower confidence.
+BACK_COVERAGE_MIN_SPAN_DEG = 300.0
+
+AXIS_ANCHOR = "anchor"
+AXIS_CIRCLE_FIT = "circle_fit"
 
 # Validated against the schema at import: a missing key fails loudly, and the
 # range itself always comes from the schema file.
@@ -66,15 +79,52 @@ class Segment:
     confidence: dict[str, Any]
 
 
-def orbit_center(camera_xz: np.ndarray) -> np.ndarray:
-    """Least-squares (Kasa) circle center of the camera ring in the XZ plane."""
+_NO_CIRCLE = "The camera did not circle the leg."
+
+
+def fit_circle(camera_xz: np.ndarray) -> np.ndarray:
+    """Least-squares (Kasa) circle center of the camera ring in the XZ plane, unchecked."""
     x, z = camera_xz[:, 0], camera_xz[:, 1]
     a = np.column_stack([x, z, np.ones_like(x)])
     b = -(x**2 + z**2)
     sol, _, rank, _ = np.linalg.lstsq(a, b, rcond=None)
     if rank < 3 or not np.all(np.isfinite(sol)):
-        raise ReconstructionQualityError(f"The camera did not circle the leg. {_RESCAN}")
+        raise ReconstructionQualityError(f"{_NO_CIRCLE} {_RESCAN}")
     return np.array([-sol[0] / 2.0, -sol[1] / 2.0])
+
+
+def angular_span_deg(xz: np.ndarray, center: np.ndarray) -> float:
+    """360 minus the largest azimuth gap of the points around center (0 for < 2 points)."""
+    if len(xz) < 2:
+        return 0.0
+    az = np.sort(np.arctan2(xz[:, 1] - center[1], xz[:, 0] - center[0]))
+    gaps = np.diff(np.append(az, az[0] + 2 * np.pi))
+    return float(np.degrees(2 * np.pi - gaps.max()))
+
+
+def orbit_center(camera_xz: np.ndarray) -> np.ndarray:
+    """Circle-fit orbit center, rejected when the fit is ill-conditioned."""
+    center = fit_circle(camera_xz)
+    if angular_span_deg(camera_xz, center) < MIN_CIRCLE_ARC_DEG:
+        raise ReconstructionQualityError(f"{_NO_CIRCLE} {_RESCAN}")
+    radii = np.hypot(camera_xz[:, 0] - center[0], camera_xz[:, 1] - center[1])
+    radius = radii.mean()
+    if radius <= 0 or np.sqrt(((radii - radius) ** 2).mean()) > (
+        MAX_CIRCLE_RESIDUAL_FRACTION * radius
+    ):
+        raise ReconstructionQualityError(f"{_NO_CIRCLE} {_RESCAN}")
+    return center
+
+
+def slice_spans_deg(vertices: np.ndarray, center: np.ndarray) -> np.ndarray:
+    """Azimuth span of vertices around the vertical axis at center, per BIN_M slice.
+
+    Empty slices are skipped, not reported as zero.
+    """
+    y = vertices[:, 1]
+    bins = np.floor((y - y.min()) / BIN_M).astype(np.int64)
+    xz = vertices[:, [0, 2]]
+    return np.array([angular_span_deg(xz[bins == b], center) for b in np.unique(bins)])
 
 
 def _submesh(mesh: trimesh.Trimesh, keep: np.ndarray) -> trimesh.Trimesh:
@@ -167,9 +217,20 @@ def find_landmarks(widths: np.ndarray) -> tuple[int | None, int | None, int | No
     return ankle, calf, None
 
 
-def segment_leg(mesh: trimesh.Trimesh, camera_positions: np.ndarray) -> Segment:
-    """Crop an aligned (ARKit world, meters) mesh to the ankle-to-knee segment."""
-    center = orbit_center(camera_positions[:, [0, 2]])
+def segment_leg(
+    mesh: trimesh.Trimesh,
+    camera_positions: np.ndarray,
+    anchor_world: np.ndarray | None = None,
+) -> Segment:
+    """Crop an aligned (ARKit world, meters) mesh to the ankle-to-knee segment.
+
+    anchor_world must already be in the mesh's frame (ARKit world); only its XZ
+    is used, the axis is vertical.
+    """
+    if anchor_world is not None:
+        center, axis_source = np.asarray(anchor_world, dtype=np.float64)[[0, 2]], AXIS_ANCHOR
+    else:
+        center, axis_source = orbit_center(camera_positions[:, [0, 2]]), AXIS_CIRCLE_FIT
     v = mesh.vertices
     radial = np.hypot(v[:, 0] - center[0], v[:, 2] - center[1])
     keep = radial <= ORBIT_RADIUS_M
@@ -203,7 +264,13 @@ def segment_leg(mesh: trimesh.Trimesh, camera_positions: np.ndarray) -> Segment:
     if len(cropped.faces) == 0:
         raise ReconstructionQualityError(f"No leg was found in the middle of the scan. {_RESCAN}")
 
+    spans = slice_spans_deg(np.asarray(cropped.vertices), center)
+    span_median = float(np.median(spans))
     confidence = {
+        "axis_source": axis_source,
+        "span_min_deg": float(spans.min()),
+        "span_median_deg": span_median,
+        "back_coverage_low": span_median < BACK_COVERAGE_MIN_SPAN_DEG,
         "ankle_found": True,
         "knee_found": True,
         "floor_found": floor is not None,

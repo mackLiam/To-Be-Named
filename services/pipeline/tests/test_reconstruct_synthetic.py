@@ -47,6 +47,36 @@ def camera_ring(n: int = 40, radius: float = 0.45) -> dict[str, np.ndarray]:
     return cams
 
 
+def camera_arc(span_deg: float, n: int = 30, taper_m: float = 0.0) -> dict[str, np.ndarray]:
+    """A solo user's partial orbit centered on +X, radius 0.45 shrinking by taper_m at the ends.
+
+    A taper (the user's reach shortening at the sides) keeps the path smooth but
+    pulls a circle fit's center well away from the leg.
+    """
+    cx, cz = LEG_CENTER_XZ
+    t = np.linspace(-1.0, 1.0, n)
+    cams = {}
+    for i, ti in enumerate(t):
+        a, r = np.radians(span_deg / 2 * ti), 0.45 - taper_m * ti**2
+        pos = np.array([cx + r * np.cos(a), 0.30 if i % 2 else 0.50, cz + r * np.sin(a)])
+        cams[f"{i:03d}.jpg"] = look_at(pos, np.array([cx, 0.30, cz]))
+    return cams
+
+
+def capture_info(**overrides: Any) -> dict[str, Any]:
+    """A valid capture v2 "capture" object anchored on the synthetic leg axis."""
+    cx, cz = LEG_CENTER_XZ
+    info = {
+        "mode": "solo",
+        "anchor_world": [cx, 0.30, cz],
+        "front_azimuth_rad": 0.0,
+        "coverage": 0.6,
+        "finished_early": False,
+    }
+    info.update(overrides)
+    return info
+
+
 def similarity(seed: int = 0) -> tuple[float, np.ndarray, np.ndarray]:
     """A known photogrammetry -> ARKit similarity (s, R, t)."""
     rot = Rotation.random(random_state=seed).as_matrix()
@@ -91,11 +121,20 @@ def _grid(size: float, step: float, y: float, cx: float, cz: float) -> trimesh.T
     return trimesh.Trimesh(verts, faces, process=False)
 
 
-def _tube(profile: tuple[tuple[float, float], ...], cx: float, cz: float) -> trimesh.Trimesh:
+def _tube(
+    profile: tuple[tuple[float, float], ...], cx: float, cz: float, arc_deg: float = 360.0
+) -> trimesh.Trimesh:
+    """Closed tube, or an open shell spanning arc_deg centered on +X (the covered front)."""
     ys = np.arange(profile[0][0], profile[-1][0] + 1e-9, 0.002)
     radii = np.interp(ys, [p[0] for p in profile], [p[1] for p in profile])
     sides = 48
-    theta = np.linspace(0, 2 * np.pi, sides, endpoint=False)
+    closed = arc_deg >= 360.0
+    half = np.radians(arc_deg) / 2
+    theta = (
+        np.linspace(0, 2 * np.pi, sides, endpoint=False)
+        if closed
+        else np.linspace(-half, half, sides)
+    )
     verts = np.array(
         [
             [cx + r * np.cos(a), y, cz + r * np.sin(a)]
@@ -105,7 +144,7 @@ def _tube(profile: tuple[tuple[float, float], ...], cx: float, cz: float) -> tri
     )
     faces = []
     for i in range(len(ys) - 1):
-        for j in range(sides):
+        for j in range(sides if closed else sides - 1):
             a, b = i * sides + j, i * sides + (j + 1) % sides
             faces += [[a, b + sides, b], [a, a + sides, b + sides]]
     return trimesh.Trimesh(verts, np.array(faces), process=False)
@@ -124,10 +163,14 @@ def make_leg_scene(
     profile: tuple[tuple[float, float], ...] = LEG_PROFILE,
     foot: bool = True,
     floor: bool = True,
+    arc_deg: float = 360.0,
 ) -> trimesh.Trimesh:
-    """Floor plane + foot block + shin tube + a background box outside the orbit radius."""
+    """Floor plane + foot block + shin tube + a background box outside the orbit radius.
+
+    arc_deg < 360 leaves the back of the shin unreconstructed, as in a solo capture.
+    """
     cx, cz = LEG_CENTER_XZ
-    parts = [_tube(profile, cx, cz), _box((0.10, 0.10, 0.10), (cx + 0.32, 0.05, cz))]
+    parts = [_tube(profile, cx, cz, arc_deg), _box((0.10, 0.10, 0.10), (cx + 0.32, 0.05, cz))]
     if foot:
         parts.append(_box((0.09, 0.07, 0.24), (cx, 0.035, cz + 0.06)))
     if floor:
@@ -140,10 +183,13 @@ def _column_major(m: np.ndarray) -> list[float]:
 
 
 def capture_doc(
-    cameras: dict[str, np.ndarray] | None = None, width: int = 1920, height: int = 1440
+    cameras: dict[str, np.ndarray] | None = None,
+    width: int = 1920,
+    height: int = 1440,
+    capture: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cameras = cameras if cameras is not None else camera_ring()
-    return {
+    doc: dict[str, Any] = {
         "format": "forms.photo-capture",
         "version": 1,
         "device": {"model": "iPhone17,3", "os": "26.6.1"},
@@ -160,6 +206,9 @@ def capture_doc(
             for i, (name, m) in enumerate(sorted(cameras.items()))
         ],
     }
+    if capture is not None:
+        doc["capture"] = capture
+    return doc
 
 
 def capture_bytes(doc: dict[str, Any]) -> bytes:

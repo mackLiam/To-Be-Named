@@ -25,6 +25,10 @@ MAX_CAPTURE_JSON_BYTES = 1024 * 1024
 MAX_JPEG_BYTES = 2 * 1024 * 1024
 MAX_IMAGE_SIDE_PX = 2048
 FILE_NAME_RE = re.compile(r"^\d{3}\.jpg$")
+CAPTURE_MODES = frozenset({"solo", "helper"})
+_CAPTURE_KEYS = frozenset(
+    {"mode", "anchor_world", "front_azimuth_rad", "coverage", "finished_early"}
+)
 
 _RESCAN = "Please rescan."
 
@@ -40,8 +44,20 @@ class CaptureImage:
 
 
 @dataclass(frozen=True)
+class CaptureInfo:
+    """Capture v2 metadata. anchor_world is ARKit world meters, same frame as camera_to_world."""
+
+    mode: str
+    anchor_world: tuple[float, float, float]
+    front_azimuth_rad: float
+    coverage: float  # client-reported, untrusted, recorded only
+    finished_early: bool
+
+
+@dataclass(frozen=True)
 class CaptureBundle:
     images: tuple[CaptureImage, ...]
+    capture: CaptureInfo | None = None  # None: legacy (pre-v2) capture
 
     def camera_to_world_by_file(self) -> dict[str, np.ndarray]:
         return {img.file: img.camera_to_world for img in self.images}
@@ -106,6 +122,33 @@ def _parse_image(i: int, raw: Any) -> CaptureImage:
     )
 
 
+def _parse_capture_info(raw: Any) -> CaptureInfo:
+    if not isinstance(raw, dict):
+        raise _fail("capture info is not an object")
+    if set(raw) != _CAPTURE_KEYS:
+        raise _fail("capture info has missing or unknown fields")
+    mode = raw["mode"]
+    if not isinstance(mode, str) or mode not in CAPTURE_MODES:
+        raise _fail("capture info has an invalid mode")
+    anchor = raw["anchor_world"]
+    if not isinstance(anchor, list) or len(anchor) != 3 or not all(_is_number(v) for v in anchor):
+        raise _fail("capture info has an invalid anchor")
+    if not _is_number(raw["front_azimuth_rad"]):
+        raise _fail("capture info has an invalid front azimuth")
+    coverage = raw["coverage"]
+    if not _is_number(coverage) or not 0.0 <= coverage <= 1.0:
+        raise _fail("capture info has an invalid coverage")
+    if not isinstance(raw["finished_early"], bool):
+        raise _fail("capture info has an invalid finished_early")
+    return CaptureInfo(
+        mode=mode,
+        anchor_world=(float(anchor[0]), float(anchor[1]), float(anchor[2])),
+        front_azimuth_rad=float(raw["front_azimuth_rad"]),
+        coverage=float(coverage),
+        finished_early=raw["finished_early"],
+    )
+
+
 def parse_capture(data: bytes) -> CaptureBundle:
     """Validate capture.json bytes against the forms.photo-capture v1 contract."""
     if len(data) > MAX_CAPTURE_JSON_BYTES:
@@ -136,7 +179,8 @@ def parse_capture(data: bytes) -> CaptureBundle:
     images = tuple(_parse_image(i, raw) for i, raw in enumerate(raw_images))
     if len({img.file for img in images}) != len(images):
         raise _fail("duplicate image file names")
-    return CaptureBundle(images=images)
+    capture = _parse_capture_info(doc["capture"]) if "capture" in doc else None
+    return CaptureBundle(images=images, capture=capture)
 
 
 # SOF0..SOF15 carry frame dimensions; C4 (DHT), C8 (JPG ext) and CC (DAC) do not.
