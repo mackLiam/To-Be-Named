@@ -60,6 +60,9 @@ class FakeJobStore:
         owner = self.scan_owners.get(scan_id, mesh_path.split("/")[0])
         return ScanInfo(user_id=owner, capture_kind="mesh", mesh_path=mesh_path)
 
+    def set_scan_mesh_path(self, scan_id: str, path: str) -> None:
+        self.scans[scan_id] = path
+
     def upsert_measurements(
         self,
         scan_id: str,
@@ -491,3 +494,34 @@ def test_generating_cad_onshape_rejection_fails_non_retriable() -> None:
     assert failed_job_id == "job-1"
     assert retriable is False
     assert not storage.uploaded
+
+
+def test_reconstructing_is_registered_and_quality_errors_dead_letter() -> None:
+    from forms_pipeline.reconstruct import ReconstructionQualityError
+
+    assert "reconstructing" in STEP_HANDLERS
+    store = FakeJobStore()
+    storage = FakeStorageClient()
+    job = Job(
+        id="job-r",
+        order_id=None,
+        scan_id="scan-1",
+        step="reconstructing",
+        status="running",
+        attempts=1,
+        max_attempts=3,
+        artifacts={},
+    )
+
+    def boom(*_args: Any, **_kwargs: Any) -> None:
+        raise ReconstructionQualityError("too few photos registered")
+
+    original = STEP_HANDLERS["reconstructing"]
+    STEP_HANDLERS["reconstructing"] = boom
+    try:
+        process_job(job, JobContext(store=store, storage=storage, cad=_dry_run_cad()))
+    finally:
+        STEP_HANDLERS["reconstructing"] = original
+
+    [(_job_id, _error, retriable)] = store.failed
+    assert retriable is False

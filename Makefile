@@ -94,6 +94,9 @@ format: check-pnpm check-venv ## Format everything: prettier write, ruff format
 typecheck: check-pnpm ## Typecheck all JS/TS packages via turbo
 	pnpm turbo run typecheck
 
+build-reconstruct: ## Build the forms-reconstruct Swift CLI (macOS 14+, Apple silicon)
+	cd services/reconstruct && swift build -c release
+
 db-reset: ## Reset the local Supabase stack (requires Supabase CLI + Docker running)
 	@command -v supabase >/dev/null 2>&1 || { \
 		echo "error: supabase CLI not found. Install: https://supabase.com/docs/guides/cli"; \

@@ -40,6 +40,8 @@ from forms_pipeline.extraction.measure import EXTRACTION_VERSION, extract_measur
 from forms_pipeline.extraction.mesh_loading import MeshValidationError, load_mesh
 from forms_pipeline.jobs.states import guard_transition
 from forms_pipeline.onshape.client import OnshapeRejectedError
+from forms_pipeline.reconstruct import BundleValidationError, ReconstructionQualityError
+from forms_pipeline.reconstruct.handler import handle_reconstructing
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,7 @@ class JobStore(Protocol):
 
     def claim_jobs(self, worker_id: str, steps: tuple[str, ...], limit: int = 1) -> list[Job]: ...
     def get_scan(self, scan_id: str) -> ScanInfo: ...
+    def set_scan_mesh_path(self, scan_id: str, path: str) -> None: ...
     def upsert_measurements(
         self,
         scan_id: str,
@@ -227,6 +230,7 @@ def handle_generating_cad(job: Job, ctx: JobContext) -> None:
 
 
 STEP_HANDLERS: dict[str, Any] = {
+    "reconstructing": handle_reconstructing,
     "measuring": handle_measuring,
     "generating_cad": handle_generating_cad,
 }
@@ -244,6 +248,11 @@ _NON_RETRIABLE_ERRORS: tuple[type[Exception], ...] = (
     # Onshape 4xx, a template missing variables, or values that break
     # regeneration: the same input fails the same way every time.
     OnshapeRejectedError,
+    # Photo bundle that breaks the contract, or a reconstruction too poor to
+    # measure (too few registered photos, bad alignment, no ankle/knee):
+    # the user must rescan. ReconstructCliError stays retriable by design.
+    BundleValidationError,
+    ReconstructionQualityError,
 )
 
 
@@ -359,6 +368,11 @@ class PostgresJobStore:
         if row is None:
             raise LookupError(f"scan {scan_id} not found")
         return ScanInfo(user_id=str(row[0]), capture_kind=row[1], mesh_path=row[2])
+
+    def set_scan_mesh_path(self, scan_id: str, path: str) -> None:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("update public.scans set mesh_path = %s where id = %s", (path, scan_id))
+            conn.commit()
 
     def upsert_measurements(
         self,
