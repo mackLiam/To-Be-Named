@@ -1,3 +1,4 @@
+import type { AdminDecision } from '@/lib/access';
 import { getAdminDecision } from '@/lib/admin-auth';
 import { hasServiceRoleConfig } from '@/lib/env';
 import { handleStlDownload, type StlServiceClient } from '@/lib/stl';
@@ -6,7 +7,8 @@ import { createServiceRoleClient } from '@/lib/supabase-admin';
 /**
  * Break-glass STL download. Thin adapter over handleStlDownload (unit tested in
  * lib/stl.test.ts), which enforces the rules that matter:
- *  - non-admin -> 404 (the endpoint never reveals itself)
+ *  - anything but an aal2 staff session (or fake mode) -> 404 (the endpoint
+ *    never reveals itself)
  *  - a short-lived signed URL is minted with the SERVICE ROLE client, which is
  *    imported only here (server-only) and whose key never reaches the client
  *  - an audit_log row is written BEFORE the redirect; if that write fails, no
@@ -17,7 +19,12 @@ export async function GET(
   { params }: { params: Promise<{ jobId: string }> },
 ): Promise<Response> {
   const { jobId } = await params;
-  const decision = await getAdminDecision();
+  const raw = await getAdminDecision();
+  // handleStlDownload only 404s on 'deny'; collapse every non-granting kind
+  // (including the MFA steps) into it so this endpoint never redirects or
+  // proceeds below aal2.
+  const decision: AdminDecision =
+    raw.kind === 'allow' || raw.kind === 'fake' ? raw : { kind: 'deny' };
 
   const result = await handleStlDownload({
     decision,

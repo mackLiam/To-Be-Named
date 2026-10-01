@@ -35,14 +35,27 @@ The customer-facing product web app is NOT here - it's the Expo web build from
 
 ## Admin access
 
-Two mechanisms, checked in order (see `src/lib/access.ts`):
+See `src/lib/access.ts`. All of these must hold, checked server-side on every
+admin page, server action and route handler:
 
-1. `profiles.role === 'admin'` - the long-term mechanism. The column does not
-   exist in the schema yet; a migration must add it.
-2. `ADMIN_ALLOWLIST` - comma-separated emails in the environment (bootstrap
-   mechanism that works today). See `.env.example`.
+1. The email is in `ADMIN_ALLOWLIST` (comma-separated, server-side env; see
+   `.env.example`). This is the only authorization source. It is deliberately
+   not a database column: users can write their own `profiles` row, so a role
+   stored there would be self-grantable.
+2. The email is confirmed (`email_confirmed_at` set).
+3. The session is at AAL2: the user signed in with a password at `/login`,
+   then entered a TOTP code at `/login/mfa`. Staff without a verified
+   authenticator are taken through enrollment (QR code or manual key) on
+   first sign-in.
 
-Non-admins always get a 404, never a login wall that reveals the panel exists.
+Anyone failing 1 or 2 gets a 404, never a login wall that reveals the panel
+exists. Requires TOTP MFA enabled in the Supabase project (Authentication >
+Multi-Factor). To reset a lost authenticator, delete the user's factor in
+the Supabase dashboard; they re-enroll on next sign-in.
+
+Security headers (HSTS, frame denial, nosniff, referrer and permissions
+policy, a minimal CSP without `script-src`) are set in `next.config.mjs`;
+`/admin` and `/login` are also `no-store` and `noindex`.
 
 ## Fake mode
 

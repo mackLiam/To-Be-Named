@@ -2,7 +2,8 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * Refreshes the Supabase session cookie on admin requests. Server components
+ * Refreshes the Supabase session cookie on admin and login requests (the MFA
+ * step upgrades the session in place). Server components
  * cannot write cookies, so without this an admin's access token expires
  * after an hour and every page 404s until they sign in again. Authorization
  * is NOT decided here; requireAdmin() on each page and action stays the gate.
@@ -35,4 +36,4 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-export const config = { matcher: ['/admin/:path*'] };
+export const config = { matcher: ['/admin/:path*', '/login/:path*'] };

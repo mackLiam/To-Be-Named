@@ -14,17 +14,21 @@ export const metadata: Metadata = {
 
 export const dynamic = 'force-dynamic';
 
+const EMAIL_MAX = 320;
+const PASSWORD_MAX = 200;
+
 /**
- * Plain staff sign-in. Deliberately says nothing about an admin panel: a
- * non-admin who signs in still gets a 404 at /admin (access.ts), so this page
- * reveals no more than that the site has accounts. Admin users are created
- * in the Supabase dashboard; there is no sign-up here.
+ * Plain staff sign-in, step one of two. Deliberately says nothing about an
+ * admin panel: a non-staff user who signs in still gets a 404 at /admin
+ * (access.ts), so this page reveals no more than that the site has accounts.
+ * requireAdmin() routes staff on to the TOTP step at /login/mfa. Staff users
+ * are created in the Supabase dashboard; there is no sign-up here.
  */
 async function signIn(formData: FormData) {
   'use server';
   const email = String(formData.get('email') ?? '').trim();
   const password = String(formData.get('password') ?? '');
-  if (!email || !password || email.length > 320 || password.length > 200) {
+  if (!email || !password || email.length > EMAIL_MAX || password.length > PASSWORD_MAX) {
     redirect('/login?error=1');
   }
   const supabase = await createAnonServerClient();
@@ -61,6 +65,7 @@ export default async function LoginPage({
               type="email"
               name="email"
               autoComplete="email"
+              maxLength={EMAIL_MAX}
               required
             />
           </label>
@@ -71,6 +76,7 @@ export default async function LoginPage({
               type="password"
               name="password"
               autoComplete="current-password"
+              maxLength={PASSWORD_MAX}
               required
             />
           </label>

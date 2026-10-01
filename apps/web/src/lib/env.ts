@@ -48,11 +48,9 @@ export function getServiceRoleKey(): string | undefined {
 }
 
 /**
- * Comma-separated bootstrap admin allowlist (emails). Needed because the
- * current database schema has no way to mark a user as admin yet (see
- * apps/web/README.md and the final report: profiles.role does not exist).
- * Until a migration adds profiles.role, this env var is the working admin
- * mechanism.
+ * Comma-separated staff emails allowed into /admin. This is the only source of
+ * admin authorization: it is server-held, so no user can grant it to
+ * themselves. Do not move it into a user-writable table (see access.ts).
  */
 export function getAdminAllowlist(): string[] {
   return (process.env.ADMIN_ALLOWLIST ?? '')
@@ -81,4 +79,39 @@ export function assertNoPublicServiceKey(
       );
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Stripe checkout. All server-only: none of these may be NEXT_PUBLIC_*.
+// ---------------------------------------------------------------------------
+
+function commaList(raw: string | undefined): string[] {
+  return (raw ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+export function getStripeSecretKey(): string | undefined {
+  return process.env.STRIPE_SECRET_KEY || undefined;
+}
+
+export function getStripeWebhookSecret(): string | undefined {
+  return process.env.STRIPE_WEBHOOK_SECRET || undefined;
+}
+
+/** Public origin of this site, no trailing slash. Checkout return pages live here. */
+export function getSiteUrl(): string | undefined {
+  return process.env.SITE_URL?.trim().replace(/\/+$/, '') || undefined;
+}
+
+/** Exact-match origins (scheme + host + port) allowed to call /api/checkout from a browser. */
+export function getCheckoutAllowedOrigins(): string[] {
+  return commaList(process.env.CHECKOUT_ALLOWED_ORIGINS);
+}
+
+/** ISO country codes Stripe Checkout may ship to. */
+export function getStripeShippingCountries(): string[] {
+  const countries = commaList(process.env.STRIPE_SHIPPING_COUNTRIES).map((c) => c.toUpperCase());
+  return countries.length > 0 ? countries : ['US'];
 }
