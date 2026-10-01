@@ -85,9 +85,16 @@ enum SilhouetteTuning {
   // Auto-capture conditions (all must hold for holdS).
   static let azimuthToleranceRad: Float = 12 * .pi / 180
   static let minDistanceM: Float = 0.30
-  static let maxDistanceM: Float = 0.80
+  static let maxDistanceM: Float = 0.90
+  /// Auto aim: body-pose attempts per second and the joint confidence needed.
+  static let autoAimIntervalS: TimeInterval = 0.4
+  static let autoAimMinConfidence: Float = 0.5
+  /// Seconds without an automatic find before offering the tap.
+  static let autoAimFallbackS: TimeInterval = 6
   static let maxAngularSpeedRadPerS: Float = 0.3
-  static let maxLevelRad: Float = 25 * .pi / 180
+  /// Seated users naturally look down at their shin; the server handles angled views, so
+  /// only reject steep top-down shots (device run 2026-09-30: 30 degrees blocked capture).
+  static let maxLevelRad: Float = 40 * .pi / 180
   static let holdS: TimeInterval = 0.5
 
   // Mask.
@@ -150,6 +157,19 @@ enum SilhouetteCaptureLogic {
   static func target(captured: Set<SilhouetteStation>, selected: SilhouetteStation?) -> SilhouetteStation? {
     if let selected, !captured.contains(selected) { return selected }
     return SilhouetteStation.allCases.first { !captured.contains($0) }
+  }
+
+  /// Median of the nearest group of depths: the first depth that has at least
+  /// `minCount` depths (itself included) within `window` meters behind it.
+  /// Points on the leg's front surface sit nearest the camera; stray points
+  /// on the back of the calf or beyond come later and are ignored.
+  static func nearestDepthCluster(_ depths: [Float], window: Float = 0.04, minCount: Int = 3) -> Float? {
+    let sorted = depths.sorted()
+    for (i, start) in sorted.enumerated() {
+      let group = sorted[i...].prefix { $0 - start <= window }
+      if group.count >= minCount { return group[group.startIndex + group.count / 2] }
+    }
+    return nil
   }
 
   /// "Finish with 4": the front plus at least one station on each side.
@@ -262,7 +282,8 @@ enum SilhouetteCaptureLogic {
   static let floorInstruction = "Point the phone at the floor near your foot for a moment."
   static let setupHint =
     "Sit on a chair, foot flat, shin upright. Shorts on or trousers rolled above the knee. Move the other leg out of the way."
-  static let aimInstruction = "Point the circle at the front of your shin, halfway up, then tap."
+  static let aimInstruction = "Point the phone at your lower leg, foot to knee in view. It finds your shin by itself."
+  static let aimTapFallback = "Still looking. Show your foot and knee, or tap your shin to help."
   static let aimFailed = "Could not find your leg. Move a little closer and tap again."
   static let allDone = "All five photos taken. Tap Done."
   static let darkHint = "It's a bit dark here."
@@ -285,8 +306,12 @@ enum SilhouetteCaptureLogic {
     distance < SilhouetteTuning.minDistanceM ? "Move back" : "Move closer"
   }
 
+  /// `direction` is in the camera's frame (PhotoCaptureLogic.direction). In solo
+  /// capture the person holds the phone toward their own shin, so the camera
+  /// faces them and its left is the person's right; the words are mirrored
+  /// (device run 2026-09-30: following "to your left" moved the user away).
   static func spotMessage(_ direction: OrbitDirection) -> String {
-    direction == .left ? "Move the phone to your left" : "Move the phone to your right"
+    direction == .left ? "Move the phone to your right" : "Move the phone to your left"
   }
 
   static func title(_ condition: SilhouetteCondition) -> String {

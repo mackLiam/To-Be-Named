@@ -77,6 +77,9 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
   private var anchor: SIMD3<Float>?
   private var frontAzimuth: Float = 0
   private var aimError = false
+  private var autoAimRunning = false
+  private var aimStartedAt: TimeInterval?
+  private var lastAutoAim: TimeInterval = 0
   private var lineAnchor: AnchorEntity?
 
   // Stations.
@@ -287,7 +290,10 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
     }
     var hit: SIMD3<Float>?
     if let points = frame.rawFeaturePoints?.points {
-      hit = PhotoCaptureLogic.aimPointFromFeatures(points, origin: ray.origin, direction: ray.direction)
+      hit = Self.aimPointOnLeg(frame: frame, points: points, origin: ray.origin, direction: ray.direction)
+      if hit == nil {
+        hit = PhotoCaptureLogic.aimPointFromFeatures(points, origin: ray.origin, direction: ray.direction)
+      }
     }
     if hit == nil,
       let query = arView.makeRaycastQuery(from: center, allowing: .estimatedPlane, alignment: .any),
@@ -301,9 +307,14 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
       showAimFailure(now: now)
       return
     }
-    let axis = PhotoCaptureLogic.axisPoint(hit: hit, rayDirection: ray.direction)
+    completeAim(hit: hit, rayDirection: ray.direction, camera: frame.camera, now: now)
+  }
+
+  private func completeAim(hit: SIMD3<Float>, rayDirection: SIMD3<Float>, camera: ARCamera, now: TimeInterval) {
+    guard phase == .aim, !finished else { return }
+    let axis = PhotoCaptureLogic.axisPoint(hit: hit, rayDirection: rayDirection)
     anchor = axis
-    frontAzimuth = PhotoCaptureLogic.azimuth(of: PhotoCaptureController.translation(frame.camera.transform), around: axis)
+    frontAzimuth = PhotoCaptureLogic.azimuth(of: PhotoCaptureController.translation(camera.transform), around: axis)
     aimError = false
     phase = .stations
     startAttempt(now: now)
@@ -311,6 +322,61 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
     haptic.notificationOccurred(.success)
     messageLabel.text = guidance.force("Move to the next dot", now: now)
     refreshOverlay()
+  }
+
+  /// Finds the shin without a tap: Vision body pose gives the captured leg's
+  /// knee and ankle, the shin midpoint between them is the aim pixel, and the
+  /// leg-mask depth cluster places the axis (the tap remains as a fallback).
+  /// Throttled and off the main thread; Liam on device: "it should just find it".
+  private func autoAim(_ frame: ARFrame, now: TimeInterval) {
+    guard !autoAimRunning, now - lastAutoAim >= SilhouetteTuning.autoAimIntervalS,
+      case .normal = frame.camera.trackingState, let points = frame.rawFeaturePoints?.points
+    else { return }
+    lastAutoAim = now
+    autoAimRunning = true
+    let camera = frame.camera
+    let buffer = frame.capturedImage
+    let leg = self.leg
+    let up = SilhouetteCaptureLogic.imageUpAxis(cameraTransform: camera.transform)
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      let found = Self.autoAimHit(camera: camera, pixelBuffer: buffer, points: points, leg: leg, up: up)
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          self.autoAimRunning = false
+          if let found { self.completeAim(hit: found.hit, rayDirection: found.direction, camera: camera, now: now) }
+        }
+      }
+    }
+  }
+
+  nonisolated private static func autoAimHit(
+    camera: ARCamera, pixelBuffer: CVPixelBuffer, points: [SIMD3<Float>], leg: SilhouetteLeg, up: ImageUpAxis
+  ) -> (hit: SIMD3<Float>, direction: SIMD3<Float>)? {
+    let width = Int(camera.imageResolution.width)
+    let height = Int(camera.imageResolution.height)
+    let joints = SilhouetteJoints.detect(pixelBuffer, up: up, leg: leg, width: width, height: height)
+    guard let knee = joints["knee"] as? [Double], let ankle = joints["ankle"] as? [Double],
+      Float(knee[2]) >= SilhouetteTuning.autoAimMinConfidence,
+      Float(ankle[2]) >= SilhouetteTuning.autoAimMinConfidence
+    else { return nil }
+    let pixel = CGPoint(x: (knee[0] + ankle[0]) / 2, y: (knee[1] + ankle[1]) / 2)
+    let k = camera.intrinsics
+    let local = SIMD3<Float>(
+      (Float(pixel.x) - k[2][0]) / k[0][0], -(Float(pixel.y) - k[2][1]) / k[1][1], -1)
+    let m = camera.transform
+    let rotation = simd_float3x3(
+      SIMD3(m.columns.0.x, m.columns.0.y, m.columns.0.z),
+      SIMD3(m.columns.1.x, m.columns.1.y, m.columns.1.z),
+      SIMD3(m.columns.2.x, m.columns.2.y, m.columns.2.z))
+    let direction = simd_normalize(rotation * local)
+    let origin = SIMD3<Float>(m.columns.3.x, m.columns.3.y, m.columns.3.z)
+    guard
+      let hit = aimPointOnLeg(
+        camera: camera, pixelBuffer: pixelBuffer, points: points, origin: origin, direction: direction,
+        legPixel: pixel)
+    else { return nil }
+    return (hit, direction)
   }
 
   private func showAimFailure(now: TimeInterval) {
@@ -357,9 +423,13 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
         PhotoCaptureController.trackingMessage(frame.camera.trackingState)
           ?? SilhouetteCaptureLogic.floorInstruction, now: now)
     case .aim:
-      show(
-        PhotoCaptureController.trackingMessage(frame.camera.trackingState)
-          ?? (aimError ? SilhouetteCaptureLogic.aimFailed : SilhouetteCaptureLogic.aimInstruction), now: now)
+      if aimStartedAt == nil { aimStartedAt = now }
+      autoAim(frame, now: now)
+      let slow = now - (aimStartedAt ?? now) >= SilhouetteTuning.autoAimFallbackS
+      let hint = aimError
+        ? SilhouetteCaptureLogic.aimFailed
+        : (slow ? SilhouetteCaptureLogic.aimTapFallback : SilhouetteCaptureLogic.aimInstruction)
+      show(PhotoCaptureController.trackingMessage(frame.camera.trackingState) ?? hint, now: now)
     case .stations:
       guard !capturing, !finishRequested, presentedViewController == nil else { return }
       evaluate(frame, now: now)
@@ -469,8 +539,49 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
     return PhotoCaptureLogic.rotationAngle(reference.transform, transform) / dt
   }
 
+  /// Shin depth at the aim tap from tracked points that land ON the leg: the
+  /// Vision leg mask under the reticle filters out wall and floor points, and
+  /// the nearest depth cluster wins. Bare skin carries few features, so a plain
+  /// median along the ray landed behind the leg (device run 2026-09-30: the
+  /// anchor line appeared "so far back").
+  private static func aimPointOnLeg(
+    frame: ARFrame, points: [SIMD3<Float>], origin: SIMD3<Float>, direction: SIMD3<Float>
+  ) -> SIMD3<Float>? {
+    let d = simd_normalize(direction)
+    guard let reticle = anchorPixel(frame.camera, anchor: origin + d * 0.5) else { return nil }
+    return aimPointOnLeg(
+      camera: frame.camera, pixelBuffer: frame.capturedImage, points: points, origin: origin, direction: d,
+      legPixel: reticle)
+  }
+
+  nonisolated private static func aimPointOnLeg(
+    camera: ARCamera, pixelBuffer: CVPixelBuffer, points: [SIMD3<Float>], origin: SIMD3<Float>,
+    direction d: SIMD3<Float>, legPixel: CGPoint
+  ) -> SIMD3<Float>? {
+    let frameCamera = camera
+    guard let detection = SilhouetteMasking.detect(pixelBuffer, anchorPixel: legPixel) else { return nil }
+    let grid = detection.grid
+    let sx = CGFloat(grid.width) / frameCamera.imageResolution.width
+    let sy = CGFloat(grid.height) / frameCamera.imageResolution.height
+    var depths: [Float] = []
+    for p in points {
+      let t = simd_dot(p - origin, d)
+      guard t >= PhotoTuning.minAimDepthM, t <= PhotoTuning.maxAimDistanceM,
+        let pixel = anchorPixel(frameCamera, anchor: p)
+      else { continue }
+      let x = Int((pixel.x * sx).rounded())
+      let y = Int((pixel.y * sy).rounded())
+      guard x >= 0, x < grid.width, y >= 0, y < grid.height, grid.bytes[y * grid.width + x] != 0 else {
+        continue
+      }
+      depths.append(t)
+    }
+    guard let t = SilhouetteCaptureLogic.nearestDepthCluster(depths) else { return nil }
+    return origin + d * t
+  }
+
   /// Anchor in sensor pixels, nil when behind the camera (projectPoint mirrors those).
-  private static func anchorPixel(_ camera: ARCamera, anchor: SIMD3<Float>) -> CGPoint? {
+  nonisolated private static func anchorPixel(_ camera: ARCamera, anchor: SIMD3<Float>) -> CGPoint? {
     let local = camera.transform.inverse * SIMD4<Float>(anchor, 1)
     guard local.z < 0 else { return nil }
     return camera.projectPoint(anchor, orientation: .landscapeRight, viewportSize: camera.imageResolution)
@@ -766,6 +877,7 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
       "distanceM": lastDistance.map { Double($0) } ?? NSNull(),
       "levelDeg": lastPitch.map { Double(abs($0) * 180 / .pi) } ?? NSNull(),
       "maskValid": maskVerdict == .valid,
+      "maskVerdict": String(describing: maskVerdict),
       "floorFound": floorY != nil,
       "failures": Dictionary(uniqueKeysWithValues: failures.map { ($0.key.rawValue, $0.value) }),
       "torchOn": torchOn,
