@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, Share, StyleSheet, View } from 'react-native';
 
 import { BRAND_NAME } from '@forms/shared/brand';
 
@@ -11,6 +11,7 @@ import { Rule } from '../src/components/Rule';
 import { Screen } from '../src/components/Screen';
 import { captureErrorMessage, useCaptureFlow } from '../src/hooks/useCaptureFlow';
 import type { CaptureFlowState, CaptureMetaEnv } from '../src/hooks/useCaptureFlow';
+import { hasSupabaseConfig } from '../src/lib/supabase';
 import { uploadErrorMessage } from '../src/lib/upload';
 import type { CaptureState } from '../modules/forms-capture';
 import { colors, radius, spacing } from '../src/theme/tokens';
@@ -42,8 +43,10 @@ export default function CaptureScreen() {
 
   // On a successful upload the scan lives in the library; send the user there.
   // replace() so the back button does not land them on a finished capture.
+  // Without a backend the upload is simulated and the mesh exists only on this
+  // phone, so stay here and offer the file instead (UploadedSection).
   useEffect(() => {
-    if (state.phase === 'uploaded') {
+    if (state.phase === 'uploaded' && hasSupabaseConfig()) {
       router.replace('/(tabs)/scans');
     }
   }, [state.phase, router]);
@@ -58,7 +61,7 @@ export default function CaptureScreen() {
       {(state.phase === 'done' || state.phase === 'uploading') && (
         <UploadingSection state={state} />
       )}
-      {state.phase === 'uploaded' && <UploadedSection />}
+      {state.phase === 'uploaded' && <UploadedSection state={state} />}
       {state.phase === 'upload_failed' && (
         <UploadFailedSection state={state} onRetry={retryUpload} onRescan={start} />
       )}
@@ -212,7 +215,33 @@ function UploadingSection({ state }: { state: CaptureFlowState }) {
 }
 
 /** Brief success state shown before the router redirects to the Scans tab. */
-function UploadedSection() {
+/**
+ * Dev-only escape hatch until hosted Supabase exists (ROADMAP.md week 5): with
+ * no backend, share the OBJ off the phone (AirDrop to the Mac) so it can be run
+ * through forms-extract by hand. Never shown in a build with a backend.
+ */
+function UploadedSection({ state }: { state: CaptureFlowState }) {
+  const objPath = state.result?.objPath;
+  if (!hasSupabaseConfig() && objPath) {
+    return (
+      <>
+        <Heading level="h1">Scan finished.</Heading>
+        <View style={{ height: spacing.md }} />
+        <Body>
+          No server is configured in this build, so the scan was not uploaded. Share the file to get
+          it off this phone.
+        </Body>
+        <View style={{ height: spacing.lg }} />
+        <Button
+          onPress={() =>
+            Share.share({ url: objPath.startsWith('file://') ? objPath : `file://${objPath}` })
+          }
+        >
+          Share scan file
+        </Button>
+      </>
+    );
+  }
   return (
     <>
       <Heading level="h1">Scan saved.</Heading>

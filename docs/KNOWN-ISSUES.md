@@ -12,6 +12,13 @@ finishing a task checks this file for anything its change closes.
 
 ## Open
 
+### 2026-09-30: offline capture shares the OBJ instead of uploading
+
+- With no EXPO_PUBLIC_SUPABASE_* env, `apps/app/app/capture.tsx` shows a
+  "Share scan file" button after capture (AirDrop the OBJ to a Mac for
+  forms-extract) instead of redirecting to the scan library.
+- Close by: removing the branch once hosted Supabase exists (roadmap week 5).
+
 ### 2026-09-02: products/orders column names, app read side vs DB
 
 - `listProducts` in `apps/app/src/lib/api.ts` selects `description,
