@@ -134,6 +134,15 @@ export function orderableLegs(
   );
 }
 
+/** The session the Shop orders from: the newest with a measured leg. The order
+ * screen re-checks each leg (orderableLegs) before anything is charged. */
+export function newestOrderableSessionKey(sessions: readonly ScanSession[]): string | null {
+  const newestFirst = [...sessions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return (
+    newestFirst.find((s) => sessionLegs(s).some((scan) => scan.status === 'ready'))?.key ?? null
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Measurements
 // ---------------------------------------------------------------------------

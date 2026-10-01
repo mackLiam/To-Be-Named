@@ -17,12 +17,13 @@ import { colors, radius, spacing } from '../../src/theme/tokens';
 
 export default function OrderScreen() {
   const router = useRouter();
-  const { key } = useLocalSearchParams<{ key: string }>();
+  // product: preselected when arriving from the Shop.
+  const { key, product: productParam } = useLocalSearchParams<{ key: string; product?: string }>();
   const scan = useScanSession(key ?? '');
   const products = useProducts();
   const { account } = useAccount();
   const checkout = useCheckout();
-  const [pickedId, setPickedId] = useState<string | null>(null);
+  const [pickedId, setPickedId] = useState<string | null>(productParam ?? null);
 
   const legs = scan.session ? orderableLegs(scan.session, scan.measurements) : [];
 

@@ -1,6 +1,7 @@
 import type { OrderStatus } from '@forms/shared';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef } from 'react';
+import * as Linking from 'expo-linking';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
@@ -10,6 +11,7 @@ import { Screen } from '../../src/components/Screen';
 import { StatusLabel, type StatusTone } from '../../src/components/StatusLabel';
 import { useOrders } from '../../src/hooks/useOrders';
 import { formatMoney } from '../../src/lib/checkout';
+import { orderReference, trackingUrl } from '../../src/lib/orders';
 import { colors, spacing } from '../../src/theme/tokens';
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -71,15 +73,36 @@ export default function OrdersScreen() {
             )}
           </View>
           <StatusLabel label={STATUS_LABEL[order.status]} tone={STATUS_TONE[order.status]} />
+          <Body variant="bodySmall" color={colors.textSecondary}>
+            Order {orderReference(order.id)}
+          </Body>
           {order.trackingNumber && (
-            <Body variant="bodySmall" color={colors.textSecondary}>
-              {order.trackingCarrier ? `${order.trackingCarrier} ` : ''}
-              {order.trackingNumber}
-            </Body>
+            <Tracking carrier={order.trackingCarrier} number={order.trackingNumber} />
           )}
         </View>
       ))}
     </Screen>
+  );
+}
+
+function Tracking({ carrier, number }: { carrier: string | null; number: string }) {
+  const label = `${carrier ? `${carrier} ` : ''}${number}`;
+  const url = trackingUrl(carrier, number);
+  if (!url) {
+    return (
+      <Body variant="bodySmall" color={colors.textSecondary}>
+        {label}
+      </Body>
+    );
+  }
+  return (
+    <Button
+      variant="text"
+      onPress={() => Linking.openURL(url)}
+      accessibilityLabel={`Track ${label} on the carrier's site`}
+    >
+      {`Track ${label}`}
+    </Button>
   );
 }
 

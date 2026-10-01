@@ -13,6 +13,7 @@ import {
   toFailedStep,
   groupScanSessions,
   latestMeasurements,
+  newestOrderableSessionKey,
   sessionStatus,
   SLICE_DIMS,
   SLICES,
@@ -199,5 +200,30 @@ describe('failed step guidance', () => {
     expect(toFailedStep('reconstructing')).toBe('reconstructing');
     expect(toFailedStep(null)).toBeNull();
     expect(toFailedStep('exporting')).toBeNull();
+  });
+});
+
+describe('newestOrderableSessionKey', () => {
+  it('picks the newest session with a measured leg', () => {
+    const sessions = groupScanSessions([
+      scan({ id: 'old', createdAt: '2026-08-01T10:00:00.000Z' }),
+      scan({ id: 'new-failed', status: 'failed', createdAt: '2026-09-20T10:00:00.000Z' }),
+      scan({ id: 'mid', pairId: 'p', createdAt: '2026-09-10T10:00:00.000Z' }),
+      scan({
+        id: 'mid-r',
+        pairId: 'p',
+        leg: 'R',
+        status: 'processing',
+        createdAt: '2026-09-10T10:05:00.000Z',
+      }),
+    ]);
+    expect(newestOrderableSessionKey(sessions)).toBe('p');
+  });
+
+  it('is null when nothing is measured', () => {
+    expect(newestOrderableSessionKey([])).toBeNull();
+    expect(
+      newestOrderableSessionKey(groupScanSessions([scan({ id: 'a', status: 'processing' })])),
+    ).toBeNull();
   });
 });

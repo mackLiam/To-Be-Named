@@ -2,23 +2,29 @@ import { useRouter } from 'expo-router';
 import { ActivityIndicator, Image, StyleSheet, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
+import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
 import { ListGroup, ListRow } from '../../src/components/List';
 import { Screen } from '../../src/components/Screen';
 import { useAccount } from '../../src/hooks/useAccount';
 import { useProducts } from '../../src/hooks/useProducts';
+import { useScanSessions } from '../../src/hooks/useScans';
 import { canPlaceOrder } from '../../src/lib/auth';
 import { formatMoney } from '../../src/lib/checkout';
+import { newestOrderableSessionKey } from '../../src/lib/library';
 import { colors, radius, spacing } from '../../src/theme/tokens';
 
 export default function ShopScreen() {
   const { data: products, loading, error } = useProducts();
   const { account } = useAccount();
+  const { sessions } = useScanSessions();
   const router = useRouter();
+  const member = canPlaceOrder(account);
+  const orderFrom = newestOrderableSessionKey(sessions);
 
   return (
     <Screen title="Shop">
-      {!canPlaceOrder(account) && (
+      {!member && (
         <ListGroup>
           <ListRow
             label="Save your scans to order"
@@ -53,6 +59,23 @@ export default function ShopScreen() {
             <Heading level="h3">{formatMoney(product.priceCents, product.currency)}</Heading>
           </View>
           <Body color={colors.textSecondary}>{product.description}</Body>
+          {member &&
+            (orderFrom ? (
+              <Button
+                onPress={() =>
+                  router.push({
+                    pathname: '/order/[key]',
+                    params: { key: orderFrom, product: product.id },
+                  })
+                }
+              >
+                Order
+              </Button>
+            ) : (
+              <Button variant="outline" onPress={() => router.navigate('/')}>
+                Scan your legs to order
+              </Button>
+            ))}
         </View>
       ))}
     </Screen>
