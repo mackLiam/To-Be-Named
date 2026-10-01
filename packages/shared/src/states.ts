@@ -3,6 +3,7 @@
 export const PIPELINE_STEPS = [
   'captured',
   'uploaded',
+  'reconstructing',
   'measuring',
   'measured',
   'generating_cad',
@@ -30,14 +31,17 @@ export const ORDER_STATUSES = [
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
-// Linear happy path. Any step may transition to "failed"; the worker is
-// responsible for retrying a failed job back into the step it failed from,
-// so "failed" itself has no forward transitions here.
+// Explicit table, mirrored verbatim in services/pipeline jobs/states.py and
+// the pipeline_jobs step CHECK (supabase/migrations/0008_photo_capture.sql).
+// A measure job ends at 'measured' (completed there); a CAD job is a separate
+// job that starts at 'generating_cad' (DESIGN.md section 6). Any step may
+// fail; 'failed' and 'shipped' have no transitions out.
 export const VALID_TRANSITIONS: Record<PipelineStep, readonly PipelineStep[]> = {
   captured: ['uploaded', 'failed'],
-  uploaded: ['measuring', 'failed'],
+  uploaded: ['reconstructing', 'measuring', 'failed'],
+  reconstructing: ['measuring', 'failed'],
   measuring: ['measured', 'failed'],
-  measured: ['generating_cad', 'failed'],
+  measured: ['failed'],
   generating_cad: ['stl_ready', 'failed'],
   stl_ready: ['queued_for_print', 'failed'],
   queued_for_print: ['printing', 'failed'],
@@ -45,3 +49,9 @@ export const VALID_TRANSITIONS: Record<PipelineStep, readonly PipelineStep[]> = 
   shipped: [],
   failed: [],
 };
+
+// scans.capture_kind (0008). 'photos' bundles live under the derived prefix
+// `${user_id}/${scan_id}/` in the meshes bucket; nothing stores the prefix.
+export const CAPTURE_KINDS = ['mesh', 'photos'] as const;
+
+export type CaptureKind = (typeof CAPTURE_KINDS)[number];

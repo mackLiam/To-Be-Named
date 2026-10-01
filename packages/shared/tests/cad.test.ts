@@ -107,6 +107,21 @@ describe('validateCadModelDescriptor', () => {
     expect(validateCadModelDescriptor(descriptor)).toEqual([]);
   });
 
+  it('accepts an omitted variable_kind', () => {
+    expect(validateCadModelDescriptor(validOnshapeDescriptor())).toEqual([]);
+  });
+
+  it.each(['variable_studio', 'part_studio_features'])('accepts variable_kind %s', (kind) => {
+    const descriptor = { ...validOnshapeDescriptor(), variable_kind: kind };
+    expect(validateCadModelDescriptor(descriptor)).toEqual([]);
+  });
+
+  it.each(['feature_studio', '', null, 1])('rejects variable_kind %j', (kind) => {
+    const descriptor = { ...validOnshapeDescriptor(), variable_kind: kind };
+    const errors = validateCadModelDescriptor(descriptor);
+    expect(errors.some((e) => e.startsWith('variable_kind:'))).toBe(true);
+  });
+
   it('accepts a variable_map that renames a subset of the 25 keys', () => {
     const descriptor = {
       ...validOnshapeDescriptor(),

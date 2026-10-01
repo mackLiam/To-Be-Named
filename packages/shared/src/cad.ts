@@ -22,11 +22,18 @@ export interface OnshapeRef {
 // exercised end to end without a real CAD backend.
 export type DryRunRef = Record<string, never>;
 
+// Where an Onshape model keeps its variables: Part Studio Variable features in
+// a template copied per job (the default when omitted), or a Variable Studio.
+export const CAD_VARIABLE_KINDS = ['variable_studio', 'part_studio_features'] as const;
+
+export type CadVariableKind = (typeof CAD_VARIABLE_KINDS)[number];
+
 export type CadModelDescriptor = {
   provider: CadProvider;
   schema_version: string;
   ref: OnshapeRef | DryRunRef | Record<string, unknown>;
   variable_map?: Record<string, string> | null;
+  variable_kind?: CadVariableKind;
 };
 
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
@@ -52,7 +59,10 @@ export function validateCadModelDescriptor(value: unknown): string[] {
     return ['(root): expected an object'];
   }
 
-  const { provider, schema_version, ref, variable_map } = value as Record<string, unknown>;
+  const { provider, schema_version, ref, variable_map, variable_kind } = value as Record<
+    string,
+    unknown
+  >;
 
   if (!isNonEmptyString(provider) || !(CAD_PROVIDERS as readonly string[]).includes(provider)) {
     errors.push(
@@ -72,6 +82,15 @@ export function validateCadModelDescriptor(value: unknown): string[] {
   }
 
   errors.push(...validateVariableMap(variable_map));
+
+  if (
+    variable_kind !== undefined &&
+    !(CAD_VARIABLE_KINDS as readonly unknown[]).includes(variable_kind)
+  ) {
+    errors.push(
+      `variable_kind: expected one of ${CAD_VARIABLE_KINDS.join(', ')} or omitted, got ${JSON.stringify(variable_kind)}`,
+    );
+  }
 
   return errors;
 }
