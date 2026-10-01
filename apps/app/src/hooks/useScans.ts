@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { listMeasurements, listScans, type Scan } from '../lib/api';
+import { listMeasurements, listScans, requestScanDeletion, type Scan } from '../lib/api';
 import {
+  deleteErrorMessage,
   groupScanSessions,
   latestMeasurements,
   sessionLegs,
@@ -77,4 +78,30 @@ export function useScanSession(key: string): ScanSessionDetail {
     error: error ?? measured.error,
     reload,
   };
+}
+
+/** Delete both legs of a session. Resolves true on success; on failure sets a
+ * user-facing message (deleteErrorMessage) and resolves false. */
+export function useDeleteScanSession(session: ScanSession | null) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const remove = useCallback(async (): Promise<boolean> => {
+    if (!session) {
+      return false;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      await requestScanDeletion(sessionLegs(session).map((scan) => scan.id));
+      return true;
+    } catch (err) {
+      setError(deleteErrorMessage(err));
+      return false;
+    } finally {
+      setDeleting(false);
+    }
+  }, [session]);
+
+  return { remove, deleting, error };
 }

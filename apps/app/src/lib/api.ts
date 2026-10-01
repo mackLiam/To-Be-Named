@@ -174,11 +174,12 @@ const DEMO_ORDERS: Order[] = [
 
 export async function listScans(): Promise<Scan[]> {
   if (USE_FAKE_DATA) {
-    return DEMO_SCANS;
+    return DEMO_SCANS.filter((scan) => !demoDeleted.has(scan.id));
   }
   const { data, error } = await getSupabaseClient()
     .from('scans')
     .select('id, leg, status, pair_id, created_at')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(SCAN_LIST_LIMIT);
   if (error) {
@@ -265,6 +266,29 @@ export function toProduct(row: ProductQueryRow): Product {
     priceCents: row.base_price_cents,
     ...(row.image_url ? { image: { uri: row.image_url } } : {}),
   };
+}
+
+/** Demo-mode deletions, so the delete flow is clickable with no backend.
+ * Lives only as long as the JS session, like everything else in fake mode. */
+const demoDeleted = new Set<string>();
+
+/**
+ * Delete one session (both legs). The RPC (supabase/migrations/0011) checks
+ * ownership, refuses scans on an order and hides them at once; the purge
+ * worker erases the files afterwards. Throws the PostgREST error as is, so
+ * deleteErrorMessage can branch on its SQLSTATE code.
+ */
+export async function requestScanDeletion(scanIds: readonly string[]): Promise<void> {
+  if (USE_FAKE_DATA) {
+    scanIds.forEach((id) => demoDeleted.add(id));
+    return;
+  }
+  const { error } = await getSupabaseClient().rpc('request_scan_deletion', {
+    p_scan_ids: scanIds,
+  });
+  if (error) {
+    throw error;
+  }
 }
 
 export async function listOrders(): Promise<Order[]> {

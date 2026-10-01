@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { Measurements } from '@forms/shared';
@@ -8,7 +9,7 @@ import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
 import { Rule } from '../../src/components/Rule';
 import { Screen } from '../../src/components/Screen';
-import { useScanSession } from '../../src/hooks/useScans';
+import { useDeleteScanSession, useScanSession } from '../../src/hooks/useScans';
 import {
   formatMm,
   formatSessionDate,
@@ -36,8 +37,18 @@ const SLICE_HEIGHT: Record<(typeof SLICES)[number], string> = {
 
 export default function ScanDetailScreen() {
   const router = useRouter();
-  const { key } = useLocalSearchParams<{ key: string }>();
+  // fresh=1: the capture flow just saved this scan and sent the user here to
+  // keep it, rescan, or delete it.
+  const { key, fresh } = useLocalSearchParams<{ key: string; fresh?: string }>();
   const { session, measurements, loading, error, reload } = useScanSession(key ?? '');
+  const { remove, deleting, error: deleteError } = useDeleteScanSession(session);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  async function deleteThen(next: '/' | '/scans') {
+    if (await remove()) {
+      router.navigate(next);
+    }
+  }
 
   if (!session) {
     return (
@@ -70,6 +81,25 @@ export default function ScanDetailScreen() {
       <View style={{ height: spacing.sm }} />
       <Heading level="h1">{formatSessionDate(session.createdAt)}</Heading>
       <View style={{ height: spacing.lg }} />
+
+      {fresh === '1' && !confirmingDelete && (
+        <View style={styles.freshPanel}>
+          <Heading level="h3">Saved to your library.</Heading>
+          <View style={{ height: spacing.xs }} />
+          <Body variant="bodySmall" color={colors.textSecondary}>
+            Happy with this scan? Keep it for later. If something looks off, delete it and scan
+            again.
+          </Body>
+          <View style={{ height: spacing.md }} />
+          <View style={styles.actions}>
+            <Button onPress={() => router.navigate('/scans')}>Keep it</Button>
+            <Button variant="outline" onPress={() => setConfirmingDelete(true)}>
+              Delete and rescan
+            </Button>
+          </View>
+          <View style={{ height: spacing.lg }} />
+        </View>
+      )}
 
       {status === 'ready' && (
         <Button onPress={() => router.navigate('/shop')}>Order guards from this scan</Button>
@@ -109,6 +139,42 @@ export default function ScanDetailScreen() {
         scan={session.right}
         values={session.right && measurements.get(session.right.id)}
       />
+
+      {confirmingDelete ? (
+        <View accessibilityLiveRegion="polite">
+          <Heading level="h3">Delete both legs for good?</Heading>
+          <View style={{ height: spacing.xs }} />
+          <Body variant="bodySmall" color={colors.textSecondary}>
+            The 3D scans and measurements are erased. This cannot be undone.
+          </Body>
+          <View style={{ height: spacing.md }} />
+          <View style={styles.actions}>
+            <Button variant="secondary" disabled={deleting} onPress={() => deleteThen('/')}>
+              Delete and rescan
+            </Button>
+            <Button variant="outline" disabled={deleting} onPress={() => deleteThen('/scans')}>
+              Delete only
+            </Button>
+            <Button
+              variant="outline"
+              disabled={deleting}
+              onPress={() => setConfirmingDelete(false)}
+            >
+              Cancel
+            </Button>
+          </View>
+        </View>
+      ) : (
+        <Button variant="outline" onPress={() => setConfirmingDelete(true)}>
+          Delete this scan
+        </Button>
+      )}
+      {deleteError && (
+        <>
+          <View style={{ height: spacing.sm }} />
+          <Body color={colors.danger}>{deleteError}</Body>
+        </>
+      )}
     </Screen>
   );
 }
@@ -221,6 +287,11 @@ function rescanLabel(session: ScanSession): string {
 const styles = StyleSheet.create({
   actions: {
     gap: spacing.sm,
+  },
+  freshPanel: {
+    borderLeftWidth: 4,
+    borderLeftColor: colors.textPrimary,
+    paddingLeft: spacing.md,
   },
   legHeader: {
     flexDirection: 'row',

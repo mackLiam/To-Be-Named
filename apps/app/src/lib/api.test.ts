@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { validateMeasurements } from '@forms/shared';
 
-import { listMeasurements, listOrders, listProducts, listScans, toOrder, toProduct } from './api';
+import {
+  listMeasurements,
+  listOrders,
+  listProducts,
+  listScans,
+  requestScanDeletion,
+  toOrder,
+  toProduct,
+} from './api';
 import { groupScanSessions, sessionStatus } from './library';
 
 // No EXPO_PUBLIC_SUPABASE_* env vars are set in the test environment, so
@@ -33,6 +41,16 @@ describe('data-layer stubs (no backend configured)', () => {
       expect(validateMeasurements(row.values).valid).toBe(true);
       expect(scans.find((s) => s.id === row.scanId)?.status).toBe('ready');
     }
+  });
+
+  it('demo deletion removes both legs of a session from the library', async () => {
+    const before = groupScanSessions(await listScans());
+    const target = before.find((s) => sessionStatus(s) === 'needs_rescan');
+    const ids = [target?.left?.id, target?.right?.id].filter((id): id is string => !!id);
+    await requestScanDeletion(ids);
+    const after = await listScans();
+    expect(after.some((scan) => ids.includes(scan.id))).toBe(false);
+    expect(groupScanSessions(after)).toHaveLength(before.length - 1);
   });
 
   it('listMeasurements returns nothing for no scan ids', async () => {

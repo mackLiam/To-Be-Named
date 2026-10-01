@@ -146,3 +146,13 @@ export function formatSessionDate(iso: string): string {
     year: 'numeric',
   });
 }
+
+/** User-facing message for a failed delete. 23514 is the RPC refusing a scan
+ * that is on an order (supabase/migrations/0011). */
+export function deleteErrorMessage(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === '23514') {
+    return 'This scan is on an order, so it is kept until the order is done.';
+  }
+  return 'Could not delete this scan. Check your connection and try again.';
+}

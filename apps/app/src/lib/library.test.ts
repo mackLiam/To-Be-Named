@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MEASUREMENT_KEYS } from '@forms/shared';
 
 import {
+  deleteErrorMessage,
   groupScanSessions,
   latestMeasurements,
   sessionStatus,
@@ -116,5 +117,17 @@ describe('slice keys', () => {
   it('cover exactly the 24 slice variables of the frozen schema', () => {
     const keys = SLICES.flatMap((s) => SLICE_DIMS.map((d) => sliceKey(s, d)));
     expect(['Leg_Length', ...keys].sort()).toEqual([...MEASUREMENT_KEYS].sort());
+  });
+});
+
+describe('deleteErrorMessage', () => {
+  it('explains a scan kept because it is on an order', () => {
+    expect(deleteErrorMessage({ code: '23514' })).toMatch(/on an order/);
+  });
+
+  it('falls back to a retry message for anything else', () => {
+    expect(deleteErrorMessage({ code: '42501' })).toMatch(/try again/);
+    expect(deleteErrorMessage(new Error('network'))).toMatch(/try again/);
+    expect(deleteErrorMessage(null)).toMatch(/try again/);
   });
 });
