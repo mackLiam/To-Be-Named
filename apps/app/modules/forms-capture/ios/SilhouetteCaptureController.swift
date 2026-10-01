@@ -79,6 +79,7 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
   private var aimError = false
   private var autoAimRunning = false
   private var aimStartedAt: TimeInterval?
+  private var aimTapOffered = false
   private var lastAutoAim: TimeInterval = 0
   private var lineAnchor: AnchorEntity?
 
@@ -426,6 +427,10 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
       if aimStartedAt == nil { aimStartedAt = now }
       autoAim(frame, now: now)
       let slow = now - (aimStartedAt ?? now) >= SilhouetteTuning.autoAimFallbackS
+      if slow != aimTapOffered {
+        aimTapOffered = slow
+        refreshOverlay()
+      }
       let hint = aimError
         ? SilhouetteCaptureLogic.aimFailed
         : (slow ? SilhouetteCaptureLogic.aimTapFallback : SilhouetteCaptureLogic.aimInstruction)
@@ -1107,7 +1112,7 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
       if lowLight && !torchOn {
         text = SilhouetteCaptureLogic.darkHint
       } else if let target {
-        text = "Photo \(captured.count + 1) of \(SilhouetteTuning.stationCount): \(target.spokenName). Tap a dot to retake it."
+        text = "Photo \(captured.count + 1) of \(SilhouetteTuning.stationCount)"
       } else {
         text = "Tap a dot to retake it."
       }
@@ -1134,8 +1139,11 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
   private func refreshOverlay() {
     let stations = phase == .stations
     let target = stations ? SilhouetteCaptureLogic.target(captured: capturedSet, selected: selected) : nil
-    reticle.isHidden = phase != .aim
-    checklistPanel.isHidden = !stations || target == nil
+    reticle.isHidden = phase != .aim || !aimTapOffered
+    // One instruction at a time: the checks still run, and the top message
+    // already names the most important failing one with its fix (Liam on
+    // device: "just like 1 thing to help").
+    checklistPanel.isHidden = true
     mapView.isHidden = !stations
     mapView.frontAzimuth = CGFloat(frontAzimuth)
     mapView.stations = SilhouetteStation.allCases.map {
@@ -1451,6 +1459,10 @@ private final class ChecklistRow: UIStackView {
     icon.image = UIImage(systemName: symbol)
     icon.tintColor = tint
     if detailLabel.text != detail { detailLabel.text = detail }
+    // Passing checks keep running but leave the screen; only what needs fixing
+    // shows (Liam on device: "very cluttered ... hide the things we do right").
+    let hide = ok == true
+    if isHidden != hide { isHidden = hide }
     accessibilityLabel = titleLabel.text
     accessibilityValue = "\(ok == true ? "OK" : ok == false ? "Not yet" : "Checking"). \(detail)"
   }
