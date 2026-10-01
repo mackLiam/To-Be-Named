@@ -1,0 +1,139 @@
+/* Long-form pages (privacy, terms, support, 404). The display title hangs at
+ * the gutter; the reading column (about 64ch) is indented under it on wide
+ * screens so the page has a deliberate offset, not a centered column. */
+
+.main {
+  --indent: clamp(0px, 14vw, 240px);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.article {
+  padding: var(--space-xxl) var(--gutter) var(--space-xxxl);
+}
+
+.kicker {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: 0 0 var(--space-md);
+}
+
+.title {
+  font-weight: 800;
+  font-size: clamp(48px, 9vw, 128px);
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  max-width: 12ch;
+}
+
+.lede {
+  font-size: clamp(18px, 2.2vw, 21px);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 52ch;
+  margin: var(--space-lg) 0 0 var(--indent);
+}
+
+/* Draft notice: a flat brown block so nobody misses it. */
+.notice {
+  margin: var(--space-xl) 0 0 var(--indent);
+  max-width: 64ch;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--surface-dark);
+  color: var(--on-dark);
+  font-weight: 700;
+  border-radius: var(--radius);
+}
+
+.body {
+  max-width: 64ch;
+  margin: var(--space-xl) 0 0 var(--indent);
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.body section {
+  padding: var(--space-lg) 0 var(--space-md);
+  border-top: 2px solid var(--brown-900);
+}
+
+.body h2 {
+  font-weight: 700;
+  font-size: clamp(24px, 3vw, 32px);
+  line-height: 1.15;
+  margin: 0 0 var(--space-md);
+}
+
+.body h3 {
+  font-weight: 700;
+  font-size: 19px;
+  margin: var(--space-lg) 0 var(--space-sm);
+}
+
+.body p,
+.body ul {
+  margin: 0 0 var(--space-md);
+  color: var(--text-secondary);
+}
+
+.body ul {
+  padding-left: 1.2em;
+}
+
+.body li + li {
+  margin-top: var(--space-sm);
+}
+
+.body strong {
+  color: var(--text-primary);
+}
+
+/* Brick 600 for small action text on yellow (4.7:1). */
+.body a {
+  color: var(--action);
+  font-weight: 700;
+}
+
+.placeholder {
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--surface-muted);
+  padding: 0 4px;
+}
+
+/* 404 */
+.bigNum {
+  font-family: var(--font-display-stack);
+  font-weight: 800;
+  font-size: clamp(120px, 26vw, 280px);
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  color: var(--brick-500);
+  margin: 0 0 var(--space-lg);
+}
+
+.action {
+  display: inline-block;
+  margin: var(--space-xl) 0 0 var(--indent);
+  padding: 12px 22px;
+  font-weight: 700;
+  color: var(--on-action);
+  background: var(--action);
+  border-radius: var(--radius);
+  text-decoration: none;
+}
+
+.action:hover {
+  background: var(--action-pressed);
+}
+
+@media (max-width: 860px) {
+  .main {
+    --indent: 0px;
+  }
+}

@@ -1,0 +1,104 @@
+/* Waitlist form. Lives on yellow or the muted surface only: the danger and
+ * action tokens are contrast-checked against yellow, not brown. */
+
+.form {
+  font-family: var(--font-body-stack);
+  max-width: 560px;
+}
+
+.label {
+  display: block;
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: var(--space-sm);
+}
+
+.row {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 12px 14px;
+  font-size: 17px;
+  color: var(--text-primary);
+  background: var(--bg);
+  border: 2px solid var(--brown-900);
+  border-radius: var(--radius);
+}
+
+.input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.button {
+  flex: 0 0 auto;
+  padding: 12px 22px;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--on-action);
+  background: var(--action);
+  border: 2px solid var(--action);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color 80ms ease-out;
+}
+
+.button:hover,
+.button:active {
+  background: var(--action-pressed);
+  border-color: var(--action-pressed);
+}
+
+.button:disabled {
+  cursor: progress;
+  background: var(--disabled);
+  border-color: var(--disabled);
+  color: var(--text-primary);
+}
+
+.message,
+.error {
+  min-height: 1.5em;
+  margin: var(--space-sm) 0 0;
+  font-size: 15px;
+}
+
+.message {
+  color: var(--text-secondary);
+}
+
+.error {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.done {
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 17px;
+  margin: 0;
+  padding: var(--space-md) 0;
+  border-top: 3px solid var(--brown-900);
+  max-width: 560px;
+}
+
+.trap {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+@media (max-width: 520px) {
+  .row {
+    flex-direction: column;
+  }
+}

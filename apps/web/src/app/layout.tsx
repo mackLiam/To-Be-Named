@@ -3,6 +3,8 @@ import { Manrope, Outfit } from 'next/font/google';
 
 import { BRAND_NAME } from '@forms/shared/brand';
 
+import { getSiteUrl } from '@/lib/env';
+
 import './globals.css';
 
 // Self-hosted via next/font: fonts are downloaded and served from our own
@@ -22,10 +24,15 @@ const manrope = Manrope({
   display: 'swap',
 });
 
+const title = `${BRAND_NAME} - custom-fit shin guards`;
+const description =
+  'Shin guards molded to your leg. Scan with your iPhone, we generate the fit, we print and ship it.';
+
 export const metadata: Metadata = {
-  title: `${BRAND_NAME} - custom-fit shin guards`,
-  description:
-    'Shin guards molded to your leg. Scan with your iPhone, we generate the fit, we print and ship it.',
+  metadataBase: new URL(getSiteUrl() ?? 'https://zells.com'),
+  title,
+  description,
+  openGraph: { title, description, siteName: BRAND_NAME, type: 'website' },
   icons: {
     icon: [
       { url: '/brand/icon-brick.svg', type: 'image/svg+xml' },

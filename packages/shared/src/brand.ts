@@ -2,3 +2,6 @@
 // Kept free of imports so apps/app/app.config.ts can load this file directly
 // and Metro can bundle it without the Node-only validator.
 export const BRAND_NAME = 'FORMS';
+
+// The zells.com domain is kept on purpose through the FORMS rename.
+export const SUPPORT_EMAIL = 'support@zells.com';

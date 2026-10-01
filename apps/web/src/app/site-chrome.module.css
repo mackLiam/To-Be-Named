@@ -1,0 +1,68 @@
+/* Shared chrome for public pages: brown bands top and bottom, the only
+ * wordmark asset is the reverse one, so both bands stay stud brown. */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 18px var(--gutter);
+  background: var(--surface-dark);
+  color: var(--on-dark);
+}
+
+.wordmark {
+  height: 22px;
+  width: auto;
+}
+
+.status {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--on-dark);
+}
+
+/* Footer: an oversized wordmark carries the band, links run underneath. */
+.footer {
+  margin-top: auto;
+  background: var(--surface-dark);
+  color: var(--on-dark-muted);
+  padding: var(--space-xxl) var(--gutter) var(--space-xl);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xl) var(--space-xxl);
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: 15px;
+}
+
+.footerMark {
+  width: min(100%, 420px);
+  height: auto;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-lg);
+}
+
+/* Yellow on brown: the checked pairing for small text on dark. */
+.nav a {
+  color: var(--on-dark);
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.nav a:hover {
+  border-bottom-color: var(--accent-on-dark);
+}
+
+/* The global focus ring is brick 600, too dark to see on brown. */
+.nav a:focus-visible,
+.home:focus-visible {
+  outline-color: var(--on-dark);
+}
