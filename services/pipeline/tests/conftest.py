@@ -10,6 +10,8 @@ import numpy as np
 import pytest
 import trimesh
 
+from forms_pipeline.config import Settings
+
 # Constructed dimensions for the tapered frustum used to approximate a shin.
 # Narrow end = ankle-end analog (slice origin, Z=0 after orientation), wide
 # end = knee-end analog (see extraction/measure.py module docstring for the
@@ -20,6 +22,13 @@ FRUSTUM_WIDE_RY_MM = 45.0
 FRUSTUM_NARROW_RX_MM = 35.0
 FRUSTUM_NARROW_RY_MM = 28.0
 FRUSTUM_SIDES = 64
+
+
+@pytest.fixture(autouse=True)
+def _no_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never read the developer's .env: real Onshape keys there would
+    switch tests out of dry run and point them at live documents."""
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
 
 
 def make_tapered_frustum(

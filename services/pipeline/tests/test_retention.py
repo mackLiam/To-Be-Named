@@ -50,6 +50,7 @@ class FakeStorageClient:
     files: dict[tuple[str, str], bytes] = field(default_factory=dict)
     deleted: list[tuple[str, str]] = field(default_factory=list)
     raise_on: set[tuple[str, str]] = field(default_factory=set)
+    listed: list[tuple[str, str]] = field(default_factory=list)
 
     def download(self, bucket: str, path: str) -> bytes:
         return self.files[(bucket, path)]
@@ -63,10 +64,17 @@ class FakeStorageClient:
         self.files.pop((bucket, path), None)  # no-op if already absent, like a real 404
         self.deleted.append((bucket, path))
 
+    def list(self, bucket: str, prefix: str) -> list[str]:
+        self.listed.append((bucket, prefix))
+        return sorted(p for b, p in self.files if b == bucket and p.startswith(prefix))
 
-def _pending(scan_id: str, mesh_path: str) -> PendingMesh:
+
+def _pending(scan_id: str, mesh_path: str, user_id: str | None = None) -> PendingMesh:
     return PendingMesh(
-        scan_id=scan_id, mesh_path=mesh_path, job_completed_at="2026-06-01T00:00:00Z"
+        scan_id=scan_id,
+        user_id=user_id or mesh_path.split("/")[0],
+        mesh_path=mesh_path,
+        job_completed_at="2026-06-01T00:00:00Z",
     )
 
 
@@ -157,6 +165,7 @@ def test_dry_run_touches_nothing() -> None:
     assert result.failed == 0
     assert result.dry_run is True
     assert storage.deleted == []
+    assert storage.listed == []
     assert store.marked == []
     # The read-only fetch still happens (needed to log what dry-run would do)...
     assert store.fetch_calls == [(30, 100)]
@@ -196,3 +205,61 @@ def test_idempotent_rerun_never_double_deletes_or_errors() -> None:
     assert second.failed == 0
     assert storage.deleted.count(("meshes", "user-1/scan-1.obj")) == 1
     assert len(store.marked) == 1
+
+
+def test_photo_bundle_prefix_deleted_with_mesh() -> None:
+    bundle = [
+        "user-1/scan-1/capture.json",
+        "user-1/scan-1/images/000.jpg",
+        "user-1/scan-1/images/001.jpg",
+    ]
+    store = FakeRetentionStore(items=[_pending("scan-1", "user-1/scan-1.obj")])
+    storage = FakeStorageClient(
+        files={
+            ("meshes", "user-1/scan-1.obj"): b"mesh",
+            # Same user, other scan whose name shares the scan-1 prefix: must survive.
+            ("meshes", "user-1/scan-10/capture.json"): b"other",
+            **{("meshes", p): b"x" for p in bundle},
+        }
+    )
+    ctx = RetentionContext(store=store, storage=storage)
+
+    result = run_retention_sweep(ctx, retention_days=30, batch_size=100, dry_run=False)
+
+    assert result.deleted == 1
+    assert storage.listed == [("meshes", "user-1/scan-1/")]
+    assert {p for _, p in storage.deleted} == {*bundle, "user-1/scan-1.obj"}
+    assert list(storage.files) == [("meshes", "user-1/scan-10/capture.json")]
+    assert [scan_id for scan_id, _ in store.marked] == ["scan-1"]
+
+
+def test_foreign_mesh_path_deletes_nothing_and_is_not_marked() -> None:
+    # scans.mesh_path is client-writable: a path into another user's prefix
+    # must never be deleted by the service-role sweep.
+    store = FakeRetentionStore(items=[_pending("scan-1", "user-2/scan-9.obj", user_id="user-1")])
+    storage = FakeStorageClient(files={("meshes", "user-2/scan-9.obj"): b"theirs"})
+    ctx = RetentionContext(store=store, storage=storage)
+
+    result = run_retention_sweep(ctx, retention_days=30, batch_size=100, dry_run=False)
+
+    assert result.failed == 1
+    assert result.deleted == 0
+    assert storage.deleted == []
+    assert ("meshes", "user-2/scan-9.obj") in storage.files
+    assert store.marked == []
+
+
+def test_listing_failure_leaves_scan_unmarked_for_retry() -> None:
+    class FailingList(FakeStorageClient):
+        def list(self, bucket: str, prefix: str) -> list[str]:
+            raise RuntimeError("storage list exceeded")
+
+    store = FakeRetentionStore(items=[_pending("scan-1", "user-1/scan-1.obj")])
+    storage = FailingList(files={("meshes", "user-1/scan-1.obj"): b"mesh"})
+    ctx = RetentionContext(store=store, storage=storage)
+
+    result = run_retention_sweep(ctx, retention_days=30, batch_size=100, dry_run=False)
+
+    assert result.failed == 1
+    assert store.marked == []
+    assert ("meshes", "user-1/scan-1.obj") in storage.files

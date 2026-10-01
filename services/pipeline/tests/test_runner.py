@@ -9,14 +9,24 @@ import trimesh
 
 from forms_pipeline.cad.dispatch import CadDispatcher
 from forms_pipeline.config import Settings
+from forms_pipeline.jobs import runner
 from forms_pipeline.jobs.runner import (
+    STEP_HANDLERS,
     Job,
     JobContext,
+    ScanInfo,
+    ScanPathError,
     SupabaseStorageClient,
     handle_generating_cad,
     handle_measuring,
+    owned_mesh_path,
+    process_job,
+    resolve_worker_steps,
     run_once,
 )
+from forms_pipeline.onshape.client import OnshapeRejectedError
+
+ALL_STEPS = tuple(STEP_HANDLERS)
 
 
 class FakeJobStore:
@@ -24,22 +34,31 @@ class FakeJobStore:
 
     def __init__(self) -> None:
         self.jobs: list[Job] = []
+        # scan_id -> mesh_path; owner is the path's first segment unless
+        # overridden in scan_owners (to model a foreign mesh_path).
         self.scans: dict[str, str] = {}
+        self.scan_owners: dict[str, str] = {}
+        self.claim_steps: list[tuple[str, ...]] = []
         self.measurements: dict[tuple[str, str], dict[str, float]] = {}
         # Per-job CAD model descriptor dicts; a missing entry means None
         # (dispatcher falls back to the env default model).
         self.cad_models: dict[str, dict[str, Any] | None] = {}
         self.measurement_write_count = 0
         self.advanced: list[tuple[str, str, dict[str, Any] | None]] = []
-        self.completed: list[tuple[str, dict[str, Any] | None]] = []
+        self.completed: list[tuple[str, str, dict[str, Any] | None]] = []
         self.failed: list[tuple[str, dict[str, Any], bool]] = []
 
-    def claim_jobs(self, worker_id: str, limit: int = 1) -> list[Job]:
-        claimed, self.jobs = self.jobs[:limit], self.jobs[limit:]
+    def claim_jobs(self, worker_id: str, steps: tuple[str, ...], limit: int = 1) -> list[Job]:
+        # Mirrors claim_pipeline_job: only jobs whose step is in `steps`.
+        self.claim_steps.append(steps)
+        claimed = [job for job in self.jobs if job.step in steps][:limit]
+        self.jobs = [job for job in self.jobs if job not in claimed]
         return claimed
 
-    def get_scan_mesh_path(self, scan_id: str) -> str:
-        return self.scans[scan_id]
+    def get_scan(self, scan_id: str) -> ScanInfo:
+        mesh_path = self.scans[scan_id]
+        owner = self.scan_owners.get(scan_id, mesh_path.split("/")[0])
+        return ScanInfo(user_id=owner, capture_kind="mesh", mesh_path=mesh_path)
 
     def upsert_measurements(
         self,
@@ -61,8 +80,8 @@ class FakeJobStore:
     def advance(self, job_id: str, next_step: str, artifacts: dict[str, Any] | None = None) -> None:
         self.advanced.append((job_id, next_step, artifacts))
 
-    def complete(self, job_id: str, artifacts: dict[str, Any] | None = None) -> None:
-        self.completed.append((job_id, artifacts))
+    def complete(self, job_id: str, step: str, artifacts: dict[str, Any] | None = None) -> None:
+        self.completed.append((job_id, step, artifacts))
 
     def fail(self, job_id: str, error: dict[str, Any], retriable: bool = True) -> None:
         self.failed.append((job_id, error, retriable))
@@ -118,16 +137,16 @@ def test_failing_handler_marks_job_failed_and_loop_continues(
     ]
     ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
 
-    claimed = run_once("worker-1", ctx, limit=2)
+    claimed = run_once("worker-1", ctx, ALL_STEPS, limit=2)
 
     assert claimed == 2
     # The bad job failed without raising out of the loop...
     assert len(store.failed) == 1
     assert store.failed[0][0] == "job-bad"
-    # ...and the loop kept going: the good job still got processed and advanced.
-    assert len(store.advanced) == 1
-    assert store.advanced[0][0] == "job-good"
-    assert store.advanced[0][1] == "measured"
+    # ...and the loop kept going: the good job was completed at 'measured' in
+    # one call (never advanced to a pending 'measured' job no handler claims).
+    assert [(job_id, step) for job_id, step, _ in store.completed] == [("job-good", "measured")]
+    assert store.advanced == []
 
 
 def test_gate_violation_fails_job_as_non_retriable(frustum_mesh: trimesh.Trimesh) -> None:
@@ -135,24 +154,28 @@ def test_gate_violation_fails_job_as_non_retriable(frustum_mesh: trimesh.Trimesh
     huge_mesh = frustum_mesh.copy()
     huge_mesh.apply_scale(10.0)
     store = FakeJobStore()
-    storage = FakeStorageClient(files={("meshes", "scan.obj"): _frustum_obj_bytes(huge_mesh)})
-    store.scans = {"scan-1": "scan.obj"}
+    storage = FakeStorageClient(
+        files={("meshes", "user-1/scan.obj"): _frustum_obj_bytes(huge_mesh)}
+    )
+    store.scans = {"scan-1": "user-1/scan.obj"}
     store.jobs = [_measuring_job("job-1", "scan-1")]
     ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
 
-    run_once("worker-1", ctx, limit=1)
+    run_once("worker-1", ctx, ALL_STEPS, limit=1)
 
     assert len(store.failed) == 1
     job_id, error, retriable = store.failed[0]
     assert job_id == "job-1"
     assert retriable is False
-    assert not store.advanced
+    assert not store.completed
 
 
 def test_measure_step_idempotent_rerun_does_not_duplicate(frustum_mesh: trimesh.Trimesh) -> None:
     store = FakeJobStore()
-    storage = FakeStorageClient(files={("meshes", "scan.obj"): _frustum_obj_bytes(frustum_mesh)})
-    store.scans = {"scan-1": "scan.obj"}
+    storage = FakeStorageClient(
+        files={("meshes", "user-1/scan.obj"): _frustum_obj_bytes(frustum_mesh)}
+    )
+    store.scans = {"scan-1": "user-1/scan.obj"}
     job = _measuring_job("job-1", "scan-1")
     ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
 
@@ -183,7 +206,7 @@ def _seed_measurements(store: FakeJobStore, scan_id: str) -> None:
     store.measurements[(scan_id, EXTRACTION_VERSION)] = {key: 100.0 for key in MEASUREMENT_KEYS}
 
 
-def test_generating_cad_with_per_product_descriptor_uploads_and_advances() -> None:
+def test_generating_cad_with_per_product_descriptor_uploads_and_completes() -> None:
     store = FakeJobStore()
     storage = FakeStorageClient()
     _seed_measurements(store, "scan-1")
@@ -199,7 +222,11 @@ def test_generating_cad_with_per_product_descriptor_uploads_and_advances() -> No
     handle_generating_cad(job, ctx)
 
     assert ("stls", "scan-1/job-1.stl") in storage.uploaded
-    assert store.advanced == [("job-1", "stl_ready", {"stl_path": "scan-1/job-1.stl"})]
+    # Phase 0: the CAD job ends at stl_ready (print steps are manual).
+    [(job_id, step, artifacts)] = store.completed
+    assert (job_id, step, artifacts["stl_path"]) == ("job-1", "stl_ready", "scan-1/job-1.stl")
+    assert "cad" in artifacts
+    assert store.advanced == []
 
 
 def test_generating_cad_falls_back_to_default_descriptor() -> None:
@@ -214,7 +241,7 @@ def test_generating_cad_falls_back_to_default_descriptor() -> None:
     handle_generating_cad(job, ctx)
 
     assert ("stls", "scan-1/job-1.stl") in storage.uploaded
-    assert store.advanced[0][1] == "stl_ready"
+    assert store.completed[0][1] == "stl_ready"
 
 
 def test_generating_cad_bad_descriptor_fails_non_retriable() -> None:
@@ -233,13 +260,13 @@ def test_generating_cad_bad_descriptor_fails_non_retriable() -> None:
     store.jobs = [job]
     ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
 
-    run_once("worker-1", ctx, limit=1)
+    run_once("worker-1", ctx, ALL_STEPS, limit=1)
 
     assert len(store.failed) == 1
     failed_job_id, _error, retriable = store.failed[0]
     assert failed_job_id == "job-1"
     assert retriable is False
-    assert not store.advanced
+    assert not store.completed
 
 
 def _storage_client_with_transport(handler) -> SupabaseStorageClient:  # noqa: ANN001
@@ -281,3 +308,186 @@ def test_storage_delete_succeeds_on_200() -> None:
     client = _storage_client_with_transport(handler)
 
     client.delete("meshes", "user-1/scan.obj")  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Step-filtered claiming and WORKER_STEPS
+# ---------------------------------------------------------------------------
+
+
+def test_run_once_claims_only_the_given_steps(frustum_mesh: trimesh.Trimesh) -> None:
+    store = FakeJobStore()
+    storage = FakeStorageClient(
+        files={("meshes", "user-1/scan.obj"): _frustum_obj_bytes(frustum_mesh)}
+    )
+    store.scans = {"scan-1": "user-1/scan.obj"}
+    reconstruct_job = Job(
+        id="job-r",
+        scan_id="scan-2",
+        order_id=None,
+        step="reconstructing",
+        status="pending",
+        attempts=0,
+        max_attempts=3,
+    )
+    store.jobs = [reconstruct_job, _measuring_job("job-m", "scan-1")]
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
+
+    claimed = run_once("worker-1", ctx, ("measuring",), limit=5)
+
+    assert claimed == 1
+    assert store.claim_steps == [("measuring",)]
+    assert [job_id for job_id, _, _ in store.completed] == ["job-m"]
+    # Never claimed, so never failed for lack of a handler.
+    assert store.jobs == [reconstruct_job]
+    assert store.failed == []
+
+
+def test_resolve_worker_steps_defaults_to_registered_handlers() -> None:
+    assert resolve_worker_steps(Settings()) == ALL_STEPS
+    assert set(ALL_STEPS) >= {"measuring", "generating_cad"}
+
+
+def test_resolve_worker_steps_narrows_to_worker_steps() -> None:
+    assert resolve_worker_steps(Settings(worker_steps="measuring")) == ("measuring",)
+
+
+def test_resolve_worker_steps_rejects_unregistered_step() -> None:
+    # 'printing' is a real pipeline step with no handler in this build.
+    with pytest.raises(ValueError, match="no registered handler"):
+        resolve_worker_steps(Settings(worker_steps="measuring,printing"))
+
+
+def test_settings_reject_unknown_worker_step() -> None:
+    with pytest.raises(ValueError, match="unknown pipeline steps"):
+        Settings(worker_steps="measurin")
+
+
+def test_settings_parse_worker_steps_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WORKER_STEPS", " measuring , generating_cad ")
+    assert Settings().worker_steps == ("measuring", "generating_cad")
+    monkeypatch.setenv("WORKER_STEPS", "")
+    assert Settings().worker_steps == ()
+
+
+# ---------------------------------------------------------------------------
+# mesh_path ownership (plan A1)
+# ---------------------------------------------------------------------------
+
+
+def test_owned_mesh_path_accepts_owner_prefix() -> None:
+    assert owned_mesh_path("user-1", "user-1/scan-1.obj") == "user-1/scan-1.obj"
+
+
+@pytest.mark.parametrize(
+    "mesh_path",
+    [
+        "user-2/scan-1.obj",
+        "user-1",
+        "user-1/",
+        "user-10/scan.obj",
+        "user-1/../user-2/scan.obj",
+        "user-1//scan.obj",
+        "/user-1/scan.obj",
+    ],
+)
+def test_owned_mesh_path_rejects_paths_outside_prefix(mesh_path: str) -> None:
+    with pytest.raises(ScanPathError):
+        owned_mesh_path("user-1", mesh_path)
+
+
+def test_foreign_mesh_path_fails_job_non_retriably_without_download() -> None:
+    store = FakeJobStore()
+    storage = FakeStorageClient()  # any download would KeyError (retriable), not ScanPathError
+    store.scans = {"scan-1": "user-2/their-scan.obj"}
+    store.scan_owners = {"scan-1": "user-1"}
+    store.jobs = [_measuring_job("job-1", "scan-1")]
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
+
+    run_once("worker-1", ctx, ALL_STEPS, limit=1)
+
+    assert len(store.failed) == 1
+    _job_id, error, retriable = store.failed[0]
+    assert retriable is False
+    assert "outside the owner's storage prefix" in error["reason"]
+    assert store.completed == []
+
+
+# ---------------------------------------------------------------------------
+# SupabaseStorageClient.list
+# ---------------------------------------------------------------------------
+
+
+def _list_handler(tree: dict[str, list[dict[str, Any]]], calls: list[dict[str, Any]]):  # noqa: ANN202
+    import json
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/storage/v1/object/list/meshes"
+        body = json.loads(request.content)
+        calls.append(body)
+        entries = tree.get(body["prefix"], [])
+        return httpx.Response(200, json=entries[body["offset"] : body["offset"] + body["limit"]])
+
+    return handler
+
+
+def test_storage_list_pages_and_recurses_into_folders() -> None:
+    files = [{"name": f"{i:03d}.jpg", "id": f"id-{i}"} for i in range(105)]
+    tree = {
+        "user-1/scan-1": [{"name": "capture.json", "id": "c"}, {"name": "images", "id": None}],
+        "user-1/scan-1/images": files,
+    }
+    calls: list[dict[str, Any]] = []
+    client = _storage_client_with_transport(_list_handler(tree, calls))
+
+    paths = client.list("meshes", "user-1/scan-1/")
+
+    assert sorted(paths) == sorted(
+        ["user-1/scan-1/capture.json"] + [f"user-1/scan-1/images/{i:03d}.jpg" for i in range(105)]
+    )
+    assert [(c["prefix"], c["offset"]) for c in calls] == [
+        ("user-1/scan-1", 0),
+        ("user-1/scan-1/images", 0),
+        ("user-1/scan-1/images", 100),
+    ]
+
+
+def test_storage_list_empty_prefix_returns_nothing() -> None:
+    client = _storage_client_with_transport(_list_handler({}, []))
+    assert client.list("meshes", "user-1/scan-1/") == []
+
+
+def test_storage_list_raises_instead_of_truncating(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(runner, "STORAGE_LIST_MAX_PAGES", 2)
+    tree = {"u/s": [{"name": f"{i:03d}.jpg", "id": str(i)} for i in range(250)]}
+    client = _storage_client_with_transport(_list_handler(tree, []))
+
+    with pytest.raises(RuntimeError, match="exceeded 2 pages"):
+        client.list("meshes", "u/s/")
+
+
+def test_storage_list_raises_on_http_error() -> None:
+    client = _storage_client_with_transport(lambda request: httpx.Response(500))
+    with pytest.raises(httpx.HTTPStatusError):
+        client.list("meshes", "user-1/scan-1/")
+
+
+def test_generating_cad_onshape_rejection_fails_non_retriable() -> None:
+    store = FakeJobStore()
+    storage = FakeStorageClient()
+    _seed_measurements(store, "scan-1")
+    job = _cad_job("job-1", "scan-1", order_id="order-1")
+
+    class RejectingCad:
+        def generate(self, *_args: Any) -> Any:
+            raise OnshapeRejectedError("template is missing variables")
+
+    ctx = JobContext(store=store, storage=storage, cad=RejectingCad())  # type: ignore[arg-type]
+
+    process_job(job, ctx)
+
+    [(failed_job_id, _error, retriable)] = store.failed
+    assert failed_job_id == "job-1"
+    assert retriable is False
+    assert not storage.uploaded

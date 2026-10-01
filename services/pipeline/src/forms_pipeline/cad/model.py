@@ -14,8 +14,13 @@ Descriptor shape:
       "provider": "onshape",            # registry key; also "dry_run"; future "cadquery"
       "schema_version": "1.0.0",        # measurement schema version the model expects
       "ref": {"document_id": "...", "workspace_id": "...", "element_id": "..."},
-      "variable_map": null               # or {"<schema-name>": "<model-variable-name>"}
+      "variable_map": null,              # or {"<schema-name>": "<model-variable-name>"}
+      "variable_kind": "part_studio_features"  # optional; or "variable_studio"
     }
+
+variable_kind (Onshape only) says where the model keeps its variables:
+Part Studio Variable features in a template copied per job (default), or a
+Variable Studio written in place.
 
 `ref` is provider-specific and validated inside the owning provider, not here.
 Any descriptor problem (bad shape, a variable_map key outside the 25 schema
@@ -26,7 +31,8 @@ the runner fails the job (never the worker).
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -41,6 +47,14 @@ class DescriptorError(ValueError):
     names onto one model variable, and (raised by the provider) a ref missing
     provider-required identifiers. None of these succeed on retry.
     """
+
+
+@dataclass(frozen=True)
+class CadResult:
+    """A provider's output: STL bytes plus provider-specific job artifacts."""
+
+    stl_bytes: bytes
+    artifacts: dict[str, Any] = field(default_factory=dict)
 
 
 class CadModelDescriptor(BaseModel):
@@ -60,6 +74,7 @@ class CadModelDescriptor(BaseModel):
     # schema-name -> model-variable-name. None (or omitted) means identity for
     # all 25 names.
     variable_map: dict[str, str] | None = None
+    variable_kind: Literal["variable_studio", "part_studio_features"] = "part_studio_features"
 
     @model_validator(mode="after")
     def _validate_variable_map(self) -> CadModelDescriptor:

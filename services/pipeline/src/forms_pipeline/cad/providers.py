@@ -3,14 +3,16 @@
 docs/DESIGN.md section 7: the architecture isolates CAD generation behind a
 single interface so porting from Onshape to code-CAD (CadQuery/build123d) is a
 swap, not a rewrite. A provider takes the 25 measurement values (always in
-millimeters, the pipeline's canonical unit) plus a descriptor, and returns STL
-bytes. The millimeters -> native-unit conversion happens exactly once, inside
-the provider (docs/DESIGN.md gotcha #1); no other layer converts units.
+millimeters, the pipeline's canonical unit) plus a descriptor, and returns a
+CadResult (STL bytes plus job artifacts). The millimeters -> native-unit
+conversion happens exactly once, inside the provider (docs/DESIGN.md gotcha
+#1); no other layer converts units.
 
 Providers:
-- OnshapeProvider: drives the existing Onshape REST client against the ref in
-  the descriptor (not the env default), applying the descriptor's variable_map
-  and preserving the DRY_RUN fallback when credentials are absent.
+- OnshapeProvider: drives the Onshape REST client against the ref in the
+  descriptor (not the env default), applying the descriptor's variable_map,
+  dispatching on variable_kind, and preserving the DRY_RUN fallback when
+  credentials are absent.
 - DryRunProvider: returns a canned STL and logs; for demo products and
   plumbing tests with no CAD backend at all.
 
@@ -26,15 +28,11 @@ from typing import Protocol, runtime_checkable
 
 import httpx
 
-from forms_pipeline.cad.model import CadModelDescriptor, DescriptorError
+from forms_pipeline.cad.model import CadModelDescriptor, CadResult, DescriptorError
 from forms_pipeline.config import Settings, get_settings
-from forms_pipeline.onshape.client import OnshapeClient, OnshapeRef
+from forms_pipeline.onshape.client import DRY_RUN_STL, OnshapeClient, OnshapeRef
 
 logger = logging.getLogger(__name__)
-
-# Canned STL used by the dry-run provider. Kept identical to the Onshape
-# client's dry-run output so downstream plumbing sees the same bytes.
-DRY_RUN_STL = b"solid dry_run\nendsolid dry_run\n"
 
 
 class ProviderNotFoundError(ValueError):
@@ -43,13 +41,13 @@ class ProviderNotFoundError(ValueError):
 
 @runtime_checkable
 class CadProvider(Protocol):
-    """Generates STL bytes for one job from the 25 measurements plus a descriptor."""
+    """Generates STL (plus artifacts) for one job from the 25 measurements and a descriptor."""
 
     name: str
 
     def generate_stl(
         self, job_id: str, values_mm: dict[str, float], model: CadModelDescriptor
-    ) -> bytes: ...
+    ) -> CadResult: ...
 
 
 def _onshape_ref_from_descriptor(model: CadModelDescriptor) -> OnshapeRef:
@@ -80,9 +78,7 @@ class OnshapeProvider:
 
     name = "onshape"
 
-    def __init__(
-        self, settings: Settings | None = None, http_client: httpx.Client | None = None
-    ):
+    def __init__(self, settings: Settings | None = None, http_client: httpx.Client | None = None):
         self._settings = settings or get_settings()
         # Optional injected httpx client for tests; when None the OnshapeClient
         # builds (and this provider closes) its own per-call client.
@@ -90,13 +86,17 @@ class OnshapeProvider:
 
     def generate_stl(
         self, job_id: str, values_mm: dict[str, float], model: CadModelDescriptor
-    ) -> bytes:
+    ) -> CadResult:
         ref = _onshape_ref_from_descriptor(model)
         client = OnshapeClient(settings=self._settings, client=self._http_client, ref=ref)
         try:
-            client.set_variables(job_id, values_mm, variable_map=model.variable_map)
-            client.trigger_regeneration(job_id)
-            return client.export_stl(job_id)
+            if model.variable_kind == "variable_studio":
+                client.set_variables(job_id, values_mm, variable_map=model.variable_map)
+                return CadResult(client.export_stl(job_id))
+            stl_bytes, artifacts = client.generate_from_template(
+                job_id, values_mm, variable_map=model.variable_map
+            )
+            return CadResult(stl_bytes, artifacts)
         finally:
             if self._http_client is None:
                 client.close()
@@ -109,13 +109,13 @@ class DryRunProvider:
 
     def generate_stl(
         self, job_id: str, values_mm: dict[str, float], model: CadModelDescriptor
-    ) -> bytes:
+    ) -> CadResult:
         logger.info(
             "[DRY_RUN] job=%s dry-run CAD provider returning canned STL (%d variables)",
             job_id,
             len(values_mm),
         )
-        return DRY_RUN_STL
+        return CadResult(DRY_RUN_STL)
 
 
 # Provider registry. Factories take Settings so credential/base-url config

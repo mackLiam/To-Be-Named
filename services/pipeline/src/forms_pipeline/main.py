@@ -24,6 +24,7 @@ from forms_pipeline.jobs.runner import (
     JobContext,
     PostgresJobStore,
     SupabaseStorageClient,
+    resolve_worker_steps,
     run_forever,
 )
 
@@ -42,8 +43,15 @@ def start_worker_thread() -> threading.Thread:
         storage=SupabaseStorageClient(settings),
         cad=CadDispatcher(settings=settings),
     )
+    # Resolve on the main thread so an unregistered WORKER_STEPS entry stops
+    # startup instead of killing only the worker thread behind a live health check.
+    steps = resolve_worker_steps(settings)
     thread = threading.Thread(
-        target=run_forever, args=(_worker_id(), ctx), daemon=True, name="pipeline-worker"
+        target=run_forever,
+        args=(_worker_id(), ctx),
+        kwargs={"steps": steps},
+        daemon=True,
+        name="pipeline-worker",
     )
     thread.start()
     logger.info("worker thread started (dry_run=%s)", settings.dry_run)

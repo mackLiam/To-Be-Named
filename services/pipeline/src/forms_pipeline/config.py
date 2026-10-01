@@ -13,9 +13,12 @@ least-privilege posture this configuration supports.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated, Literal
 
-from pydantic import AliasChoices, Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from forms_pipeline.jobs.states import STATES
 
 # Repo root is five levels up from this file:
 # services/pipeline/src/forms_pipeline/config.py -> forms_pipeline -> src ->
@@ -71,6 +74,14 @@ class Settings(BaseSettings):
     onshape_document_id: str = Field(default="")
     onshape_workspace_id: str = Field(default="")
     onshape_element_id: str = Field(default="")
+    # Comma-separated document ids the worker must never target (the
+    # original MVP model). Jobs only ever read a template and write copies.
+    onshape_protected_document_ids: str = Field(default="")
+    # Job documents hold customer body measurements: a public copy is
+    # deleted and the job fails unless an operator explicitly allows it.
+    onshape_allow_public_job_documents: bool = Field(default=False)
+    # Keep per-job template copies for debugging instead of deleting them.
+    onshape_keep_job_documents: bool = Field(default=False)
 
     # -- Worker behavior ------------------------------------------------------
     pipeline_env: str = Field(default="development")
@@ -85,6 +96,16 @@ class Settings(BaseSettings):
     )
     max_vertices: int = Field(
         default=2_000_000, gt=0, description="Untrusted-mesh vertex count cap."
+    )
+    # Empty means every registered step handler. The runner additionally
+    # rejects names with no registered handler (jobs/runner.py
+    # resolve_worker_steps); this validator catches typos at get_settings().
+    worker_steps: Annotated[tuple[str, ...], NoDecode] = Field(
+        default=(),
+        description=(
+            "Comma-separated pipeline steps this worker claims (WORKER_STEPS), e.g. "
+            "'reconstructing' on the Mac. Empty = all registered handlers."
+        ),
     )
     schema_path: Path = Field(
         default=_DEFAULT_SCHEMA_PATH,
@@ -121,9 +142,42 @@ class Settings(BaseSettings):
         ),
     )
 
+    # -- Photo reconstruction (forms_pipeline/reconstruct, Mac worker only) ---
+    reconstruct_cli: Path = Field(
+        default=_REPO_ROOT
+        / "services"
+        / "reconstruct"
+        / ".build"
+        / "release"
+        / "forms-reconstruct",
+        description="Path to the forms-reconstruct Swift CLI (RECONSTRUCT_CLI).",
+    )
+    reconstruct_timeout_s: int = Field(
+        default=1800, gt=0, description="Wall-clock cap for one reconstruction run."
+    )
+    reconstruct_detail: Literal["reduced", "medium"] = Field(
+        default="reduced", description="PhotogrammetrySession detail level."
+    )
+
+    @field_validator("worker_steps", mode="before")
+    @classmethod
+    def _parse_worker_steps(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = tuple(part.strip() for part in value.split(",") if part.strip())
+        if isinstance(value, (list, tuple)):
+            unknown = [step for step in value if step not in STATES]
+            if unknown:
+                raise ValueError(f"WORKER_STEPS has unknown pipeline steps: {unknown}")
+        return value
+
     @property
     def max_mesh_bytes(self) -> int:
         return self.max_mesh_mb * 1024 * 1024
+
+    @property
+    def protected_document_ids(self) -> frozenset[str]:
+        ids = self.onshape_protected_document_ids.split(",")
+        return frozenset(i.strip() for i in ids if i.strip())
 
     @property
     def dry_run(self) -> bool:

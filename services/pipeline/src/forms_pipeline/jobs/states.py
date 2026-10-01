@@ -1,4 +1,5 @@
-"""Pipeline job state machine, mirroring supabase/migrations/0001_schema.sql.
+"""Pipeline job state machine, mirroring the pipeline_jobs step CHECK
+(supabase/migrations/0008_photo_capture.sql) and packages/shared/src/states.ts.
 
 The `step` check constraint on `public.pipeline_jobs` and the transitions
 enforced here must stay in sync; this module is the Python-side source of
@@ -9,11 +10,12 @@ caught in application code, not discovered as a silent bad row in Postgres.
 
 from __future__ import annotations
 
-# Order matches docs/DESIGN.md section 6's state diagram and the `step`
-# check constraint in supabase/migrations/0001_schema.sql.
+# Order matches docs/DESIGN.md section 6, the `step` CHECK constraint (0008)
+# and PIPELINE_STEPS in packages/shared/src/states.ts.
 STATES: tuple[str, ...] = (
     "captured",
     "uploaded",
+    "reconstructing",
     "measuring",
     "measured",
     "generating_cad",
@@ -26,17 +28,22 @@ STATES: tuple[str, ...] = (
 
 TERMINAL_STATES: frozenset[str] = frozenset({"shipped", "failed"})
 
-# The linear happy path, plus "any step -> failed" (docs/DESIGN.md section 6:
-# "(any step) -> failed(step, reason, retriable)").
-_LINEAR_STEPS = [s for s in STATES if s != "failed"]
-
+# Explicit table, identical to VALID_TRANSITIONS in packages/shared/src/states.ts.
+# A measure job ends at "measured" (completed there); a CAD job is a separate
+# job starting at "generating_cad" (docs/DESIGN.md section 6).
 VALID_TRANSITIONS: dict[str, frozenset[str]] = {
-    step: frozenset(
-        {_LINEAR_STEPS[i + 1]} | {"failed"} if i + 1 < len(_LINEAR_STEPS) else {"failed"}
-    )
-    for i, step in enumerate(_LINEAR_STEPS)
+    "captured": frozenset({"uploaded", "failed"}),
+    "uploaded": frozenset({"reconstructing", "measuring", "failed"}),
+    "reconstructing": frozenset({"measuring", "failed"}),
+    "measuring": frozenset({"measured", "failed"}),
+    "measured": frozenset({"failed"}),
+    "generating_cad": frozenset({"stl_ready", "failed"}),
+    "stl_ready": frozenset({"queued_for_print", "failed"}),
+    "queued_for_print": frozenset({"printing", "failed"}),
+    "printing": frozenset({"shipped", "failed"}),
+    "shipped": frozenset(),
+    "failed": frozenset(),
 }
-VALID_TRANSITIONS["failed"] = frozenset()  # failed is terminal; no transitions out
 
 
 class InvalidTransitionError(ValueError):

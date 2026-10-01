@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from forms_pipeline.cad.model import CadModelDescriptor
+from forms_pipeline.cad.model import CadModelDescriptor, CadResult
 from forms_pipeline.cad.providers import CadProvider, get_provider
 from forms_pipeline.config import Settings
 from forms_pipeline.contract import SCHEMA_VERSION
@@ -43,9 +43,7 @@ def default_descriptor(settings: Settings) -> CadModelDescriptor:
     )
 
 
-def resolve_descriptor(
-    cad_model: dict[str, Any] | None, settings: Settings
-) -> CadModelDescriptor:
+def resolve_descriptor(cad_model: dict[str, Any] | None, settings: Settings) -> CadModelDescriptor:
     """Parse a product's stored descriptor, or return the env default when absent."""
     if cad_model is None:
         return default_descriptor(settings)
@@ -54,7 +52,7 @@ def resolve_descriptor(
 
 @dataclass
 class CadDispatcher:
-    """Resolves the descriptor, picks the provider, generates STL, times it.
+    """Resolves the descriptor, picks the provider, generates the CadResult, times it.
 
     `provider_factory` is a test seam: when set it overrides the registry
     lookup so runner tests can inject a recording/fake provider.
@@ -63,9 +61,9 @@ class CadDispatcher:
     settings: Settings
     provider_factory: Callable[[str], CadProvider] | None = None
 
-    def run(
+    def generate(
         self, job_id: str, values_mm: dict[str, float], cad_model: dict[str, Any] | None
-    ) -> bytes:
+    ) -> CadResult:
         descriptor = resolve_descriptor(cad_model, self.settings)
         provider = (
             self.provider_factory(descriptor.provider)
@@ -74,7 +72,7 @@ class CadDispatcher:
         )
 
         start = time.monotonic()
-        stl_bytes = provider.generate_stl(job_id, values_mm, descriptor)
+        result = provider.generate_stl(job_id, values_mm, descriptor)
         elapsed = time.monotonic() - start
         logger.info(
             "cad generation complete job=%s provider=%s elapsed_seconds=%.3f",
@@ -82,4 +80,4 @@ class CadDispatcher:
             descriptor.provider,
             elapsed,
         )
-        return stl_bytes
+        return result
