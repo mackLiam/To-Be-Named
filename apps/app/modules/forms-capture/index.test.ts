@@ -58,6 +58,8 @@ describe('when the native module is absent (web / Android / Simulator / Expo Go)
   it('event subscriptions return a safe no-op that can be removed', () => {
     const stateSub = capture.addCaptureStateListener(() => {});
     const progressSub = capture.addReconstructionProgressListener(() => {});
+    const statsSub = capture.addPhotoCaptureStatsListener(() => {});
+    expect(() => statsSub.remove()).not.toThrow();
     expect(() => stateSub.remove()).not.toThrow();
     expect(() => progressSub.remove()).not.toThrow();
   });
@@ -69,6 +71,8 @@ const PHOTO_RESULT = {
   manifestPath: '/b/capture.json',
   imageCount: 48,
   coverage: 0.8,
+  mode: 'solo' as const,
+  finishedEarly: false,
 };
 
 describe('photo capture when the native module is absent', () => {
@@ -187,6 +191,23 @@ describe('when the native module is present', () => {
   it('startPhotoCapture resolves the native bundle result', async () => {
     mocks.native = makeNative();
     await expect(capture.startPhotoCapture()).resolves.toEqual(PHOTO_RESULT);
+  });
+
+  it('startPhotoCapture forwards the mode and defaults to solo', async () => {
+    const native = makeNative();
+    mocks.native = native;
+    await capture.startPhotoCapture({ mode: 'helper' });
+    await capture.startPhotoCapture();
+    expect(native.startPhotoCapture).toHaveBeenNthCalledWith(1, { mode: 'helper' });
+    expect(native.startPhotoCapture).toHaveBeenNthCalledWith(2, { mode: 'solo' });
+  });
+
+  it('addPhotoCaptureStatsListener subscribes to onPhotoCaptureStats', () => {
+    const native = makeNative();
+    mocks.native = native;
+    const listener = () => {};
+    capture.addPhotoCaptureStatsListener(listener);
+    expect(native.addListener).toHaveBeenCalledWith('onPhotoCaptureStats', listener);
   });
 
   it('startPhotoCapture maps cancel and camera-denied errors to typed codes', async () => {

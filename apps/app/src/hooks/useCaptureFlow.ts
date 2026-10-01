@@ -17,7 +17,8 @@
  * Photos mode (availability.mode 'photos', non-LiDAR iPhones) skips the
  * on-device reconstruction: capturing -> done (photo bundle on disk) ->
  * uploading, and the bundle is reconstructed server-side. Same phases, same
- * cancel and retry rules.
+ * cancel and retry rules. Before the first photos capture the screen asks who
+ * holds the phone (choosePhotoMode); the answer is kept for the second leg.
  *
  * The upload leg is opt-in via CaptureFlowDeps.uploadScan: when it is absent
  * (the default in unit tests, and any non-configured build) the machine stops at
@@ -46,6 +47,7 @@ import { BRAND_NAME } from '@forms/shared/brand';
 
 import {
   addCaptureStateListener,
+  addPhotoCaptureStatsListener,
   addReconstructionProgressListener,
   cancel as cancelCapture,
   CaptureError,
@@ -59,7 +61,10 @@ import type {
   CaptureResult,
   CaptureState,
   CaptureStateEvent,
+  PhotoCaptureMode,
+  PhotoCaptureOptions,
   PhotoCaptureResult,
+  PhotoCaptureStatsEvent,
   ReconstructionProgressEvent,
   ReconstructOptions,
   ReconstructResult,
@@ -119,6 +124,8 @@ export interface CaptureFlowState {
   unavailableReason: CaptureUnavailableReason | null;
   /** Which flow runs on this device; set once availability resolves. */
   mode: CaptureMode | null;
+  /** Photos mode: who holds the phone. Null until asked; kept across legs. */
+  photoMode: PhotoCaptureMode | null;
   /** Latest native guided-capture state; set during the 'capturing' phase. */
   captureState: CaptureState | null;
   /** Reconstruction completion, 0..1; meaningful in 'reconstructing'. */
@@ -147,6 +154,7 @@ export const INITIAL_CAPTURE_FLOW_STATE: CaptureFlowState = {
   phase: 'checking',
   unavailableReason: null,
   mode: null,
+  photoMode: null,
   captureState: null,
   progress: 0,
   progressStage: null,
@@ -210,7 +218,13 @@ export interface CaptureFlowDeps {
   getAvailability(): Promise<CaptureAvailability>;
   startCapture(): Promise<CaptureResult>;
   /** Photos mode: guided ARKit photo capture, no on-device reconstruction. */
-  startPhotoCapture(): Promise<PhotoCaptureResult>;
+  startPhotoCapture(options: PhotoCaptureOptions): Promise<PhotoCaptureResult>;
+  /** Photos mode diagnostics; subscribed only while a photo capture runs. */
+  addPhotoCaptureStatsListener?: (
+    listener: (event: PhotoCaptureStatsEvent) => void,
+  ) => EventSubscription;
+  /** Sink for those diagnostics; undefined disables the subscription. */
+  logCaptureStats?: (stats: PhotoCaptureStatsEvent) => void;
   reconstruct(options?: ReconstructOptions): Promise<ReconstructResult>;
   cancel(): Promise<void>;
   addCaptureStateListener(listener: (event: CaptureStateEvent) => void): EventSubscription;
@@ -244,7 +258,21 @@ export function defaultCaptureFlowDeps(captureEnv?: () => CaptureMetaEnv): Captu
     uploadScan,
     uploadPhotoBundle,
     captureEnv,
+    addPhotoCaptureStatsListener,
+    logCaptureStats: captureStatsLogger(typeof __DEV__ !== 'undefined' && __DEV__),
   };
+}
+
+/** Dev builds only: stats go to the Metro log for tuning. The payload holds
+ * scalars only (no images, poses or positions), see PhotoCaptureStatsEvent. */
+export function captureStatsLogger(
+  dev: boolean,
+  log: (...args: unknown[]) => void = console.log,
+): ((stats: PhotoCaptureStatsEvent) => void) | undefined {
+  if (!dev) {
+    return undefined;
+  }
+  return (stats) => log('[capture-stats]', JSON.stringify(stats));
 }
 
 // ---------------------------------------------------------------------------
@@ -390,15 +418,40 @@ export class CaptureFlowController {
     }
   }
 
+  /**
+   * Photos mode: record who holds the phone (or null to ask again). Only in
+   * 'ready'; the choice survives nextLeg so the second leg is not re-asked.
+   */
+  choosePhotoMode(photoMode: PhotoCaptureMode | null): void {
+    if (this.disposed || this.state.phase !== 'ready') {
+      return;
+    }
+    this.patch({ photoMode });
+  }
+
   /** Photos mode: capturing -> done (bundle on disk) -> upload. */
   private async runPhotoCapture(): Promise<void> {
+    const { addPhotoCaptureStatsListener: addStats, logCaptureStats } = this.deps;
+    const stats = addStats && logCaptureStats ? addStats(logCaptureStats) : null;
+    if (stats) {
+      // Also tracked so dispose() removes it if the native call never settles.
+      this.subscriptions.push(stats);
+    }
+    const stopStats = () => {
+      if (stats && this.subscriptions.includes(stats)) {
+        stats.remove();
+        this.subscriptions = this.subscriptions.filter((sub) => sub !== stats);
+      }
+    };
     let photoCapture: PhotoCaptureResult;
     try {
-      photoCapture = await this.deps.startPhotoCapture();
+      photoCapture = await this.deps.startPhotoCapture({ mode: this.state.photoMode ?? 'solo' });
     } catch (error) {
+      stopStats();
       this.settleFailure(error);
       return;
     }
+    stopStats();
     if (this.disposed) {
       return;
     }
@@ -491,6 +544,8 @@ export class CaptureFlowController {
           sessionId: photoCapture.sessionId,
           imageCount: photoCapture.imageCount,
           coverage: photoCapture.coverage,
+          photoMode: photoCapture.mode,
+          finishedEarly: photoCapture.finishedEarly,
           captureKind: 'photos',
         }),
         scanId,
@@ -633,6 +688,8 @@ export interface UseCaptureFlowResult {
   retryUpload: () => void;
   /** Pair mode: continue to the next leg after one uploads. */
   nextLeg: () => void;
+  /** Photos mode: answer (or reset) "Is someone helping you?". */
+  choosePhotoMode: (photoMode: PhotoCaptureMode | null) => void;
 }
 
 export interface UseCaptureFlowOptions {
@@ -686,5 +743,9 @@ export function useCaptureFlow(options: UseCaptureFlowOptions = {}): UseCaptureF
     controllerRef.current?.nextLeg();
   }, []);
 
-  return { state, start, retryUpload, nextLeg };
+  const choosePhotoMode = useCallback((photoMode: PhotoCaptureMode | null) => {
+    controllerRef.current?.choosePhotoMode(photoMode);
+  }, []);
+
+  return { state, start, retryUpload, nextLeg, choosePhotoMode };
 }

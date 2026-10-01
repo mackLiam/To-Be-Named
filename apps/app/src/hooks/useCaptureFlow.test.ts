@@ -16,6 +16,7 @@ vi.mock('../../modules/forms-capture', async () => {
     cancel: vi.fn(),
     addCaptureStateListener: vi.fn(),
     addReconstructionProgressListener: vi.fn(),
+    addPhotoCaptureStatsListener: vi.fn(),
   };
 });
 vi.mock('../lib/nativeCapture', () => ({
@@ -26,6 +27,7 @@ import { CaptureError } from '../../modules/forms-capture';
 import type {
   CaptureResult,
   PhotoCaptureResult,
+  PhotoCaptureStatsEvent,
   ReconstructResult,
 } from '../../modules/forms-capture';
 import { UploadError } from '../lib/upload';
@@ -39,6 +41,7 @@ import {
   CAPTURE_ERROR_MESSAGES,
   CaptureFlowController,
   captureErrorMessage,
+  captureStatsLogger,
   type CaptureFlowDeps,
   type CaptureFlowState,
 } from './useCaptureFlow';
@@ -61,6 +64,8 @@ const PHOTO_RESULT: PhotoCaptureResult = {
   manifestPath: '/sandbox/photo-captures/photo-session-1/capture.json',
   imageCount: 48,
   coverage: 0.83,
+  mode: 'solo',
+  finishedEarly: false,
 };
 
 const PHOTO_UPLOAD_RESULT: UploadPhotoBundleResult = {
@@ -815,6 +820,8 @@ describe('photos mode (non-LiDAR)', () => {
         sessionId: 'photo-session-1',
         imageCount: 48,
         coverage: 0.83,
+        photoMode: 'solo',
+        finishedEarly: false,
         captureKind: 'photos',
       },
     });
@@ -877,6 +884,162 @@ describe('photos mode (non-LiDAR)', () => {
     await started;
     expect(deps.cancel).toHaveBeenCalledOnce();
     expect(controller.getState().phase).toBe('capturing');
+  });
+
+  it('defaults to solo when no photo mode was chosen', async () => {
+    const { deps } = photoDeps();
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    expect(controller.getState().photoMode).toBeNull();
+    await controller.start();
+    expect(deps.startPhotoCapture).toHaveBeenCalledWith({ mode: 'solo' });
+  });
+
+  it('passes the chosen mode and keeps it for the second leg', async () => {
+    const { deps } = photoDeps({ uploadPhotoBundle: photoUploadMock() });
+    const controller = new CaptureFlowController(deps, () => {}, { pair: true });
+    await controller.initialize();
+    controller.choosePhotoMode('helper');
+    expect(controller.getState().photoMode).toBe('helper');
+    await controller.start();
+    controller.nextLeg();
+    expect(controller.getState()).toMatchObject({ phase: 'ready', leg: 'R', photoMode: 'helper' });
+    await controller.start();
+    expect(deps.startPhotoCapture).toHaveBeenCalledTimes(2);
+    expect(deps.startPhotoCapture).toHaveBeenNthCalledWith(1, { mode: 'helper' });
+    expect(deps.startPhotoCapture).toHaveBeenNthCalledWith(2, { mode: 'helper' });
+  });
+
+  it('choosePhotoMode only applies in ready, and null asks again', async () => {
+    const call = deferred<PhotoCaptureResult>();
+    const { deps } = photoDeps({ startPhotoCapture: vi.fn(() => call.promise) });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    controller.choosePhotoMode('solo');
+    controller.choosePhotoMode(null);
+    expect(controller.getState().photoMode).toBeNull();
+    controller.choosePhotoMode('solo');
+    const started = controller.start();
+    controller.choosePhotoMode('helper');
+    expect(controller.getState().photoMode).toBe('solo');
+    call.resolve(PHOTO_RESULT);
+    await started;
+  });
+
+  it('forwards stats to the logger only while a photo capture runs', async () => {
+    const call = deferred<PhotoCaptureResult>();
+    const statsSub = { remove: vi.fn() };
+    let emit: ((stats: PhotoCaptureStatsEvent) => void) | undefined;
+    const logCaptureStats = vi.fn();
+    const { deps } = photoDeps({
+      startPhotoCapture: vi.fn(() => call.promise),
+      addPhotoCaptureStatsListener: vi.fn((listener) => {
+        emit = listener;
+        return statsSub;
+      }),
+      logCaptureStats,
+    });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    expect(deps.addPhotoCaptureStatsListener).not.toHaveBeenCalled();
+    const started = controller.start();
+    const stats: PhotoCaptureStatsEvent = {
+      kept: 3,
+      rejected: { blurry: 2 },
+      coverage: 0.1,
+      distanceM: 0.4,
+      ambientIntensity: 900,
+      mode: 'solo',
+      aimed: true,
+    };
+    emit?.(stats);
+    expect(logCaptureStats).toHaveBeenCalledWith(stats);
+    call.resolve(PHOTO_RESULT);
+    await started;
+    expect(statsSub.remove).toHaveBeenCalledOnce();
+    controller.dispose();
+    expect(statsSub.remove).toHaveBeenCalledOnce();
+  });
+
+  it('removes the stats subscription on a failed capture and on dispose', async () => {
+    const failing = { remove: vi.fn() };
+    const { deps } = photoDeps({
+      startPhotoCapture: vi.fn(async () => {
+        throw { code: 'ERR_CAPTURE_WRITE_FAILED', message: 'disk full' };
+      }),
+      addPhotoCaptureStatsListener: vi.fn(() => failing),
+      logCaptureStats: vi.fn(),
+    });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(failing.remove).toHaveBeenCalledOnce();
+
+    const pending = { remove: vi.fn() };
+    const hung = photoDeps({
+      startPhotoCapture: vi.fn(() => new Promise<PhotoCaptureResult>(() => {})),
+      addPhotoCaptureStatsListener: vi.fn(() => pending),
+      logCaptureStats: vi.fn(),
+    });
+    const second = makeController(hung.deps).controller;
+    await second.initialize();
+    void second.start();
+    second.dispose();
+    expect(pending.remove).toHaveBeenCalledOnce();
+  });
+
+  it('does not subscribe to stats without a logger (release builds)', async () => {
+    const { deps } = photoDeps({ addPhotoCaptureStatsListener: vi.fn() });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(deps.addPhotoCaptureStatsListener).not.toHaveBeenCalled();
+  });
+
+  it('stamps finishedEarly and the photo mode on capture_meta', async () => {
+    const uploadPhotoBundle = photoUploadMock();
+    const { deps } = photoDeps({
+      uploadPhotoBundle,
+      startPhotoCapture: vi.fn(async () => ({
+        ...PHOTO_RESULT,
+        mode: 'helper' as const,
+        finishedEarly: true,
+      })),
+    });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(uploadPhotoBundle.mock.calls[0]?.[0]?.captureMeta).toMatchObject({
+      photoMode: 'helper',
+      finishedEarly: true,
+    });
+  });
+});
+
+describe('captureStatsLogger', () => {
+  it('is disabled outside dev builds', () => {
+    expect(captureStatsLogger(false)).toBeUndefined();
+  });
+
+  it('logs one tagged JSON line in dev builds', () => {
+    const log = vi.fn();
+    const logger = captureStatsLogger(true, log);
+    logger?.({
+      kept: 1,
+      rejected: {},
+      coverage: 0,
+      distanceM: null,
+      ambientIntensity: null,
+      mode: 'helper',
+      aimed: false,
+    });
+    expect(log).toHaveBeenCalledOnce();
+    expect(log.mock.calls[0]?.[0]).toBe('[capture-stats]');
+    expect(JSON.parse(log.mock.calls[0]?.[1] as string)).toMatchObject({
+      kept: 1,
+      distanceM: null,
+      aimed: false,
+    });
   });
 });
 

@@ -20,3 +20,11 @@ internal struct ReconstructOptions: Record {
   /// most recent session created by startCapture.
   @Field var sessionDir: String = ""
 }
+
+/// Mirrors the TS `PhotoCaptureOptions`.
+internal struct PhotoCaptureOptions: Record {
+  init() {}
+
+  /// 'solo' or 'helper' (PhotoCaptureMode).
+  @Field var mode: String = "solo"
+}

@@ -442,6 +442,45 @@ describe('validatePhotoManifest', () => {
     expect(() => validatePhotoManifest(bad)).toThrow(/duplicated/);
   });
 
+  const CAPTURE_BLOCK = {
+    mode: 'solo',
+    anchor_world: [0.1, -0.4, -0.5],
+    front_azimuth_rad: 1.57,
+    coverage: 0.52,
+    finished_early: false,
+  };
+
+  it('accepts the optional capture block and a manifest without it', () => {
+    expect(validatePhotoManifest({ ...manifest(), capture: CAPTURE_BLOCK }).capture).toEqual(
+      CAPTURE_BLOCK,
+    );
+    expect(
+      validatePhotoManifest({ ...manifest(), capture: { ...CAPTURE_BLOCK, mode: 'helper' } }),
+    ).toBeTruthy();
+    expect(validatePhotoManifest(manifest()).capture).toBeUndefined();
+  });
+
+  it.each([
+    ['not an object', [], /capture must be an object/],
+    ['null', null, /capture must be an object/],
+    ['an unknown key', { ...CAPTURE_BLOCK, extra: 1 }, /missing or unknown/],
+    [
+      'a missing key',
+      Object.fromEntries(Object.entries(CAPTURE_BLOCK).filter(([k]) => k !== 'coverage')),
+      /missing or unknown/,
+    ],
+    ['a bad mode', { ...CAPTURE_BLOCK, mode: 'tripod' }, /mode/],
+    ['a 2-number anchor', { ...CAPTURE_BLOCK, anchor_world: [1, 2] }, /anchor_world/],
+    ['a NaN anchor', { ...CAPTURE_BLOCK, anchor_world: [1, Number.NaN, 2] }, /anchor_world/],
+    ['a string azimuth', { ...CAPTURE_BLOCK, front_azimuth_rad: '1' }, /front_azimuth_rad/],
+    ['coverage above 1', { ...CAPTURE_BLOCK, coverage: 1.2 }, /coverage/],
+    ['negative coverage', { ...CAPTURE_BLOCK, coverage: -0.1 }, /coverage/],
+    ['NaN coverage', { ...CAPTURE_BLOCK, coverage: Number.NaN }, /coverage/],
+    ['a numeric finished_early', { ...CAPTURE_BLOCK, finished_early: 0 }, /finished_early/],
+  ])('rejects a capture block with %s', (_label, capture, pattern) => {
+    expect(() => validatePhotoManifest({ ...manifest(), capture })).toThrow(pattern);
+  });
+
   it('throws ERR_UPLOAD_INVALID_BUNDLE', () => {
     try {
       validatePhotoManifest({});

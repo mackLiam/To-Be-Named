@@ -6,43 +6,44 @@ import UIKit
 
 /*
  Guided photo capture for iPhones without ObjectCaptureSession (no LiDAR).
- Presents a full-screen ARKit camera, auto-keeps sharp frames spaced around an
- orbit of the leg, and writes a bundle the Mac reconstruction worker consumes:
+ Presents a full-screen ARKit camera. The user first aims at the shin (a tap
+ fixes a vertical leg axis), then sweeps the phone around it while sharp,
+ well spaced frames are kept automatically. Writes the bundle the
+ reconstruction worker consumes:
 
    <Application Support>/photo-captures/<sessionId>/capture.json
    <Application Support>/photo-captures/<sessionId>/images/NNN.jpg
 
- capture.json is the frozen "forms.photo-capture" v1 contract (validated again
- in src/lib/upload.ts and on the server). Images are written in the camera
- sensor orientation (landscape, as ARKit delivers capturedImage), which is the
- orientation camera.transform and camera.intrinsics are defined in; rotating
- them for display would invalidate the poses.
+ capture.json is the frozen "forms.photo-capture" v1 contract plus the
+ optional "capture" object (validated in src/lib/upload.ts and
+ services/pipeline reconstruct/bundle.py, which requires exactly its five
+ keys). Images are written in the camera sensor orientation (landscape, as
+ ARKit delivers capturedImage), the orientation camera.transform and
+ camera.intrinsics are defined in; rotating them would invalidate the poses.
+
+ Coverage is measured around the aimed axis, not a center guessed from
+ viewing rays: a solo user sweeps only part of a circle, and ray
+ intersection is unreliable on a partial arc.
 
  Sensitive data (CLAUDE.md gotcha 5): nothing here logs an image, a pose, or a
- path. Files stay in the app sandbox, excluded from iCloud backup, and the
- session folder is deleted on cancel or failure.
+ path; onPhotoCaptureStats carries scalars only. Files stay in the app
+ sandbox, excluded from iCloud backup, and the session folder is deleted on
+ cancel or failure.
 
- Cannot be unit tested off-device: every input is a live ARFrame. Thresholds
- below are tuning knobs, unverified on real legs.
+ Cannot be unit tested off-device: every input is a live ARFrame. Decision
+ rules live in PhotoCaptureLogic.swift; constants in PhotoTuning.
 */
 @MainActor
 final class PhotoCaptureController: UIViewController, ARSessionDelegate {
-  // Contract caps (capture.json v1). The server re-validates all of these.
-  static let minPhotosForDone = 40
-  static let maxPhotos = 120
   nonisolated static let maxLongSidePx: CGFloat = 2048
   nonisolated static let maxJpegBytes = 2 * 1024 * 1024
-  static let bucketCount = 36
-  static let minCoverageForDone = 0.7
 
-  // Frame selection tuning (unverified on device).
-  private static let minOrbitStepRad: Float = 6 * .pi / 180
-  private static let minTranslationM: Float = 0.04
-  /// Sharpness proxy: frames are skipped while the camera turns faster than this.
-  private static let maxAngularVelocityRadPerS: Float = 0.5
-  /// Guess at the leg distance, used only until viewing rays give a real center.
-  private static let fallbackCenterDistanceM: Float = 0.6
+  private static let aimInstruction = "Point the circle at the front of your shin, halfway up, then tap."
+  private static let aimFailed = "Could not find your leg. Move a little closer and tap again."
+  private static let capReached = "Photo limit reached. Tap Done."
 
+  private let mode: PhotoCaptureMode
+  private let onStats: ([String: Any]) -> Void
   private let sessionId = UUID().uuidString
   private let sessionDir: URL
   private let imagesDir: URL
@@ -51,29 +52,51 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
   private let arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
   private let ciContext = CIContext()
   private let encodeQueue = DispatchQueue(label: "forms.photo-capture.encode", qos: .userInitiated)
+  private let haptic = UIImpactFeedbackGenerator(style: .light)
 
+  // Aim.
+  private var aiming = true
+  private var anchor: SIMD3<Float>?
+  private var frontAzimuth: Float = 0
+  private var aimError = false
+  private var lineAnchor: AnchorEntity?
+
+  // Kept frames.
   private var images: [[String: Any]] = []
-  /// Horizontal (x, z) position and forward direction of each kept frame.
-  private var keptPositions: [SIMD2<Float>] = []
-  private var keptForwards: [SIMD2<Float>] = []
-  private var lastKeptPosition: SIMD3<Float>?
-  private var lastFrameTransform: simd_float4x4?
-  private var lastFrameTime: TimeInterval?
+  private var keptPositions: [SIMD3<Float>] = []
+  private var acceptedVariances: [Float] = []
   private var coveredBuckets = Set<Int>()
+
+  // Per-frame state.
+  private var motionSamples: [(time: TimeInterval, transform: simd_float4x4)] = []
+  private var lastEvaluatedAt: TimeInterval = -.infinity
+  private var lastStatsAt: TimeInterval = -.infinity
+  private var currentBucket: Int?
+  private var lastDistance: Float?
+  private var lastAmbient: CGFloat?
+  private var rejected: [String: Int] = [:]
+  private var guidance = GuidanceGate()
+
   private var encoding = false
   private var finishRequested = false
+  private var finishedEarly = false
   private var finished = false
   private var previousIdleTimerDisabled = false
 
+  // Overlay.
+  private let messageLabel = UILabel()
   private let countLabel = UILabel()
-  private let instructionLabel = UILabel()
-  private let ringView = CoverageRingView(segments: PhotoCaptureController.bucketCount)
+  private let targetLabel = UILabel()
+  private let ringView = CoverageRingView(segments: PhotoTuning.bucketCount)
+  private let reticle = UIView()
   private let cancelButton = UIButton(type: .system)
   private let doneButton = UIButton(type: .system)
+  private let reaimButton = UIButton(type: .system)
+  private let finishAnywayButton = UIButton(type: .system)
 
-  private static let baseInstruction = "Walk slowly around the leg. Keep ankle to knee in frame."
-
-  init() {
+  init(mode: PhotoCaptureMode, onStats: @escaping ([String: Any]) -> Void) {
+    self.mode = mode
+    self.onStats = onStats
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     sessionDir = support.appendingPathComponent("photo-captures/\(sessionId)", isDirectory: true)
     imagesDir = sessionDir.appendingPathComponent("images", isDirectory: true)
@@ -116,13 +139,15 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     view.backgroundColor = .black
     arView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(arView)
-    buildOverlay()
     NSLayoutConstraint.activate([
       arView.topAnchor.constraint(equalTo: view.topAnchor),
       arView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
       arView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       arView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
     ])
+    arView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(screenTapped)))
+    buildOverlay()
+    messageLabel.text = guidance.force(Self.aimInstruction, now: 0)
     refreshOverlay()
   }
 
@@ -131,8 +156,10 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     guard !finished else { return }
     previousIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
     UIApplication.shared.isIdleTimerDisabled = true
+    haptic.prepare()
     let configuration = ARWorldTrackingConfiguration()
     configuration.worldAlignment = .gravity
+    configuration.isLightEstimationEnabled = true
     arView.session.delegate = self
     arView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
   }
@@ -166,44 +193,197 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     }
   }
 
-  // MARK: - Frame selection
+  // MARK: - Aim
 
-  private func handle(_ frame: ARFrame) {
-    guard !finished, !finishRequested, images.count < Self.maxPhotos else { return }
-    let camera = frame.camera
-    let transform = camera.transform
-    let previousTransform = lastFrameTransform
-    let previousTime = lastFrameTime
-    lastFrameTransform = transform
-    lastFrameTime = frame.timestamp
-
-    guard case .normal = camera.trackingState else {
-      setInstruction("Finding your place. Move the phone slowly.")
+  @objc private func screenTapped() {
+    guard aiming, !finished, let frame = arView.session.currentFrame else { return }
+    let now = frame.timestamp
+    let center = CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)
+    guard let ray = arView.ray(through: center) else {
+      showAimFailure(now: now)
       return
     }
-    setInstruction(Self.baseInstruction)
-
-    guard let previousTransform, let previousTime, frame.timestamp > previousTime else { return }
-    let angularVelocity =
-      Self.rotationAngle(previousTransform, transform) / Float(frame.timestamp - previousTime)
-    guard angularVelocity <= Self.maxAngularVelocityRadPerS, !encoding else { return }
-
-    let position = SIMD3<Float>(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
-    let forward = -SIMD3<Float>(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z)
-    let flatPosition = SIMD2<Float>(position.x, position.z)
-    let flatForward = SIMD2<Float>(forward.x, forward.z)
-
-    if let lastKeptPosition, let lastFlat = keptPositions.last {
-      let moved = simd_distance(position, lastKeptPosition)
-      let center = orbitCenter()
-      let step = abs(Self.wrapAngle(Self.orbitAngle(flatPosition, center) - Self.orbitAngle(lastFlat, center)))
-      guard step >= Self.minOrbitStepRad || moved >= Self.minTranslationM else { return }
+    var hit: SIMD3<Float>?
+    if let query = arView.makeRaycastQuery(from: center, allowing: .estimatedPlane, alignment: .any),
+      let result = arView.session.raycast(query).first
+    {
+      let t = result.worldTransform.columns.3
+      hit = SIMD3<Float>(t.x, t.y, t.z)
     }
-
-    keep(frame: frame, position: position, flatPosition: flatPosition, flatForward: flatForward)
+    if hit == nil, let points = frame.rawFeaturePoints?.points {
+      hit = PhotoCaptureLogic.nearestPointToRay(
+        points, origin: ray.origin, direction: ray.direction,
+        maxDistance: PhotoTuning.featurePointMaxRayDistanceM)
+    }
+    guard let hit, simd_distance(hit, ray.origin) <= PhotoTuning.maxAimDistanceM else {
+      showAimFailure(now: now)
+      return
+    }
+    let axis = PhotoCaptureLogic.axisPoint(hit: hit, rayDirection: ray.direction)
+    let cameraPosition = Self.translation(frame.camera.transform)
+    anchor = axis
+    frontAzimuth = PhotoCaptureLogic.azimuth(of: cameraPosition, around: axis)
+    aiming = false
+    aimError = false
+    showAnchorLine(at: axis)
+    recomputeCoverage()
+    haptic.impactOccurred()
+    messageLabel.text = guidance.force(
+      PhotoCaptureLogic.progressMessage(direction: nil, requirementMet: false), now: now)
+    refreshOverlay()
   }
 
-  private func keep(frame: ARFrame, position: SIMD3<Float>, flatPosition: SIMD2<Float>, flatForward: SIMD2<Float>) {
+  private func showAimFailure(now: TimeInterval) {
+    aimError = true
+    messageLabel.text = guidance.force(Self.aimFailed, now: now)
+  }
+
+  @objc private func reaimTapped() {
+    guard !finished, !finishRequested else { return }
+    aiming = true
+    aimError = false
+    let now = arView.session.currentFrame?.timestamp ?? 0
+    messageLabel.text = guidance.force(Self.aimInstruction, now: now)
+    refreshOverlay()
+  }
+
+  private func showAnchorLine(at axis: SIMD3<Float>) {
+    if let lineAnchor {
+      arView.scene.removeAnchor(lineAnchor)
+    }
+    let line = ModelEntity(
+      mesh: .generateBox(size: SIMD3<Float>(0.004, PhotoTuning.anchorLineHeightM, 0.004)),
+      materials: [UnlitMaterial(color: .systemGreen)])
+    let entityAnchor = AnchorEntity(world: axis)
+    entityAnchor.addChild(line)
+    arView.scene.addAnchor(entityAnchor)
+    lineAnchor = entityAnchor
+  }
+
+  // MARK: - Frame acceptance
+
+  private func handle(_ frame: ARFrame) {
+    guard !finished else { return }
+    let now = frame.timestamp
+    let camera = frame.camera
+    motionSamples.append((now, camera.transform))
+    motionSamples.removeAll { now - $0.time > 3 * PhotoTuning.motionWindowS }
+    lastAmbient = frame.lightEstimate?.ambientIntensity
+    if let anchor {
+      let position = Self.translation(camera.transform)
+      lastDistance = PhotoCaptureLogic.horizontalDistance(position, toAxis: anchor)
+      currentBucket = PhotoCaptureLogic.bucket(
+        forAzimuth: PhotoCaptureLogic.azimuth(of: position, around: anchor))
+      ringView.current = currentBucket
+    }
+    if now - lastStatsAt >= PhotoTuning.statsIntervalS {
+      lastStatsAt = now
+      emitStats()
+    }
+    guard !finishRequested, images.count < PhotoTuning.maxPhotos, !encoding,
+      now - lastEvaluatedAt >= PhotoTuning.evaluateIntervalS
+    else { return }
+    lastEvaluatedAt = now
+    evaluate(frame, now: now)
+  }
+
+  private func evaluate(_ frame: ARFrame, now: TimeInterval) {
+    let camera = frame.camera
+    if let message = Self.trackingMessage(camera.trackingState) {
+      if !aiming, anchor != nil { count(.trackingLimited) }
+      show(message, now: now)
+      return
+    }
+    guard !aiming, let anchor else {
+      show(aimError ? Self.aimFailed : Self.aimInstruction, now: now)
+      return
+    }
+    let position = Self.translation(camera.transform)
+    var variance: Float = 0
+    if let reason = firstFailingCheck(frame, anchor: anchor, position: position, variance: &variance) {
+      count(reason)
+      show(PhotoCaptureLogic.rejectMessage(reason), now: now)
+      return
+    }
+    show(progressMessage(position: position, anchor: anchor), now: now)
+    if let last = keptPositions.last {
+      let step = abs(PhotoCaptureLogic.wrapAngle(
+        PhotoCaptureLogic.azimuth(of: position, around: anchor)
+          - PhotoCaptureLogic.azimuth(of: last, around: anchor)))
+      if step < PhotoTuning.minOrbitStepRad, abs(position.y - last.y) < PhotoTuning.minHeightStepM {
+        return
+      }
+    }
+    keep(frame: frame, position: position, variance: variance)
+  }
+
+  /// Checks in priority order; returns the first that fails. variance is the
+  /// frame's sharpness once the blur check has run.
+  private func firstFailingCheck(
+    _ frame: ARFrame, anchor: SIMD3<Float>, position: SIMD3<Float>, variance: inout Float
+  ) -> PhotoRejectReason? {
+    if let ambient = frame.lightEstimate?.ambientIntensity, ambient < PhotoTuning.minAmbientIntensity {
+      return .tooDark
+    }
+    if movingTooFast(now: frame.timestamp, transform: frame.camera.transform) {
+      return .movingTooFast
+    }
+    guard let sharpness = PhotoCaptureLogic.laplacianVariance(frame.capturedImage),
+      sharpness >= PhotoCaptureLogic.blurThreshold(acceptedVariances: acceptedVariances)
+    else { return .blurry }
+    variance = sharpness
+    let distance = PhotoCaptureLogic.horizontalDistance(position, toAxis: anchor)
+    if distance < PhotoTuning.minDistanceM { return .tooClose }
+    if distance > PhotoTuning.maxDistanceM { return .tooFar }
+    if !anchorCentered(frame.camera, anchor: anchor) { return .offTarget }
+    return nil
+  }
+
+  /// Finite differences against the newest sample at least motionWindowS old.
+  private func movingTooFast(now: TimeInterval, transform: simd_float4x4) -> Bool {
+    guard let reference = motionSamples.last(where: { now - $0.time >= PhotoTuning.motionWindowS })
+      ?? motionSamples.first
+    else { return false }
+    let dt = Float(now - reference.time)
+    guard dt >= Float(PhotoTuning.motionMinBaselineS) else { return false }
+    let angular = PhotoCaptureLogic.rotationAngle(reference.transform, transform) / dt
+    let linear = simd_distance(Self.translation(reference.transform), Self.translation(transform)) / dt
+    return angular > PhotoTuning.maxAngularSpeedRadPerS || linear > PhotoTuning.maxLinearSpeedMPerS
+  }
+
+  private func anchorCentered(_ camera: ARCamera, anchor: SIMD3<Float>) -> Bool {
+    // projectPoint mirrors points behind the camera into the image; the camera looks down -Z.
+    let local = camera.transform.inverse * SIMD4<Float>(anchor, 1)
+    guard local.z < 0 else { return false }
+    let point = camera.projectPoint(anchor, orientation: .landscapeRight, viewportSize: camera.imageResolution)
+    return PhotoCaptureLogic.isCentered(point, imageSize: camera.imageResolution)
+  }
+
+  private func progressMessage(position: SIMD3<Float>, anchor: SIMD3<Float>) -> String {
+    let azimuth = PhotoCaptureLogic.azimuth(of: position, around: anchor)
+    let target = PhotoCaptureLogic.targetBucket(
+      mode: mode, covered: coveredBuckets, frontAzimuth: frontAzimuth, currentAzimuth: azimuth)
+    let direction = target.flatMap { bucket -> OrbitDirection? in
+      // Already standing in the needed bucket: no hint.
+      bucket == PhotoCaptureLogic.bucket(forAzimuth: azimuth)
+        ? nil
+        : PhotoCaptureLogic.direction(from: azimuth, to: PhotoCaptureLogic.bucketCenter(bucket))
+    }
+    return PhotoCaptureLogic.progressMessage(direction: direction, requirementMet: requirementMet)
+  }
+
+  private func count(_ reason: PhotoRejectReason) {
+    rejected[reason.rawValue, default: 0] += 1
+  }
+
+  private func show(_ message: String, now: TimeInterval) {
+    let text = guidance.offer(message, now: now)
+    if messageLabel.text != text {
+      messageLabel.text = text
+    }
+  }
+
+  private func keep(frame: ARFrame, position: SIMD3<Float>, variance: Float) {
     encoding = true
     let index = images.count
     let fileName = String(format: "%03d.jpg", index)
@@ -247,10 +427,16 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
               "height": height,
               "tracking": "normal",
             ])
-            self.lastKeptPosition = position
-            self.keptPositions.append(flatPosition)
-            self.keptForwards.append(flatForward)
+            self.keptPositions.append(position)
+            self.acceptedVariances.append(variance)
+            if self.acceptedVariances.count > PhotoTuning.blurMedianWindow {
+              self.acceptedVariances.removeFirst()
+            }
             self.recomputeCoverage()
+            self.haptic.impactOccurred()
+            if self.images.count >= PhotoTuning.maxPhotos {
+              self.messageLabel.text = self.guidance.force(Self.capReached, now: timestamp)
+            }
             self.refreshOverlay()
           }
           if self.finishRequested {
@@ -301,82 +487,73 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     return .written(width: width, height: height, scaleX: Float(scaleX), scaleY: Float(scaleY))
   }
 
-  // MARK: - Orbit geometry
-
-  /// Least-squares intersection of the kept frames' horizontal viewing rays:
-  /// the camera always looks at the leg, so the rays meet near it. Falls back
-  /// to a point ahead of the first frame until the rays spread enough to solve.
-  private func orbitCenter() -> SIMD2<Float> {
-    var a11: Float = 0, a12: Float = 0, a22: Float = 0, b1: Float = 0, b2: Float = 0
-    var count: Float = 0
-    for (p, rawD) in zip(keptPositions, keptForwards) {
-      let length = simd_length(rawD)
-      guard length > 1e-3 else { continue }
-      let d = rawD / length
-      let m11 = 1 - d.x * d.x, m12 = -d.x * d.y, m22 = 1 - d.y * d.y
-      a11 += m11; a12 += m12; a22 += m22
-      b1 += m11 * p.x + m12 * p.y
-      b2 += m12 * p.x + m22 * p.y
-      count += 1
-    }
-    let det = a11 * a22 - a12 * a12
-    if count >= 2, det / (count * count) > 0.01 {
-      let center = SIMD2<Float>((a22 * b1 - a12 * b2) / det, (a11 * b2 - a12 * b1) / det)
-      if let first = keptPositions.first, simd_distance(center, first) < 3 {
-        return center
-      }
-    }
-    guard let first = keptPositions.first, let forward = keptForwards.first, simd_length(forward) > 1e-3 else {
-      return keptPositions.first ?? .zero
-    }
-    return first + simd_normalize(forward) * Self.fallbackCenterDistanceM
-  }
+  // MARK: - Coverage
 
   private func recomputeCoverage() {
-    let center = orbitCenter()
-    let bucketWidth = 2 * Float.pi / Float(Self.bucketCount)
-    let startAngle = keptPositions.first.map { Self.orbitAngle($0, center) } ?? 0
-    coveredBuckets = Set(keptPositions.map { position in
-      var relative = Self.orbitAngle(position, center) - startAngle
-      relative = relative.truncatingRemainder(dividingBy: 2 * .pi)
-      if relative < 0 { relative += 2 * .pi }
-      return min(Self.bucketCount - 1, Int(relative / bucketWidth))
+    guard let anchor else {
+      coveredBuckets = []
+      return
+    }
+    coveredBuckets = Set(keptPositions.map {
+      PhotoCaptureLogic.bucket(forAzimuth: PhotoCaptureLogic.azimuth(of: $0, around: anchor))
     })
   }
 
   private var coverage: Double {
-    Double(coveredBuckets.count) / Double(Self.bucketCount)
+    PhotoCaptureLogic.coverage(coveredBuckets)
   }
 
-  private static func orbitAngle(_ position: SIMD2<Float>, _ center: SIMD2<Float>) -> Float {
-    atan2(position.y - center.y, position.x - center.x)
+  private var requirementMet: Bool {
+    anchor != nil
+      && PhotoCaptureLogic.requirementMet(
+        mode: mode, covered: coveredBuckets, frontAzimuth: frontAzimuth, photoCount: images.count)
   }
 
-  private static func wrapAngle(_ angle: Float) -> Float {
-    var a = angle.truncatingRemainder(dividingBy: 2 * .pi)
-    if a > .pi { a -= 2 * .pi }
-    if a < -.pi { a += 2 * .pi }
-    return a
+  private var atCap: Bool { images.count >= PhotoTuning.maxPhotos }
+
+  private var canFinish: Bool { requirementMet || atCap }
+
+  private var canFinishEarly: Bool {
+    !canFinish && images.count >= PhotoTuning.finishAnywayMinPhotos
   }
 
-  /// Angle of the relative rotation between two camera poses.
-  private static func rotationAngle(_ a: simd_float4x4, _ b: simd_float4x4) -> Float {
-    func rotation(_ m: simd_float4x4) -> simd_float3x3 {
-      simd_float3x3(
-        SIMD3(m.columns.0.x, m.columns.0.y, m.columns.0.z),
-        SIMD3(m.columns.1.x, m.columns.1.y, m.columns.1.z),
-        SIMD3(m.columns.2.x, m.columns.2.y, m.columns.2.z))
-    }
-    let relative = rotation(a).transpose * rotation(b)
-    let trace = relative.columns.0.x + relative.columns.1.y + relative.columns.2.z
-    return acos(max(-1, min(1, (trace - 1) / 2)))
+  private func emitStats() {
+    onStats([
+      "kept": images.count,
+      "rejected": rejected,
+      "coverage": coverage,
+      "distanceM": lastDistance.map { Double($0) } ?? NSNull(),
+      "ambientIntensity": lastAmbient.map { Double($0) } ?? NSNull(),
+      "mode": mode.rawValue,
+      "aimed": anchor != nil && !aiming,
+    ])
   }
 
   // MARK: - Finish
 
   @objc private func doneTapped() {
-    guard canFinish, !finishRequested else { return }
+    guard canFinish else { return }
+    requestFinish(early: !requirementMet)
+  }
+
+  @objc private func finishAnywayTapped() {
+    guard canFinishEarly, !finishRequested else { return }
+    let alert = UIAlertController(
+      title: "Finish with fewer photos?", message: "The fit may be less accurate.", preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: "Keep scanning", style: .cancel))
+    alert.addAction(UIAlertAction(title: "Finish", style: .default) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self, self.canFinishEarly else { return }
+        self.requestFinish(early: true)
+      }
+    })
+    present(alert, animated: true)
+  }
+
+  private func requestFinish(early: Bool) {
+    guard !finishRequested else { return }
     finishRequested = true
+    finishedEarly = early
     refreshOverlay()
     if !encoding {
       finish()
@@ -387,18 +564,23 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     cancel()
   }
 
-  private var canFinish: Bool {
-    images.count >= Self.minPhotosForDone && coverage >= Self.minCoverageForDone
-  }
-
   private func finish() {
     guard !finished else { return }
-    let manifest: [String: Any] = [
+    var manifest: [String: Any] = [
       "format": "forms.photo-capture",
       "version": 1,
       "device": ["model": Self.deviceModel(), "os": UIDevice.current.systemVersion],
       "images": images,
     ]
+    if let anchor {
+      manifest["capture"] = [
+        "mode": mode.rawValue,
+        "anchor_world": [Double(anchor.x), Double(anchor.y), Double(anchor.z)],
+        "front_azimuth_rad": Double(frontAzimuth),
+        "coverage": coverage,
+        "finished_early": finishedEarly,
+      ] as [String: Any]
+    }
     let manifestURL = sessionDir.appendingPathComponent("capture.json")
     do {
       let data = try JSONSerialization.data(withJSONObject: manifest, options: [])
@@ -415,6 +597,8 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
       "manifestPath": manifestURL.path,
       "imageCount": images.count,
       "coverage": coverage,
+      "mode": mode.rawValue,
+      "finishedEarly": finishedEarly,
     ]
     teardown(deleteFiles: false) { [weak self] in
       self?.settle { $0.resolve(result) }
@@ -451,16 +635,21 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     panel.layer.cornerRadius = 12
     panel.translatesAutoresizingMaskIntoConstraints = false
 
-    countLabel.font = .monospacedDigitSystemFont(ofSize: 22, weight: .semibold)
-    countLabel.textColor = .white
-    countLabel.adjustsFontForContentSizeCategory = true
-    instructionLabel.font = .preferredFont(forTextStyle: .body)
-    instructionLabel.textColor = .white
-    instructionLabel.numberOfLines = 0
-    instructionLabel.adjustsFontForContentSizeCategory = true
-    instructionLabel.text = Self.baseInstruction
+    messageLabel.font = .preferredFont(forTextStyle: .headline)
+    messageLabel.textColor = .white
+    messageLabel.numberOfLines = 0
+    messageLabel.adjustsFontForContentSizeCategory = true
+    countLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+    countLabel.textColor = UIColor.white.withAlphaComponent(0.85)
+    targetLabel.font = .preferredFont(forTextStyle: .caption1)
+    targetLabel.textColor = UIColor.white.withAlphaComponent(0.7)
+    targetLabel.numberOfLines = 0
+    targetLabel.adjustsFontForContentSizeCategory = true
+    targetLabel.text = mode == .solo
+      ? "Aim for 50% around in solo mode, with the front and both sides."
+      : "Aim for 85% around with a helper."
 
-    let textStack = UIStackView(arrangedSubviews: [countLabel, instructionLabel])
+    let textStack = UIStackView(arrangedSubviews: [messageLabel, countLabel, targetLabel])
     textStack.axis = .vertical
     textStack.spacing = 4
     ringView.translatesAutoresizingMaskIntoConstraints = false
@@ -471,14 +660,32 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
     topRow.translatesAutoresizingMaskIntoConstraints = false
     panel.addSubview(topRow)
 
+    reticle.translatesAutoresizingMaskIntoConstraints = false
+    reticle.isUserInteractionEnabled = false
+    reticle.layer.borderColor = UIColor.white.cgColor
+    reticle.layer.borderWidth = 3
+    reticle.layer.cornerRadius = 32
+    reticle.isAccessibilityElement = true
+    reticle.accessibilityLabel = "Aiming circle. Point it at the front of your shin, then tap the screen."
+
     configure(button: cancelButton, title: "Cancel", filled: false, action: #selector(cancelTapped))
-    configure(button: doneButton, title: "Done", filled: true, action: #selector(doneTapped))
-    let buttons = UIStackView(arrangedSubviews: [cancelButton, doneButton])
-    buttons.axis = .horizontal
-    buttons.distribution = .fillEqually
+    configure(button: doneButton, title: "Done", filled: false, action: #selector(doneTapped))
+    configure(button: reaimButton, title: "Re-aim", filled: false, action: #selector(reaimTapped))
+    configure(button: finishAnywayButton, title: "Finish anyway", filled: false, action: #selector(finishAnywayTapped))
+    let secondary = UIStackView(arrangedSubviews: [reaimButton, finishAnywayButton])
+    secondary.axis = .horizontal
+    secondary.distribution = .fillEqually
+    secondary.spacing = 12
+    let primary = UIStackView(arrangedSubviews: [cancelButton, doneButton])
+    primary.axis = .horizontal
+    primary.distribution = .fillEqually
+    primary.spacing = 12
+    let buttons = UIStackView(arrangedSubviews: [secondary, primary])
+    buttons.axis = .vertical
     buttons.spacing = 12
     buttons.translatesAutoresizingMaskIntoConstraints = false
 
+    view.addSubview(reticle)
     view.addSubview(panel)
     view.addSubview(buttons)
     let guide = view.safeAreaLayoutGuide
@@ -490,42 +697,68 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
       topRow.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -12),
       topRow.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 12),
       topRow.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -12),
-      ringView.widthAnchor.constraint(equalToConstant: 64),
-      ringView.heightAnchor.constraint(equalToConstant: 64),
+      ringView.widthAnchor.constraint(equalToConstant: 72),
+      ringView.heightAnchor.constraint(equalToConstant: 72),
+      reticle.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      reticle.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+      reticle.widthAnchor.constraint(equalToConstant: 64),
+      reticle.heightAnchor.constraint(equalToConstant: 64),
       buttons.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 16),
       buttons.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -16),
       buttons.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -16),
-      buttons.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
+      primary.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
+      secondary.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
     ])
   }
 
   private func configure(button: UIButton, title: String, filled: Bool, action: Selector) {
+    style(button: button, title: title, filled: filled)
+    button.addTarget(self, action: action, for: .touchUpInside)
+  }
+
+  private func style(button: UIButton, title: String, filled: Bool) {
     var config: UIButton.Configuration = filled ? .filled() : .gray()
     config.title = title
     config.cornerStyle = .medium
     config.baseBackgroundColor = filled ? .white : UIColor.black.withAlphaComponent(0.55)
     config.baseForegroundColor = filled ? .black : .white
     button.configuration = config
-    button.addTarget(self, action: action, for: .touchUpInside)
   }
 
   private func refreshOverlay() {
-    countLabel.text = "\(images.count) of \(Self.minPhotosForDone)+ photos, \(Int((coverage * 100).rounded()))% around"
+    countLabel.text = "\(images.count) photos, \(Int((coverage * 100).rounded()))% around"
+    ringView.frontAzimuth = CGFloat(frontAzimuth)
     ringView.covered = coveredBuckets
+    ringView.current = anchor == nil ? nil : currentBucket
+    style(button: doneButton, title: "Done", filled: canFinish)
     doneButton.isEnabled = canFinish && !finishRequested
-    if images.count >= Self.maxPhotos {
-      instructionLabel.text = canFinish
-        ? "Photo limit reached. Tap Done."
-        : "Photo limit reached without a full circle. Cancel and scan again."
-    }
-  }
-
-  private func setInstruction(_ text: String) {
-    guard images.count < Self.maxPhotos, instructionLabel.text != text else { return }
-    instructionLabel.text = text
+    finishAnywayButton.isHidden = !canFinishEarly || finishRequested
+    reaimButton.isHidden = aiming || finishRequested || atCap
+    reticle.isHidden = !aiming
   }
 
   // MARK: - Helpers
+
+  private static func trackingMessage(_ state: ARCamera.TrackingState) -> String? {
+    switch state {
+    case .normal:
+      return nil
+    case .notAvailable:
+      return "Starting the camera. Move the phone slowly."
+    case let .limited(reason):
+      switch reason {
+      case .excessiveMotion: return "Slow down. The camera lost its place."
+      case .insufficientFeatures: return "Not enough detail in view. Add light, or include the floor."
+      case .initializing: return "Starting up. Move the phone slowly side to side."
+      case .relocalizing: return "Finding its place again. Point back at your leg."
+      @unknown default: return "Tracking is limited. Move the phone slowly."
+      }
+    }
+  }
+
+  private static func translation(_ m: simd_float4x4) -> SIMD3<Float> {
+    SIMD3<Float>(m.columns.3.x, m.columns.3.y, m.columns.3.z)
+  }
 
   private static func deviceModel() -> String {
     var info = utsname()
@@ -548,12 +781,23 @@ final class PhotoCaptureController: UIViewController, ARSessionDelegate {
   }
 }
 
-/// Ring of equal arcs; covered segments drawn solid, the rest faint.
+/// Top-down map of the 36 azimuth buckets, rotated so the aim (front) bucket
+/// sits at the bottom: the user stands at the bottom looking up at the leg.
+/// UIKit angles grow clockwise with y down, matching azimuth with world x to
+/// the right and z down, so the map is not mirrored.
 private final class CoverageRingView: UIView {
   private let segmentLayers: [CAShapeLayer]
 
+  var frontAzimuth: CGFloat = 0 {
+    didSet { if frontAzimuth != oldValue { setNeedsLayout() } }
+  }
+
   var covered = Set<Int>() {
-    didSet { updateColors() }
+    didSet { if covered != oldValue { updateColors() } }
+  }
+
+  var current: Int? {
+    didSet { if current != oldValue { updateColors() } }
   }
 
   init(segments: Int) {
@@ -563,7 +807,6 @@ private final class CoverageRingView: UIView {
     accessibilityLabel = "Coverage around the leg"
     for layer in segmentLayers {
       layer.fillColor = UIColor.clear.cgColor
-      layer.lineWidth = 6
       self.layer.addSublayer(layer)
     }
     updateColors()
@@ -577,11 +820,12 @@ private final class CoverageRingView: UIView {
   override func layoutSubviews() {
     super.layoutSubviews()
     let center = CGPoint(x: bounds.midX, y: bounds.midY)
-    let radius = min(bounds.width, bounds.height) / 2 - 4
+    let radius = min(bounds.width, bounds.height) / 2 - 6
     let step = 2 * CGFloat.pi / CGFloat(segmentLayers.count)
     let gap = step * 0.15
+    let offset = CGFloat.pi / 2 - frontAzimuth
     for (index, layer) in segmentLayers.enumerated() {
-      let start = -CGFloat.pi / 2 + CGFloat(index) * step + gap / 2
+      let start = offset + CGFloat(index) * step + gap / 2
       layer.frame = bounds
       layer.path = UIBezierPath(
         arcCenter: center, radius: radius, startAngle: start, endAngle: start + step - gap, clockwise: true
@@ -591,9 +835,15 @@ private final class CoverageRingView: UIView {
 
   private func updateColors() {
     for (index, layer) in segmentLayers.enumerated() {
-      layer.strokeColor = covered.contains(index)
-        ? UIColor.white.cgColor
-        : UIColor.white.withAlphaComponent(0.25).cgColor
+      let isCurrent = index == current
+      layer.lineWidth = isCurrent ? 10 : 6
+      if isCurrent {
+        layer.strokeColor = UIColor.white.cgColor
+      } else if covered.contains(index) {
+        layer.strokeColor = UIColor.systemGreen.cgColor
+      } else {
+        layer.strokeColor = UIColor.white.withAlphaComponent(0.25).cgColor
+      }
     }
     accessibilityValue = "\(Int((Double(covered.count) / Double(max(1, segmentLayers.count)) * 100).rounded())) percent"
   }

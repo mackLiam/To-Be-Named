@@ -19,7 +19,8 @@ import RealityKit
      capture for iPhones without ObjectCaptureSession; the bundle is
      reconstructed server-side (PhotoCaptureController).
    - cancel(): tear down whichever session is in flight.
-   - Emits 'onCaptureStateChange' and 'onReconstructionProgress' events.
+   - Emits 'onCaptureStateChange', 'onReconstructionProgress' and, during
+     photo capture, 'onPhotoCaptureStats' (scalars only, once a second).
 
  This file is intentionally thin: the session lifecycles live in
  CaptureSessionController and ReconstructionController. Everything that touches
@@ -40,7 +41,7 @@ public class FormsCaptureModule: Module {
     Name("FormsCapture")
 
     // Event names must match modules/forms-capture/src/types.ts CaptureEventsMap.
-    Events("onCaptureStateChange", "onReconstructionProgress")
+    Events("onCaptureStateChange", "onReconstructionProgress", "onPhotoCaptureStats")
 
     // ObjectCaptureSession.isSupported is main-actor isolated (RealityKit
     // _RealityKit_SwiftUI.swiftinterface), so this cannot be a synchronous
@@ -89,14 +90,21 @@ public class FormsCaptureModule: Module {
     }
 
     // Present guided photo capture; resolves with the bundle on Done.
-    AsyncFunction("startPhotoCapture") { (promise: Promise) in
+    AsyncFunction("startPhotoCapture") { (options: PhotoCaptureOptions, promise: Promise) in
+      // Unknown strings fall back to solo, the lower bar: never a dead end.
+      let mode = PhotoCaptureMode(rawValue: options.mode) ?? .solo
       Task { @MainActor [weak self] in
         guard let self else { return }
         guard ARWorldTrackingConfiguration.isSupported else {
           promise.reject(CaptureUnsupportedException())
           return
         }
-        let controller = PhotoCaptureController()
+        let controller = PhotoCaptureController(
+          mode: mode,
+          onStats: { [weak self] stats in
+            self?.sendEvent("onPhotoCaptureStats", stats)
+          }
+        )
         self.photoController = controller
         controller.start(promise: promise)
       }

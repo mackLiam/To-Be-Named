@@ -20,7 +20,9 @@ import { FormsCaptureNative } from './src/native';
 import type {
   CaptureResult,
   CaptureStateEvent,
+  PhotoCaptureOptions,
   PhotoCaptureResult,
+  PhotoCaptureStatsEvent,
   ReconstructOptions,
   ReconstructResult,
   ReconstructionProgressEvent,
@@ -35,7 +37,11 @@ export type {
   CaptureState,
   CaptureStateEvent,
   DetailLevel,
+  PhotoCaptureMode,
+  PhotoCaptureOptions,
   PhotoCaptureResult,
+  PhotoCaptureStatsEvent,
+  PhotoRejectReason,
   ReconstructOptions,
   ReconstructResult,
   ReconstructionProgressEvent,
@@ -104,14 +110,16 @@ export async function isPhotoCaptureSupported(): Promise<boolean> {
  * the app sandbox. Resolves on Done; rejects with ERR_CAPTURE_CANCELLED on
  * Cancel. No on-device reconstruction: the bundle is uploaded as-is.
  */
-export async function startPhotoCapture(): Promise<PhotoCaptureResult> {
+export async function startPhotoCapture(
+  options: PhotoCaptureOptions = { mode: 'solo' },
+): Promise<PhotoCaptureResult> {
   if (!FormsCaptureNative) {
     throw new CaptureUnavailableError(
       'Photo capture is unavailable on this device (native module not linked).',
     );
   }
   try {
-    return await FormsCaptureNative.startPhotoCapture();
+    return await FormsCaptureNative.startPhotoCapture(options);
   } catch (error) {
     throw mapNativeError(error);
   }
@@ -171,4 +179,14 @@ export function addReconstructionProgressListener(
     return NOOP_SUBSCRIPTION;
   }
   return FormsCaptureNative.addListener('onReconstructionProgress', listener);
+}
+
+/** Subscribe to once-a-second photo capture diagnostics (tuning only). */
+export function addPhotoCaptureStatsListener(
+  listener: (event: PhotoCaptureStatsEvent) => void,
+): EventSubscription {
+  if (!FormsCaptureNative) {
+    return NOOP_SUBSCRIPTION;
+  }
+  return FormsCaptureNative.addListener('onPhotoCaptureStats', listener);
 }

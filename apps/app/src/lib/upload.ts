@@ -372,11 +372,56 @@ export interface PhotoManifestImage {
   tracking: string;
 }
 
+/** Optional capture v2 block. Exactly these keys: the server
+ * (services/pipeline reconstruct/bundle.py) rejects missing or extra ones. */
+export interface PhotoManifestCapture {
+  mode: 'solo' | 'helper';
+  /** Leg axis point, ARKit world meters (same frame as camera_to_world). */
+  anchor_world: [number, number, number];
+  /** atan2(camera.z - anchor.z, camera.x - anchor.x) at the aim tap. */
+  front_azimuth_rad: number;
+  /** 0..1, client-reported. */
+  coverage: number;
+  finished_early: boolean;
+}
+
 export interface PhotoManifest {
   format: 'forms.photo-capture';
   version: 1;
   device: { model: string; os: string };
   images: PhotoManifestImage[];
+  capture?: PhotoManifestCapture;
+}
+
+const CAPTURE_KEYS = ['anchor_world', 'coverage', 'finished_early', 'front_azimuth_rad', 'mode'];
+
+function validateCaptureBlock(value: unknown): void {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw invalidBundle('capture must be an object');
+  }
+  const capture = value as Record<string, unknown>;
+  if (Object.keys(capture).sort().join(',') !== CAPTURE_KEYS.join(',')) {
+    throw invalidBundle('capture has missing or unknown fields');
+  }
+  if (capture.mode !== 'solo' && capture.mode !== 'helper') {
+    throw invalidBundle('capture.mode must be solo or helper');
+  }
+  if (!isFiniteNumberArray(capture.anchor_world, 3)) {
+    throw invalidBundle('capture.anchor_world must be 3 numbers');
+  }
+  if (
+    typeof capture.front_azimuth_rad !== 'number' ||
+    !Number.isFinite(capture.front_azimuth_rad)
+  ) {
+    throw invalidBundle('capture.front_azimuth_rad must be a number');
+  }
+  const coverage = capture.coverage;
+  if (typeof coverage !== 'number' || !(coverage >= 0 && coverage <= 1)) {
+    throw invalidBundle('capture.coverage must be between 0 and 1');
+  }
+  if (typeof capture.finished_early !== 'boolean') {
+    throw invalidBundle('capture.finished_early must be a boolean');
+  }
 }
 
 function invalidBundle(detail: string): UploadError {
@@ -452,6 +497,9 @@ export function validatePhotoManifest(value: unknown): PhotoManifest {
       throw invalidBundle(`${where}.tracking must be a string`);
     }
   });
+  if (manifest.capture !== undefined) {
+    validateCaptureBlock(manifest.capture);
+  }
   return value as PhotoManifest;
 }
 

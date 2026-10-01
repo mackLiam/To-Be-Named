@@ -76,6 +76,42 @@ export interface PhotoCaptureResult {
   imageCount: number;
   /** Fraction (0..1) of the 36 ten-degree orbit buckets that hold a photo. */
   coverage: number;
+  /** Who held the phone; decides the coverage requirement. */
+  mode: PhotoCaptureMode;
+  /** True when the user finished before the mode's requirement was met. */
+  finishedEarly: boolean;
+}
+
+/**
+ * 'solo': the person scans their own leg, sweeping an arc they can reach
+ * (needs 50% coverage including front, inner and outer). 'helper': someone
+ * else walks a full circle (needs 85%).
+ */
+export type PhotoCaptureMode = 'solo' | 'helper';
+
+export interface PhotoCaptureOptions {
+  mode: PhotoCaptureMode;
+}
+
+/** Frame rejection reasons counted in {@link PhotoCaptureStatsEvent.rejected}. */
+export type PhotoRejectReason =
+  'trackingLimited' | 'tooDark' | 'movingTooFast' | 'blurry' | 'tooClose' | 'tooFar' | 'offTarget';
+
+/**
+ * Payload for 'onPhotoCaptureStats', emitted once a second during photo
+ * capture for tuning. Scalars only: never images, poses or positions.
+ */
+export interface PhotoCaptureStatsEvent {
+  kept: number;
+  rejected: Partial<Record<PhotoRejectReason, number>>;
+  /** 0..1, same measure as PhotoCaptureResult.coverage. */
+  coverage: number;
+  /** Horizontal camera to leg axis distance; null before the aim tap. */
+  distanceM: number | null;
+  /** ARKit ambientIntensity (lumens, ~1000 is a lit room); null if unknown. */
+  ambientIntensity: number | null;
+  mode: PhotoCaptureMode;
+  aimed: boolean;
 }
 
 /** Result of a completed reconstruction. All paths are inside the app sandbox. */
@@ -115,6 +151,7 @@ export interface ReconstructionProgressEvent {
 export interface CaptureEventsMap {
   onCaptureStateChange: CaptureStateEvent;
   onReconstructionProgress: ReconstructionProgressEvent;
+  onPhotoCaptureStats: PhotoCaptureStatsEvent;
 }
 
 export type CaptureEventName = keyof CaptureEventsMap;
@@ -135,7 +172,7 @@ export interface FormsCaptureNativeModule {
   startCapture(): Promise<CaptureResult>;
   /** ARWorldTrackingConfiguration.isSupported: any ARKit iPhone, no LiDAR. */
   isPhotoCaptureSupported(): Promise<boolean>;
-  startPhotoCapture(): Promise<PhotoCaptureResult>;
+  startPhotoCapture(options: PhotoCaptureOptions): Promise<PhotoCaptureResult>;
   reconstruct(options: ReconstructOptions): Promise<ReconstructResult>;
   cancel(): Promise<void>;
   /** Inherited from the Expo NativeModule/EventEmitter base. */
