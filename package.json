@@ -16,6 +16,6 @@
   "devDependencies": {
     "turbo": "^2",
     "prettier": "^3",
-    "typescript": "^5"
+    "typescript": "^7"
   }
 }
