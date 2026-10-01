@@ -67,6 +67,7 @@ function RootStack({ fontsReady }: { fontsReady: boolean }) {
         <Stack.Protected guard={account !== null}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="capture" />
+          <Stack.Screen name="measure/[scanId]" />
           <Stack.Screen
             name="scan/[key]"
             options={{
