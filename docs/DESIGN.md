@@ -106,7 +106,7 @@ pipeline, and the pipeline can be tested without any phone at all.
 | Worker hosting | **Fly.io or Railway** (Docker) | Cheap always-on container, scale-to-N later. Modal is a good alternative if jobs become bursty/GPU-bound. |
 | CAD generation | **Onshape REST API** (MVP) | Collaborator's parametric model already exists and accepts the 25 variables. See §7 for the scaling caveat and exit strategy. |
 | Payments | **Stripe** (Payment Sheet on mobile, Checkout on web) | Industry default; handles SCA/tax/receipts. Never touch card data. |
-| Auth | **Supabase Auth**: email one-time code (sign-in and sign-up are one flow) + guest mode as Supabase anonymous users; Sign in with Apple once the Apple Developer account exists (+ Google for Android/web later) | Sign in with Apple is required by App Store review when any third-party login is offered. Guests are real auth users so the existing RLS scopes their scans and orders unchanged, and a guest upgrades by attaching an email, keeping the user id, so nothing migrates. Every product screen requires a session (guest or member); see supabase/README.md "Accounts and sign-in". |
+| Auth | **Supabase Auth**: email one-time code (sign-in and sign-up are one flow) + guest mode as Supabase anonymous users; Sign in with Apple once the Apple Developer account exists (+ Google for Android/web later) | Sign in with Apple is required by App Store review when any third-party login is offered. Guests are real auth users so the existing RLS scopes their scans unchanged, and a guest upgrades by attaching an email, keeping the user id, so nothing migrates. A guest whose email already has an account brings its scans along through a single-use transfer token (migration 0012). **Paying needs a member account**: RLS refuses order inserts from anonymous users. Sessions live in Keychain/Keystore on native. Accounts can be deleted and exported in-app (App Store 5.1.1(v), GDPR). Staff (admin panel) need password + TOTP (AAL2). See section 9 and supabase/README.md "Accounts and sign-in". |
 | CI/CD | **GitHub Actions** + **EAS Build/Submit** (mobile), Vercel (web), Docker deploy (worker) | Solves the "no Mac" problem for release builds - EAS builds iOS in the cloud (see §5). |
 | Errors / analytics | **Sentry** (app + worker) · **PostHog** (funnel: scan started → scan succeeded → order) | Scan failure rate is the #1 product metric; instrument it from day one. |
 
@@ -366,14 +366,16 @@ pass before it becomes purchasable:
 ```
 users          id, auth_id, email, created_at
 profiles       user_id, name, shipping_address, preferred_leg_sizes
-scans          id, user_id, leg (L/R), status, mesh_path, capture_meta
+scans          id, user_id (null after account deletion), storage_user_id
+               (immutable: whose storage prefix holds the files), leg (L/R),
+               status, mesh_path, capture_meta, deleted_at, mesh_deleted_at
                (device model, iOS version, capture duration), created_at
 measurements   id, scan_id, schema_version, values(jsonb: 25 vars),
                extraction_version, validated(bool), created_at
 products       id, name, base_price, active,
                cad_model(jsonb: provider, ref, variable_map, schema_version)
                -- guard models/styles; descriptor contract in §7a.2
-orders         id, user_id, product_id, scan_id_left, scan_id_right,
+orders         id, user_id (null after account deletion), product_id, scan_id_left, scan_id_right,
                status, stripe_payment_intent, amount, address(json), created_at
 pipeline_jobs  id, order_id, step, status, attempts, error, started_at,
                finished_at, artifacts(jsonb: stl_path, onshape_refs)
@@ -384,6 +386,9 @@ Notes:
 - Measurements stored as versioned JSONB against the frozen schema - when the
   extraction algorithm changes, `extraction_version` lets you re-run and compare.
 - A guard is per-leg: orders reference up to two scans.
+- A scan's files are always under `<storage_user_id>/` in storage. Ownership
+  (`user_id`) can change (guest merge) or vanish (account deletion) without the
+  files moving, so every worker derives storage paths from `storage_user_id`.
 - **Row Level Security on every table**; users see only their own rows. Admin
   access via a service role used exclusively server-side (worker, admin panel
   API routes) - the service key never ships in any client.
@@ -401,7 +406,9 @@ retrofitting features.
    all mesh/STL access via short-lived signed URLs; encryption at rest (managed).
 2. **Least privilege:** clients get scoped, RLS-constrained tokens only. Worker
    uses the service role from server-side env/secrets manager. No secrets in the
-   mobile bundle - anything in the app binary is public.
+   mobile bundle - anything in the app binary is public. Admin access is an
+   email allowlist (confirmed email only) plus TOTP MFA (AAL2); it never reads
+   user-writable data such as `profiles`.
 3. **Data minimization & retention:** raw meshes exist to serve orders and debug
    the pipeline. Policy: auto-delete raw meshes N days after order delivery
    (keep only the 25 measurements, which are far less sensitive), with explicit
@@ -410,6 +417,15 @@ retrofitting features.
    deletion is a soft delete by the owner (RPC, refused for scans on an order)
    followed by a service-role purge of storage and rows, armed explicitly
    (supabase/migrations/0011, forms_pipeline.jobs.scan_deletion).
+   Account deletion (migration 0012, forms_pipeline.jobs.account_deletion,
+   armed by `--arm`): refused while an order is paid, in production or
+   shipped; cancels unpaid orders, purges unordered scans, erases the mesh
+   files of ordered scans, then deletes the auth user. Order rows and the
+   measurements of ordered scans are kept with `user_id` null as order
+   records. **How long order records (including the shipping address) are
+   kept is a legal decision for Liam, not yet made.** Abandoned guests
+   (anonymous, no orders, no session refresh for 90 days) go through the same
+   path. Users can export their data in-app (`export_my_data`).
 4. **Minors:** likely under-16 users → parental-consent flow and a COPPA/GDPR-K
    review before launch. Flag for legal review; do not silently ignore.
 5. **Payments:** Stripe-hosted fields/sheets only; PCI SAQ-A scope. Store the
