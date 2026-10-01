@@ -62,6 +62,21 @@ describe('handleStlDownload', () => {
     expect(maybeSingle).not.toHaveBeenCalled();
   });
 
+  it.each(['mfa_enroll', 'mfa_verify'] as const)(
+    'returns 404 for an admin who has not passed MFA (%s)',
+    async (kind) => {
+      const { client, maybeSingle } = makeClient({});
+      const result = await handleStlDownload({
+        decision: { kind },
+        serviceConfigured: true,
+        jobId: 'job-1',
+        getClient: () => client,
+      });
+      expect(result.status).toBe(404);
+      expect(maybeSingle).not.toHaveBeenCalled();
+    },
+  );
+
   it('returns 501 when the service role is not configured', async () => {
     const result = await handleStlDownload({
       decision: adminDecision,

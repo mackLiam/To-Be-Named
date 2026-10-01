@@ -74,8 +74,9 @@ export interface StlDownloadResult {
 }
 
 export async function handleStlDownload(deps: StlDownloadDeps): Promise<StlDownloadResult> {
-  if (deps.decision.kind === 'deny') {
-    // Do not reveal the endpoint to non-admins.
+  if (deps.decision.kind !== 'allow' && deps.decision.kind !== 'fake') {
+    // Do not reveal the endpoint to non-admins, or to an admin who has not
+    // passed MFA yet (mfa_enroll / mfa_verify).
     return { status: 404 };
   }
 
