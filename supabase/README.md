@@ -106,7 +106,42 @@ high-sensitivity one.
 - There is no automated sweep implemented in this migration set yet - see
   TODOs below.
 
+## Accounts and sign-in
+
+The app (apps/app/src/lib/auth.ts) has two kinds of signed-in user, and no
+signed-out access to any product screen:
+
+- **Guest**: a Supabase anonymous sign-in. It is a real `auth.users` row with
+  an `auth.uid()`, so every policy above already scopes its scans, orders and
+  mesh uploads to it; no policy distinguishes guests. Its session lives on one
+  device only: sign-out or reinstall makes its rows unreachable (they are
+  orphaned, not deleted).
+- **Member**: email one-time code. Same flow signs in and signs up.
+
+A guest becomes a member by attaching an email (`updateUser({ email })` then
+`verifyOtp({ type: 'email_change' })`). The user id does not change, which is
+the whole reason guests are anonymous users: their library and orders carry
+over with no data migration. Merging a guest into an existing member account
+is not supported (the app tells them to sign in to that account instead).
+
+Hosted project setup (Supabase dashboard, one time; `config.toml` covers
+local dev):
+
+1. Authentication > Sign In / Providers: Email enabled, "Allow anonymous
+   sign-ins" on.
+2. Authentication > Emails: the "Magic Link" and "Change Email Address"
+   templates must include `{{ .Token }}`. The app takes a typed code, not a
+   link; the hosted default templates only contain the link.
+3. Authentication > Rate Limits: keep anonymous sign-ins per IP low, and
+   turn on CAPTCHA before launch, since anonymous sign-in is an open endpoint.
+4. Custom SMTP before real users: the built-in sender is heavily rate limited.
+
 ## TODOs
+
+- **Guest cleanup.** Signed-out guests leave orphaned anonymous users and
+  their scans. Add a service-role sweep deleting anonymous users with no
+  orders older than N days (and their `meshes` objects), alongside the
+  retention sweep.
 
 - **Retention sweep job.** Add a `pg_cron` (or external scheduled worker)
   job that finds delivered orders past the retention window, deletes the
