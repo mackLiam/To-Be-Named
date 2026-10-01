@@ -61,7 +61,7 @@ export default function CaptureInfoScreen() {
       ? 'Good light, and a patterned sock or a few pen dots on the shin.'
       : 'Even light, no harsh shadows.',
     availability.mode === 'photos'
-      ? 'A chair to sit on, or someone to walk a circle around you.'
+      ? 'A chair to sit on for five photos on your own, or someone to walk a circle around you.'
       : 'Room to walk one slow circle around your leg.',
   ];
 

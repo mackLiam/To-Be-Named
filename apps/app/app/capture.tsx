@@ -11,6 +11,7 @@ import { UnavailableNotice } from '../src/components/UnavailableNotice';
 import { captureErrorMessage, useCaptureFlow } from '../src/hooks/useCaptureFlow';
 import type { CaptureFlowState, CaptureMetaEnv } from '../src/hooks/useCaptureFlow';
 import { isSessionComplete } from '../src/lib/captureSession';
+import { NEW_SCAN_ID } from '../src/lib/manualSubmit';
 import { hasSupabaseConfig } from '../src/lib/supabase';
 import { uploadErrorMessage } from '../src/lib/upload';
 import type { Leg } from '../src/lib/upload';
@@ -51,6 +52,22 @@ export default function CaptureScreen() {
       router.replace({ pathname: '/scan/[key]', params: { key: session.pairId, fresh: '1' } });
     }
   }, [state.phase, pairComplete, session, router]);
+
+  // "Enter measurements by hand" from inside the solo capture. replace() so
+  // back does not reopen the camera.
+  useEffect(() => {
+    if (state.phase === 'manual') {
+      router.replace({
+        pathname: '/measure/[scanId]',
+        params: {
+          scanId: NEW_SCAN_ID,
+          mode: 'manual',
+          leg: state.leg,
+          ...(session ? { pairId: session.pairId } : {}),
+        },
+      });
+    }
+  }, [state.phase, state.leg, session, router]);
 
   switch (state.phase) {
     case 'unsupported':
@@ -109,9 +126,9 @@ function LegHeader({ leg, title }: { leg: Leg; title?: string }) {
 /** Photos mode steps per answer to "Is someone helping you?". */
 const PHOTO_STEPS: Record<PhotoCaptureMode, string[]> = {
   solo: [
-    'Sit on a chair, foot flat on the floor, other leg moved out of the way.',
-    'Point the circle at the front of your shin, halfway up, and tap.',
-    'Sweep the phone from the inner side, across the front, to the outer side, then reach behind as far as is comfortable. Switch hands for the far side.',
+    'Sit on a chair, foot flat on the floor, shin upright, other leg moved out of the way.',
+    'Point the phone at the floor near your foot for a moment, then point the circle at the front of your shin, halfway up, and tap.',
+    'Move the phone to each dot on the map and hold still. It takes five photos by itself: the front, then the inner side, then the outer side.',
   ],
   helper: [
     'Stand or sit still.',
@@ -121,12 +138,12 @@ const PHOTO_STEPS: Record<PhotoCaptureMode, string[]> = {
 };
 
 const PHOTO_TITLE: Record<PhotoCaptureMode, string> = {
-  solo: 'Sweep the phone around your leg.',
+  solo: 'Five photos around the front of your leg.',
   helper: 'Your helper walks one slow circle.',
 };
 
 const PHOTO_TARGET: Record<PhotoCaptureMode, string> = {
-  solo: 'Done unlocks at about half way around, with the front and both sides covered.',
+  solo: 'Each photo shows the whole lower leg, from the floor to above the knee.',
   helper: 'Done unlocks once the ring is almost full.',
 };
 
@@ -192,8 +209,10 @@ function ReadySection({
           ))}
         </View>
         <Body color={colors.textSecondary}>
-          Shorts on or trousers rolled up, good light, and a patterned sock or a few pen dots on the
-          shin. {PHOTO_TARGET[photoMode]}
+          {photoMode === 'solo'
+            ? 'Shorts on or trousers rolled above the knee, and good light.'
+            : 'Shorts on or trousers rolled up, good light, and a patterned sock or a few pen dots on the shin.'}{' '}
+          {PHOTO_TARGET[photoMode]}
         </Body>
       </Screen>
     );
