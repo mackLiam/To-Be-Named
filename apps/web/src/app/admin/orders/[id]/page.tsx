@@ -130,7 +130,8 @@ export default async function OrderDetailPage({
           ))}
           {moves.includes('cancelled') && order.status !== 'pending_payment' ? (
             <span className={styles.actionNote}>
-              Cancelling does not refund. Issue the refund in Stripe as well.
+              Cancelling does not refund. Use Refund payment below for a Stripe payment, or refund
+              it by hand if it was marked paid manually.
             </span>
           ) : null}
         </div>

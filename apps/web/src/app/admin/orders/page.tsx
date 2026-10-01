@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 import { ORDER_STATUSES } from '@forms/shared';
 import { BRAND_NAME } from '@forms/shared/brand';
@@ -10,7 +11,7 @@ import { StatusBadge } from '../StatusBadge';
 import { requireAdmin } from '@/lib/admin-auth';
 import { listOrders } from '@/lib/data';
 import { DEFAULT_PAGE_SIZE, firstValue, parsePageParam } from '@/lib/pagination';
-import { ORDER_STATUS_META, formatMoney, isOrderStatus } from '@/lib/shop';
+import { ORDER_STATUS_META, formatMoney, isOrderStatus, orderReferenceRange } from '@/lib/shop';
 import { formatDateTime, shortId } from '@/lib/view';
 
 export const metadata: Metadata = {
@@ -47,12 +48,19 @@ export default async function OrdersPage({
   const rawStatus = firstValue(sp.status);
   const activeStatus = isOrderStatus(rawStatus) ? rawStatus : 'all';
   const page = parsePageParam(sp.page);
+  const rawRef = firstValue(sp.ref)?.trim() ?? '';
+  const ref = orderReferenceRange(rawRef) ? rawRef : undefined;
 
   const { rows, hasNext } = await listOrders({
     status: activeStatus === 'all' ? undefined : activeStatus,
+    ref,
     page,
     pageSize: DEFAULT_PAGE_SIZE,
   });
+  // A reference names one order in practice; go straight to it.
+  if (ref && rows.length === 1 && page === 1) {
+    redirect(`/admin/orders/${rows[0]!.id}`);
+  }
 
   const filters = [
     { value: 'all', label: 'All' },
@@ -69,6 +77,26 @@ export default async function OrdersPage({
           </p>
         </div>
       </div>
+
+      <form method="get" action="/admin/orders" className={styles.filterBar}>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Order reference</span>
+          <input
+            className={styles.input}
+            name="ref"
+            defaultValue={rawRef}
+            placeholder="ABCDEF12"
+            maxLength={9}
+            autoComplete="off"
+          />
+        </label>
+        <button type="submit" className={styles.downloadBtn}>
+          Find
+        </button>
+        {rawRef && !ref ? (
+          <span className={styles.formError}>A reference is the 8 characters from the email.</span>
+        ) : null}
+      </form>
 
       <nav className={styles.filterBar} aria-label="Filter by status">
         {filters.map((filter) => {

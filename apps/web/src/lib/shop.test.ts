@@ -11,6 +11,7 @@ import {
   formatMoney,
   isUuid,
   nextOrderStatuses,
+  orderReferenceRange,
   parsePriceToCents,
   parseProductForm,
   parseTrackingForm,
@@ -200,6 +201,29 @@ describe('describeAudit', () => {
     expect(describeAudit({ action: 'order.tracking', detail: { tracking_number: null } })).toBe(
       'Tracking cleared',
     );
-    expect(describeAudit({ action: 'order.refund', detail: null })).toBe('order.refund');
+    expect(describeAudit({ action: 'order.note', detail: null })).toBe('order.note');
+  });
+});
+
+describe('orderReferenceRange', () => {
+  it('maps the 8-character reference to the id range it prefixes', () => {
+    expect(orderReferenceRange(' #ABCDEF12 ')).toEqual({
+      from: 'abcdef12-0000-0000-0000-000000000000',
+      to: 'abcdef12-ffff-ffff-ffff-ffffffffffff',
+    });
+  });
+
+  it('rejects anything that is not exactly 8 hex characters', () => {
+    for (const bad of [undefined, '', 'abcdef1', 'abcdef123', 'abcdefgh', "abcdef1'"]) {
+      expect(orderReferenceRange(bad)).toBeNull();
+    }
+  });
+});
+
+describe('describeAudit refunds', () => {
+  it('labels a refund row', () => {
+    expect(describeAudit({ action: 'order.refund', detail: { refund_status: 'succeeded' } })).toBe(
+      'Refund issued (succeeded)',
+    );
   });
 });

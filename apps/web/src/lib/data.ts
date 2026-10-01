@@ -1,7 +1,7 @@
 import { isFakeMode, hasServiceRoleConfig } from './env';
 import { fakeJobs, fakeOrderDetail, fakeOrders, fakeProducts, fakeTriage } from './fake';
 import { lookaheadRange, splitLookahead } from './pagination';
-import { isOrderStatus, isUuid } from './shop';
+import { isOrderStatus, isUuid, orderReferenceRange } from './shop';
 import type {
   AuditRow,
   GateResult,
@@ -91,13 +91,18 @@ function flattenOrder({ products, ...row }: OrderQueryRow): OrderRow {
 
 export async function listOrders(opts: {
   status?: string;
+  /** Customer-facing order reference (8 hex chars); ignored when malformed. */
+  ref?: string;
   page: number;
   pageSize: number;
 }): Promise<ListResult<OrderRow>> {
+  const range = orderReferenceRange(opts.ref);
   if (shouldUseFake()) {
-    const filtered = isOrderStatus(opts.status)
-      ? fakeOrders.filter((row) => row.status === opts.status)
-      : fakeOrders;
+    const filtered = fakeOrders.filter(
+      (row) =>
+        (!isOrderStatus(opts.status) || row.status === opts.status) &&
+        (!range || (row.id >= range.from && row.id <= range.to)),
+    );
     const start = (opts.page - 1) * opts.pageSize;
     return splitLookahead(filtered.slice(start, start + opts.pageSize + 1), opts.pageSize);
   }
@@ -107,6 +112,9 @@ export async function listOrders(opts: {
   let query = client.from('orders').select(ORDER_COLUMNS);
   if (isOrderStatus(opts.status)) {
     query = query.eq('status', opts.status);
+  }
+  if (range) {
+    query = query.gte('id', range.from).lte('id', range.to);
   }
   const { data, error } = await query.order('created_at', { ascending: false }).range(from, to);
   if (error) {

@@ -235,12 +235,30 @@ export function describeAudit(row: {
   if (row.action === 'order.status' && typeof d.from === 'string' && typeof d.to === 'string') {
     return `${orderStatusMeta(d.from).label} to ${orderStatusMeta(d.to).label}`;
   }
+  if (row.action === 'order.refund') {
+    return typeof d.refund_status === 'string'
+      ? `Refund issued (${d.refund_status})`
+      : 'Refund issued';
+  }
   if (row.action === 'order.tracking') {
     const number = typeof d.tracking_number === 'string' ? d.tracking_number : null;
     const carrier = typeof d.tracking_carrier === 'string' ? `${d.tracking_carrier} ` : '';
     return number ? `Tracking set to ${carrier}${number}` : 'Tracking cleared';
   }
   return row.action;
+}
+
+/**
+ * The reference customers quote (first 8 hex chars of the order id, as the
+ * emails print it) -> the id range it covers. uuid ordering in Postgres is
+ * bytewise, so this range is exactly the ids with that prefix.
+ */
+export function orderReferenceRange(raw: string | undefined): { from: string; to: string } | null {
+  const ref = (raw ?? '').trim().toLowerCase().replace(/^#/, '');
+  if (!/^[0-9a-f]{8}$/.test(ref)) {
+    return null;
+  }
+  return { from: `${ref}-0000-0000-0000-000000000000`, to: `${ref}-ffff-ffff-ffff-ffffffffffff` };
 }
 
 export function formatMoney(cents: number | null, currency: string | null): string {
