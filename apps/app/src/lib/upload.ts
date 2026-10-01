@@ -30,7 +30,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ScanStatus } from '@forms/shared';
+import type { CaptureKind, ScanStatus } from '@forms/shared';
 
 import { getSupabaseClient, hasSupabaseConfig } from './supabase';
 
@@ -82,6 +82,8 @@ export type UploadErrorCode =
   | 'ERR_UPLOAD_DB'
   /** Enqueuing the measurement job failed. */
   | 'ERR_UPLOAD_ENQUEUE'
+  /** The photo bundle (capture.json + images) breaks the contract or caps. */
+  | 'ERR_UPLOAD_INVALID_BUNDLE'
   /** Anything not classified above. */
   | 'ERR_UPLOAD_UNKNOWN';
 
@@ -112,6 +114,8 @@ export const UPLOAD_ERROR_MESSAGES: Record<UploadErrorCode, string> = {
   ERR_UPLOAD_STORAGE: 'The scan could not be uploaded. Check your connection and tap Retry.',
   ERR_UPLOAD_DB: 'The scan uploaded but could not be saved to your library. Tap Retry.',
   ERR_UPLOAD_ENQUEUE: 'The scan was saved but could not be queued for measurement. Tap Retry.',
+  ERR_UPLOAD_INVALID_BUNDLE:
+    'The photos from this scan are incomplete or damaged, so they cannot be used. Scan again.',
   ERR_UPLOAD_UNKNOWN: 'Something went wrong saving the scan. Tap Retry.',
 };
 
@@ -332,6 +336,310 @@ export async function uploadScanWith(
 }
 
 // ---------------------------------------------------------------------------
+// Photo bundle (non-LiDAR capture, reconstructed server-side)
+// ---------------------------------------------------------------------------
+
+const PHOTOS_CAPTURE_KIND: CaptureKind = 'photos';
+
+/** Caps from the "forms.photo-capture" v1 contract. The server re-validates
+ * every one; these exist so a bad bundle fails before any upload. */
+export const PHOTO_BUNDLE_LIMITS = {
+  minImages: 20,
+  maxImages: 120,
+  maxImageBytes: 2 * 1024 * 1024,
+  maxLongSidePx: 2048,
+  maxManifestBytes: 1024 * 1024,
+} as const;
+
+/** Image uploads in flight at once: bounds memory to a few JPEGs. */
+export const PHOTO_UPLOAD_CONCURRENCY = 4;
+
+const IMAGE_FILE_PATTERN = /^\d{3}\.jpg$/;
+
+export interface PhotoManifestImage {
+  file: string;
+  timestamp: number;
+  /** 16 numbers, column-major, meters, ARKit world (gravity -Y). */
+  camera_to_world: number[];
+  /** [fx, fy, cx, cy] at the written image size. */
+  intrinsics: number[];
+  width: number;
+  height: number;
+  tracking: string;
+}
+
+export interface PhotoManifest {
+  format: 'forms.photo-capture';
+  version: 1;
+  device: { model: string; os: string };
+  images: PhotoManifestImage[];
+}
+
+function invalidBundle(detail: string): UploadError {
+  return new UploadError('ERR_UPLOAD_INVALID_BUNDLE', `Invalid photo bundle: ${detail}`);
+}
+
+function isFiniteNumberArray(value: unknown, length: number): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length === length &&
+    value.every((n) => typeof n === 'number' && Number.isFinite(n))
+  );
+}
+
+function isPositiveInt(value: unknown, max: number): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= max;
+}
+
+/** Validate a parsed capture.json against the v1 contract and caps. Throws
+ * ERR_UPLOAD_INVALID_BUNDLE naming the first violation. */
+export function validatePhotoManifest(value: unknown): PhotoManifest {
+  if (typeof value !== 'object' || value === null) {
+    throw invalidBundle('capture.json is not an object');
+  }
+  const manifest = value as Record<string, unknown>;
+  if (manifest.format !== 'forms.photo-capture') {
+    throw invalidBundle('unknown format');
+  }
+  if (manifest.version !== 1) {
+    throw invalidBundle('unsupported version');
+  }
+  const device = manifest.device as Record<string, unknown> | null | undefined;
+  if (
+    typeof device !== 'object' ||
+    device === null ||
+    typeof device.model !== 'string' ||
+    typeof device.os !== 'string'
+  ) {
+    throw invalidBundle('device must have string model and os');
+  }
+  const images = manifest.images;
+  if (!Array.isArray(images)) {
+    throw invalidBundle('images must be an array');
+  }
+  const { minImages, maxImages, maxLongSidePx } = PHOTO_BUNDLE_LIMITS;
+  if (images.length < minImages || images.length > maxImages) {
+    throw invalidBundle(`expected ${minImages} to ${maxImages} images, got ${images.length}`);
+  }
+  const seen = new Set<string>();
+  images.forEach((raw: unknown, index) => {
+    const image = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+    const where = `images[${index}]`;
+    if (typeof image.file !== 'string' || !IMAGE_FILE_PATTERN.test(image.file)) {
+      throw invalidBundle(`${where}.file must match NNN.jpg`);
+    }
+    if (seen.has(image.file)) {
+      throw invalidBundle(`${where}.file is duplicated`);
+    }
+    seen.add(image.file);
+    if (typeof image.timestamp !== 'number' || !Number.isFinite(image.timestamp)) {
+      throw invalidBundle(`${where}.timestamp must be a number`);
+    }
+    if (!isFiniteNumberArray(image.camera_to_world, 16)) {
+      throw invalidBundle(`${where}.camera_to_world must be 16 numbers`);
+    }
+    if (!isFiniteNumberArray(image.intrinsics, 4)) {
+      throw invalidBundle(`${where}.intrinsics must be 4 numbers`);
+    }
+    if (!isPositiveInt(image.width, maxLongSidePx) || !isPositiveInt(image.height, maxLongSidePx)) {
+      throw invalidBundle(`${where} size must be positive and at most ${maxLongSidePx} px`);
+    }
+    if (typeof image.tracking !== 'string') {
+      throw invalidBundle(`${where}.tracking must be a string`);
+    }
+  });
+  return value as PhotoManifest;
+}
+
+/** Join a sandbox directory and a relative name into a file:// URI. */
+export function bundleFileUri(dir: string, relative: string): string {
+  return toFileUri(`${dir.replace(/\/+$/, '')}/${relative}`);
+}
+
+/** fetch() on React Native only reads local files through a file:// URI; the
+ * native module returns bare absolute paths. */
+export function toFileUri(pathOrUri: string): string {
+  return /^[a-z][a-z0-9+.-]*:/i.test(pathOrUri) ? pathOrUri : `file://${pathOrUri}`;
+}
+
+/** Run fn over items with at most `limit` in flight. Stops starting new items
+ * after the first failure, waits for in-flight ones, then rethrows it. */
+export async function mapWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  let failure: { error: unknown } | null = null;
+  const worker = async () => {
+    while (failure === null && next < items.length) {
+      const item = items[next++] as T;
+      try {
+        await fn(item);
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (failure !== null) {
+    throw (failure as { error: unknown }).error;
+  }
+}
+
+export interface PhotoBundleDeps extends UploadDeps {
+  /** Read a small local text file (capture.json). */
+  readText(uri: string): Promise<string>;
+}
+
+export interface UploadPhotoBundleParams {
+  /** Absolute bundle directory from startPhotoCapture (holds capture.json and
+   * images/). */
+  bundleDir: string;
+  leg: Leg;
+  captureMeta?: Record<string, unknown>;
+  /** Reuse across retries: same object paths, same row, same active job. */
+  scanId?: string;
+}
+
+export interface UploadPhotoBundleResult {
+  scanId: string;
+  /** Storage prefix holding capture.json and images/ (`${userId}/${scanId}`). */
+  bundlePath: string;
+  imageCount: number;
+  /** Id of the enqueued (or pre-existing) measurement job; null in fake mode. */
+  jobId: string | null;
+  fake: boolean;
+}
+
+/**
+ * Orchestrate a photo bundle upload with injected dependencies. Order:
+ *   1. read capture.json, cap its size, parse, validate (no network yet)
+ *   2. resolve the user id (owner prefix)
+ *   3. upload images/NNN.jpg, PHOTO_UPLOAD_CONCURRENCY at a time, each read,
+ *      size-capped, and released before the next (upsert: retry-safe)
+ *   4. upload capture.json LAST, so its presence implies every image landed
+ *   5. upsert the scan row (capture_kind photos, mesh_path null)
+ *   6. enqueue the measurement job
+ *
+ * Same retry contract as uploadScanWith: pass params.scanId to re-run in place.
+ */
+export async function uploadPhotoBundleWith(
+  deps: PhotoBundleDeps,
+  params: UploadPhotoBundleParams,
+): Promise<UploadPhotoBundleResult> {
+  if (params.leg !== 'L' && params.leg !== 'R') {
+    throw new UploadError('ERR_UPLOAD_UNKNOWN', `Invalid leg: ${String(params.leg)}`);
+  }
+
+  // 1. Manifest: read, cap, parse, validate.
+  let manifestText: string;
+  try {
+    manifestText = await deps.readText(bundleFileUri(params.bundleDir, 'capture.json'));
+  } catch (error) {
+    throw new UploadError('ERR_UPLOAD_READ', 'Could not read capture.json from the device.', error);
+  }
+  const manifestBytes = new TextEncoder().encode(manifestText).length;
+  if (manifestBytes > PHOTO_BUNDLE_LIMITS.maxManifestBytes) {
+    throw invalidBundle(`capture.json is ${manifestBytes} bytes`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(manifestText);
+  } catch {
+    throw invalidBundle('capture.json is not valid JSON');
+  }
+  const manifest = validatePhotoManifest(parsed);
+
+  // 2. Owner prefix (storage RLS requires `${auth.uid()}/`).
+  let userId: string;
+  try {
+    userId = await deps.getUserId();
+  } catch (error) {
+    throw new UploadError('ERR_UPLOAD_NO_SESSION', 'You must be signed in to save a scan.', error);
+  }
+  if (!userId) {
+    throw new UploadError('ERR_UPLOAD_NO_SESSION', 'You must be signed in to save a scan.');
+  }
+
+  const scanId = params.scanId ?? deps.newScanId();
+  const bundlePath = `${userId}/${scanId}`;
+  const bucket = deps.client.storage.from(MESHES_BUCKET);
+
+  // 3. Images, bounded concurrency.
+  await mapWithConcurrency(manifest.images, PHOTO_UPLOAD_CONCURRENCY, async (image) => {
+    let file: UploadFile;
+    try {
+      file = await deps.readFile(bundleFileUri(params.bundleDir, `images/${image.file}`));
+    } catch (error) {
+      throw new UploadError('ERR_UPLOAD_READ', 'Could not read a photo from the device.', error);
+    }
+    if (file.size > PHOTO_BUNDLE_LIMITS.maxImageBytes) {
+      throw new UploadError(
+        'ERR_UPLOAD_TOO_LARGE',
+        `Photo is ${file.size} bytes, over the ${PHOTO_BUNDLE_LIMITS.maxImageBytes} byte limit.`,
+      );
+    }
+    const uploaded = await bucket.upload(`${bundlePath}/images/${image.file}`, file.body, {
+      contentType: 'image/jpeg',
+      upsert: true,
+    });
+    if (uploaded.error) {
+      throw new UploadError('ERR_UPLOAD_STORAGE', 'Failed to upload a photo.', uploaded.error);
+    }
+  });
+
+  // 4. Manifest last.
+  const manifestUploaded = await bucket.upload(`${bundlePath}/capture.json`, manifestText, {
+    contentType: 'application/json',
+    upsert: true,
+  });
+  if (manifestUploaded.error) {
+    throw new UploadError(
+      'ERR_UPLOAD_STORAGE',
+      'Failed to upload capture.json.',
+      manifestUploaded.error,
+    );
+  }
+
+  // 5. Scan row, same upsert semantics as the mesh path.
+  const scanRow = {
+    id: scanId,
+    user_id: userId,
+    leg: params.leg,
+    status: UPLOADED_STATUS,
+    capture_kind: PHOTOS_CAPTURE_KIND,
+    mesh_path: null,
+    capture_meta: params.captureMeta ?? null,
+  };
+  const inserted = await deps.client
+    .from('scans')
+    .upsert(scanRow, { onConflict: 'id' })
+    .select('id')
+    .single();
+  if (inserted.error) {
+    throw new UploadError(
+      'ERR_UPLOAD_DB',
+      'Failed to save the scan to your library.',
+      inserted.error,
+    );
+  }
+
+  // 6. Enqueue.
+  const enqueued = await deps.client.rpc('enqueue_measure_job', { p_scan_id: scanId });
+  if (enqueued.error) {
+    throw new UploadError(
+      'ERR_UPLOAD_ENQUEUE',
+      'Failed to queue the scan for measurement.',
+      enqueued.error,
+    );
+  }
+
+  const jobId = typeof enqueued.data === 'string' ? enqueued.data : null;
+  return { scanId, bundlePath, imageCount: manifest.images.length, jobId, fake: false };
+}
+
+// ---------------------------------------------------------------------------
 // Real dependencies
 // ---------------------------------------------------------------------------
 
@@ -362,11 +670,21 @@ function defaultUploadDeps(): UploadDeps {
       // has no streaming upload on React Native, and the size cap bounds this to
       // <=100 MB, so it is acceptable for Phase 0; revisit with the compression
       // step above.
-      const response = await fetch(uri);
+      const response = await fetch(toFileUri(uri));
       const body = await response.blob();
       return { size: body.size, body, contentType: body.type || undefined };
     },
     newScanId,
+  };
+}
+
+function defaultPhotoBundleDeps(): PhotoBundleDeps {
+  return {
+    ...defaultUploadDeps(),
+    async readText(uri) {
+      const response = await fetch(toFileUri(uri));
+      return response.text();
+    },
   };
 }
 
@@ -392,6 +710,20 @@ async function simulateUpload(params: UploadScanParams): Promise<UploadScanResul
   };
 }
 
+/** FAKE MODE for photo bundles: same contract as simulateUpload. */
+async function simulatePhotoBundleUpload(
+  params: UploadPhotoBundleParams,
+): Promise<UploadPhotoBundleResult> {
+  const scanId = params.scanId ?? randomUuid();
+  return {
+    scanId,
+    bundlePath: `fake/${scanId}`,
+    imageCount: 0,
+    jobId: `fake-job-${scanId}`,
+    fake: true,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
@@ -407,4 +739,15 @@ export async function uploadScan(params: UploadScanParams): Promise<UploadScanRe
     return simulateUpload(params);
   }
   return uploadScanWith(defaultUploadDeps(), params);
+}
+
+/** Upload a photo bundle: images + capture.json to storage, scan row, job.
+ * Simulated success in fake mode, like uploadScan. */
+export async function uploadPhotoBundle(
+  params: UploadPhotoBundleParams,
+): Promise<UploadPhotoBundleResult> {
+  if (USE_FAKE_DATA) {
+    return simulatePhotoBundleUpload(params);
+  }
+  return uploadPhotoBundleWith(defaultPhotoBundleDeps(), params);
 }

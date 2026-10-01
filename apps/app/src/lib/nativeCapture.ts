@@ -5,7 +5,9 @@
  * scan tab) to consume:
  *   1. Platform policy - isCaptureSupported (src/lib/capture.ts): iOS-only.
  *   2. Native truth - the module's isSupported(): ObjectCaptureSession +
- *      LiDAR + iOS 17 actually available on this device.
+ *      LiDAR + iOS 17 actually available on this device, and
+ *      isPhotoCaptureSupported(): ARKit world tracking (any modern iPhone).
+ *   3. Mode routing - resolveCaptureMode (src/lib/capture.ts).
  *
  * Screen wiring is a later task; this is the seam it will call.
  */
@@ -14,15 +16,21 @@ import { Platform } from 'react-native';
 
 import {
   isNativeModuleAvailable,
+  isPhotoCaptureSupported as nativeIsPhotoCaptureSupported,
   isSupported as nativeIsSupported,
 } from '../../modules/forms-capture';
-import { isCaptureSupported } from './capture';
+import { isCaptureSupported, resolveCaptureMode } from './capture';
+import type { CaptureMode } from './capture';
+
+export type { CaptureMode } from './capture';
 
 export interface CaptureAvailability {
   /** Whether the guided capture flow can run right now. */
   supported: boolean;
   /** Machine/UI-friendly reason. 'ok' when supported. */
   reason: CaptureUnavailableReason;
+  /** Which flow to run; null when unsupported. */
+  mode: CaptureMode | null;
 }
 
 export type CaptureUnavailableReason =
@@ -36,7 +44,8 @@ export type CaptureUnavailableReason =
    * reason code made a real autolinking regression look like an old iPhone.
    */
   | 'module'
-  /** iOS with the module linked, but no LiDAR or iOS < 17. */
+  /** iOS with the module linked, but neither ObjectCapture nor ARKit world
+   * tracking is available. */
   | 'device';
 
 /**
@@ -48,17 +57,19 @@ export function resolveCaptureAvailability(
   platform: string,
   nativeSupported: boolean,
   moduleLinked = true,
+  photoSupported = false,
 ): CaptureAvailability {
   if (!isCaptureSupported(platform)) {
-    return { supported: false, reason: 'platform' };
+    return { supported: false, reason: 'platform', mode: null };
   }
   if (!moduleLinked) {
-    return { supported: false, reason: 'module' };
+    return { supported: false, reason: 'module', mode: null };
   }
-  if (!nativeSupported) {
-    return { supported: false, reason: 'device' };
+  const mode = resolveCaptureMode(nativeSupported, photoSupported);
+  if (!mode) {
+    return { supported: false, reason: 'device', mode: null };
   }
-  return { supported: true, reason: 'ok' };
+  return { supported: true, reason: 'ok', mode };
 }
 
 /**
@@ -66,6 +77,14 @@ export function resolveCaptureAvailability(
  * failure or an absent module resolves to { supported: false }.
  */
 export async function getCaptureAvailability(): Promise<CaptureAvailability> {
-  const nativeSupported = await nativeIsSupported();
-  return resolveCaptureAvailability(Platform.OS, nativeSupported, isNativeModuleAvailable());
+  const [nativeSupported, photoSupported] = await Promise.all([
+    nativeIsSupported(),
+    nativeIsPhotoCaptureSupported(),
+  ]);
+  return resolveCaptureAvailability(
+    Platform.OS,
+    nativeSupported,
+    isNativeModuleAvailable(),
+    photoSupported,
+  );
 }

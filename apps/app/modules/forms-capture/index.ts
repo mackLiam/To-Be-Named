@@ -20,6 +20,7 @@ import { FormsCaptureNative } from './src/native';
 import type {
   CaptureResult,
   CaptureStateEvent,
+  PhotoCaptureResult,
   ReconstructOptions,
   ReconstructResult,
   ReconstructionProgressEvent,
@@ -34,6 +35,7 @@ export type {
   CaptureState,
   CaptureStateEvent,
   DetailLevel,
+  PhotoCaptureResult,
   ReconstructOptions,
   ReconstructResult,
   ReconstructionProgressEvent,
@@ -77,6 +79,39 @@ export async function startCapture(): Promise<CaptureResult> {
   }
   try {
     return await FormsCaptureNative.startCapture();
+  } catch (error) {
+    throw mapNativeError(error);
+  }
+}
+
+/**
+ * Whether this device can run guided photo capture (ARKit world tracking, any
+ * modern iPhone, no LiDAR). Resolves false wherever the native module is absent.
+ */
+export async function isPhotoCaptureSupported(): Promise<boolean> {
+  if (!FormsCaptureNative) {
+    return false;
+  }
+  try {
+    return Boolean(await FormsCaptureNative.isPhotoCaptureSupported());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Present guided photo capture and write a capture.json + images bundle into
+ * the app sandbox. Resolves on Done; rejects with ERR_CAPTURE_CANCELLED on
+ * Cancel. No on-device reconstruction: the bundle is uploaded as-is.
+ */
+export async function startPhotoCapture(): Promise<PhotoCaptureResult> {
+  if (!FormsCaptureNative) {
+    throw new CaptureUnavailableError(
+      'Photo capture is unavailable on this device (native module not linked).',
+    );
+  }
+  try {
+    return await FormsCaptureNative.startPhotoCapture();
   } catch (error) {
     throw mapNativeError(error);
   }

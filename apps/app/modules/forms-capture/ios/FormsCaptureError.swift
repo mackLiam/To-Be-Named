@@ -48,3 +48,13 @@ internal final class CaptureUnknownException: GenericException<String> {
   override var code: String { "ERR_CAPTURE_UNKNOWN" }
   override var reason: String { "Capture failed: \(param)" }
 }
+
+internal final class CaptureCameraDeniedException: Exception {
+  override var code: String { "ERR_CAPTURE_CAMERA_DENIED" }
+  override var reason: String { "Camera access is denied for this app." }
+}
+
+internal final class CaptureWriteFailedException: GenericException<String> {
+  override var code: String { "ERR_CAPTURE_WRITE_FAILED" }
+  override var reason: String { "Could not save the capture to the device: \(param)" }
+}

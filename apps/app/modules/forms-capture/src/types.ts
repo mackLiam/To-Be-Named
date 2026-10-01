@@ -59,6 +59,25 @@ export interface CaptureResult {
   imageCount: number;
 }
 
+/**
+ * Result of a completed guided photo capture (non-LiDAR path). The bundle is
+ * `${bundleDir}/capture.json` plus `${bundleDir}/images/NNN.jpg`, the
+ * "forms.photo-capture" v1 contract validated in src/lib/upload.ts. All paths
+ * are inside the app sandbox; reconstruction happens server-side.
+ */
+export interface PhotoCaptureResult {
+  /** Opaque id for this capture session (also the on-disk folder name). */
+  sessionId: string;
+  /** Absolute path to the bundle directory. */
+  bundleDir: string;
+  /** Absolute path to capture.json. */
+  manifestPath: string;
+  /** Number of photos kept. */
+  imageCount: number;
+  /** Fraction (0..1) of the 36 ten-degree orbit buckets that hold a photo. */
+  coverage: number;
+}
+
 /** Result of a completed reconstruction. All paths are inside the app sandbox. */
 export interface ReconstructResult {
   /** Session this reconstruction belongs to. */
@@ -114,6 +133,9 @@ export interface FormsCaptureNativeModule {
    */
   isSupported(): Promise<boolean>;
   startCapture(): Promise<CaptureResult>;
+  /** ARWorldTrackingConfiguration.isSupported: any ARKit iPhone, no LiDAR. */
+  isPhotoCaptureSupported(): Promise<boolean>;
+  startPhotoCapture(): Promise<PhotoCaptureResult>;
   reconstruct(options: ReconstructOptions): Promise<ReconstructResult>;
   cancel(): Promise<void>;
   /** Inherited from the Expo NativeModule/EventEmitter base. */

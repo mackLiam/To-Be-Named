@@ -40,6 +40,8 @@ describe('mapNativeError', () => {
       'ERR_CAPTURE_NO_IMAGES',
       'ERR_RECONSTRUCTION_FAILED',
       'ERR_EXPORT_FAILED',
+      'ERR_CAPTURE_CAMERA_DENIED',
+      'ERR_CAPTURE_WRITE_FAILED',
     ] as const;
     for (const code of codes) {
       expect(mapNativeError({ code, message: 'm' }).code).toBe(code);
@@ -54,6 +56,12 @@ describe('mapNativeError', () => {
       'ERR_RECONSTRUCTION_FAILED',
     );
     expect(mapNativeError({ code: 'ExportFailedException' }).code).toBe('ERR_EXPORT_FAILED');
+    expect(mapNativeError({ code: 'CaptureCameraDeniedException' }).code).toBe(
+      'ERR_CAPTURE_CAMERA_DENIED',
+    );
+    expect(mapNativeError({ code: 'CaptureWriteFailedException' }).code).toBe(
+      'ERR_CAPTURE_WRITE_FAILED',
+    );
   });
 
   it('classifies by message when there is no useful code', () => {
@@ -61,6 +69,12 @@ describe('mapNativeError', () => {
       'ERR_CAPTURE_UNSUPPORTED_DEVICE',
     );
     expect(mapNativeError(new Error('too few images captured')).code).toBe('ERR_CAPTURE_NO_IMAGES');
+    expect(mapNativeError(new Error('Camera access is denied for this app.')).code).toBe(
+      'ERR_CAPTURE_CAMERA_DENIED',
+    );
+    expect(
+      mapNativeError(new Error('Could not save the capture to the device: disk full')).code,
+    ).toBe('ERR_CAPTURE_WRITE_FAILED');
   });
 
   it('handles string and unknown throws', () => {

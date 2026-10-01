@@ -18,3 +18,25 @@ export function isCaptureSupported(platform: string, hasLiDAR?: boolean): boolea
   }
   return true;
 }
+
+/**
+ * Which capture flow a capable iOS device runs. 'object' is Apple's guided
+ * ObjectCaptureSession with on-device reconstruction (LiDAR iPhones); 'photos'
+ * is guided ARKit photo capture reconstructed server-side (any ARKit iPhone).
+ * ObjectCapture wins when both are available: it produces a metric mesh on the
+ * phone with no server reconstruction step.
+ */
+export type CaptureMode = 'object' | 'photos';
+
+export function resolveCaptureMode(
+  objectCaptureSupported: boolean,
+  photoCaptureSupported: boolean,
+): CaptureMode | null {
+  if (objectCaptureSupported) {
+    return 'object';
+  }
+  if (photoCaptureSupported) {
+    return 'photos';
+  }
+  return null;
+}

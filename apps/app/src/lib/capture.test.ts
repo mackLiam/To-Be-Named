@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isCaptureSupported } from './capture';
+import { isCaptureSupported, resolveCaptureMode } from './capture';
 
 describe('isCaptureSupported', () => {
   it('supports iOS when LiDAR is unknown (no native module yet)', () => {
@@ -24,5 +24,20 @@ describe('isCaptureSupported', () => {
   it('blocks web regardless of LiDAR', () => {
     expect(isCaptureSupported('web')).toBe(false);
     expect(isCaptureSupported('web', true)).toBe(false);
+  });
+});
+
+describe('resolveCaptureMode', () => {
+  it('prefers object capture when both are supported', () => {
+    expect(resolveCaptureMode(true, true)).toBe('object');
+    expect(resolveCaptureMode(true, false)).toBe('object');
+  });
+
+  it('routes to photos when only photo capture is supported (iPhone 16, no LiDAR)', () => {
+    expect(resolveCaptureMode(false, true)).toBe('photos');
+  });
+
+  it('returns null when neither is supported', () => {
+    expect(resolveCaptureMode(false, false)).toBeNull();
   });
 });

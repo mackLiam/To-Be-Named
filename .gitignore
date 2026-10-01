@@ -78,3 +78,6 @@ coverage/
 
 # Canvas tool state (local only)
 .array/
+
+# Swift build output (services/reconstruct)
+services/reconstruct/.build/

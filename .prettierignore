@@ -17,3 +17,5 @@ apps/app/eas.json
 .array/
 apps/app/ios/
 apps/app/android/
+# SwiftPM build output (gitignored).
+services/reconstruct/.build/

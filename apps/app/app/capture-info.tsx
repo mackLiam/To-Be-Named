@@ -66,7 +66,9 @@ export default function CaptureInfoScreen() {
           <Heading level="h3">This device is ready</Heading>
           <View style={{ height: spacing.sm }} />
           <Body variant="bodySmall">
-            Give yourself room to walk a full circle around the leg, then start the guided capture.
+            {availability.mode === 'photos'
+              ? 'Give yourself room to walk one slow circle around the leg. Bare skin is hard to rebuild in 3D, so wear a patterned sock or draw a few pen dots on the shin first.'
+              : 'Give yourself room to walk a full circle around the leg, then start the guided capture.'}
           </Body>
           <View style={{ height: spacing.md }} />
           <Button onPress={() => router.push('/capture')}>Start capture</Button>
@@ -87,9 +89,9 @@ export default function CaptureInfoScreen() {
       <Heading level="h3">What happens in a scan</Heading>
       <View style={{ height: spacing.sm }} />
       <Body variant="bodySmall">
-        Walk around your leg once and the native module reconstructs a 3D mesh on-device. The mesh
-        then uploads to your private scan library and is queued for measurement, and you land back
-        in the library when it is saved.
+        {availability?.mode === 'photos'
+          ? 'Walk around your leg once while the camera takes photos on its own. The photos upload to your private scan library, the 3D model is built on our side, and the scan is queued for measurement.'
+          : 'Walk around your leg once and the native module reconstructs a 3D mesh on-device. The mesh then uploads to your private scan library and is queued for measurement, and you land back in the library when it is saved.'}
       </Body>
     </Screen>
   );

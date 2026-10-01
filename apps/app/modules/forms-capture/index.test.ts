@@ -63,6 +63,24 @@ describe('when the native module is absent (web / Android / Simulator / Expo Go)
   });
 });
 
+const PHOTO_RESULT = {
+  sessionId: 'p1',
+  bundleDir: '/b',
+  manifestPath: '/b/capture.json',
+  imageCount: 48,
+  coverage: 0.8,
+};
+
+describe('photo capture when the native module is absent', () => {
+  it('isPhotoCaptureSupported resolves false', async () => {
+    await expect(capture.isPhotoCaptureSupported()).resolves.toBe(false);
+  });
+
+  it('startPhotoCapture rejects with CaptureUnavailableError', async () => {
+    await expect(capture.startPhotoCapture()).rejects.toBeInstanceOf(CaptureUnavailableError);
+  });
+});
+
 describe('when the native module is present', () => {
   const makeNative = (over: Partial<FormsCaptureNativeModule> = {}): FormsCaptureNativeModule => ({
     isSupported: vi.fn(async () => true),
@@ -75,6 +93,8 @@ describe('when the native module is present', () => {
       imageCount: 42,
     })),
     cancel: vi.fn(async () => {}),
+    isPhotoCaptureSupported: vi.fn(async () => true),
+    startPhotoCapture: vi.fn(async () => PHOTO_RESULT),
     addListener: vi.fn(() => ({ remove: vi.fn() })),
     ...over,
   });
@@ -149,5 +169,42 @@ describe('when the native module is present', () => {
     capture.addReconstructionProgressListener(listener);
     expect(native.addListener).toHaveBeenCalledWith('onCaptureStateChange', listener);
     expect(native.addListener).toHaveBeenCalledWith('onReconstructionProgress', listener);
+  });
+
+  it('isPhotoCaptureSupported returns the native boolean and swallows throws', async () => {
+    mocks.native = makeNative({ isPhotoCaptureSupported: vi.fn(async () => false) });
+    await expect(capture.isPhotoCaptureSupported()).resolves.toBe(false);
+    mocks.native = makeNative({
+      isPhotoCaptureSupported: vi.fn(async () => {
+        throw new Error('bridge exploded');
+      }),
+    });
+    await expect(capture.isPhotoCaptureSupported()).resolves.toBe(false);
+    mocks.native = makeNative();
+    await expect(capture.isPhotoCaptureSupported()).resolves.toBe(true);
+  });
+
+  it('startPhotoCapture resolves the native bundle result', async () => {
+    mocks.native = makeNative();
+    await expect(capture.startPhotoCapture()).resolves.toEqual(PHOTO_RESULT);
+  });
+
+  it('startPhotoCapture maps cancel and camera-denied errors to typed codes', async () => {
+    mocks.native = makeNative({
+      startPhotoCapture: vi.fn(async () => {
+        throw { code: 'ERR_CAPTURE_CANCELLED', message: 'The capture session was cancelled.' };
+      }),
+    });
+    await expect(capture.startPhotoCapture()).rejects.toMatchObject({
+      code: 'ERR_CAPTURE_CANCELLED',
+    });
+    mocks.native = makeNative({
+      startPhotoCapture: vi.fn(async () => {
+        throw { code: 'ERR_CAPTURE_CAMERA_DENIED', message: 'Camera access is denied.' };
+      }),
+    });
+    await expect(capture.startPhotoCapture()).rejects.toMatchObject({
+      code: 'ERR_CAPTURE_CAMERA_DENIED',
+    });
   });
 });

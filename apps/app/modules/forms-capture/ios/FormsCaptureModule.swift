@@ -1,3 +1,4 @@
+import ARKit
 import ExpoModulesCore
 import RealityKit
 
@@ -14,6 +15,9 @@ import RealityKit
      app sandbox, resolve with the session directory.
    - reconstruct(): PhotogrammetrySession -> USDZ, then ModelIO USDZ -> OBJ
      (the Python pipeline consumes OBJ, not USDZ). Keep both files.
+   - isPhotoCaptureSupported() / startPhotoCapture(): guided ARKit photo
+     capture for iPhones without ObjectCaptureSession; the bundle is
+     reconstructed server-side (PhotoCaptureController).
    - cancel(): tear down whichever session is in flight.
    - Emits 'onCaptureStateChange' and 'onReconstructionProgress' events.
 
@@ -30,6 +34,7 @@ public class FormsCaptureModule: Module {
   // Retained across the async call so cancel() can reach an in-flight session.
   private var captureController: CaptureSessionController?
   private var reconstructionController: ReconstructionController?
+  private var photoController: PhotoCaptureController?
 
   public func definition() -> ModuleDefinition {
     Name("FormsCapture")
@@ -77,6 +82,26 @@ public class FormsCaptureModule: Module {
       }
     }
 
+    // Any ARKit world-tracking device (no LiDAR needed). Read on the main actor
+    // for the same reason as isSupported.
+    AsyncFunction("isPhotoCaptureSupported") { () async -> Bool in
+      await MainActor.run { ARWorldTrackingConfiguration.isSupported }
+    }
+
+    // Present guided photo capture; resolves with the bundle on Done.
+    AsyncFunction("startPhotoCapture") { (promise: Promise) in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        guard ARWorldTrackingConfiguration.isSupported else {
+          promise.reject(CaptureUnsupportedException())
+          return
+        }
+        let controller = PhotoCaptureController()
+        self.photoController = controller
+        controller.start(promise: promise)
+      }
+    }
+
     // Run photogrammetry and export OBJ.
     AsyncFunction("reconstruct") { (options: ReconstructOptions, promise: Promise) in
       guard #available(iOS 17.0, *) else {
@@ -102,6 +127,8 @@ public class FormsCaptureModule: Module {
         guard let self else { return }
         self.captureController?.cancel()
         self.captureController = nil
+        self.photoController?.cancel()
+        self.photoController = nil
       }
     }
   }

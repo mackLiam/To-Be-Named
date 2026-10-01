@@ -13,6 +13,11 @@
  *   done -> uploading -> uploaded           (upload deps present: save the scan)
  *   uploading -> upload_failed              (upload rejected; retryUpload() retries)
  *
+ * Photos mode (availability.mode 'photos', non-LiDAR iPhones) skips the
+ * on-device reconstruction: capturing -> done (photo bundle on disk) ->
+ * uploading, and the bundle is reconstructed server-side. Same phases, same
+ * cancel and retry rules.
+ *
  * The upload leg is opt-in via CaptureFlowDeps.uploadScan: when it is absent
  * (the default in unit tests, and any non-configured build) the machine stops at
  * 'done' exactly as before, so existing behavior is preserved. When present (the
@@ -41,20 +46,33 @@ import {
   mapNativeError,
   reconstruct,
   startCapture,
+  startPhotoCapture,
 } from '../../modules/forms-capture';
 import type {
   CaptureErrorCode,
   CaptureResult,
   CaptureState,
   CaptureStateEvent,
+  PhotoCaptureResult,
   ReconstructionProgressEvent,
   ReconstructOptions,
   ReconstructResult,
 } from '../../modules/forms-capture';
 import { getCaptureAvailability } from '../lib/nativeCapture';
-import type { CaptureAvailability, CaptureUnavailableReason } from '../lib/nativeCapture';
-import { asUploadError, newScanId, uploadScan } from '../lib/upload';
-import type { Leg, UploadError, UploadScanParams, UploadScanResult } from '../lib/upload';
+import type {
+  CaptureAvailability,
+  CaptureMode,
+  CaptureUnavailableReason,
+} from '../lib/nativeCapture';
+import { asUploadError, newScanId, uploadPhotoBundle, uploadScan } from '../lib/upload';
+import type {
+  Leg,
+  UploadError,
+  UploadPhotoBundleParams,
+  UploadPhotoBundleResult,
+  UploadScanParams,
+  UploadScanResult,
+} from '../lib/upload';
 
 // ---------------------------------------------------------------------------
 // State
@@ -85,6 +103,8 @@ export interface CaptureFlowState {
   phase: CaptureFlowPhase;
   /** Why capture is unavailable; set only in the 'unsupported' phase. */
   unavailableReason: CaptureUnavailableReason | null;
+  /** Which flow runs on this device; set once availability resolves. */
+  mode: CaptureMode | null;
   /** Latest native guided-capture state; set during the 'capturing' phase. */
   captureState: CaptureState | null;
   /** Reconstruction completion, 0..1; meaningful in 'reconstructing'. */
@@ -95,6 +115,8 @@ export interface CaptureFlowState {
   capture: CaptureResult | null;
   /** Result of the reconstruction; set from the 'done' phase onward. */
   result: ReconstructResult | null;
+  /** Photos mode only: the captured bundle; set from the 'done' phase onward. */
+  photoCapture: PhotoCaptureResult | null;
   /** Typed capture error; set only in the 'failed' phase. */
   error: CaptureError | null;
   /** Typed upload error; set only in the 'upload_failed' phase. */
@@ -106,11 +128,13 @@ export interface CaptureFlowState {
 export const INITIAL_CAPTURE_FLOW_STATE: CaptureFlowState = {
   phase: 'checking',
   unavailableReason: null,
+  mode: null,
   captureState: null,
   progress: 0,
   progressStage: null,
   capture: null,
   result: null,
+  photoCapture: null,
   error: null,
   uploadError: null,
   scanId: null,
@@ -143,6 +167,9 @@ export const CAPTURE_ERROR_MESSAGES: Record<CaptureErrorCode, string> = {
   ERR_RECONSTRUCTION_FAILED:
     'The photos could not be turned into a 3D model. Scan again with slow, overlapping passes around the leg.',
   ERR_EXPORT_FAILED: 'The model was built but could not be saved to a file. Run the scan again.',
+  ERR_CAPTURE_CAMERA_DENIED: `${BRAND_NAME} cannot use the camera. Allow camera access in Settings, then try again.`,
+  ERR_CAPTURE_WRITE_FAILED:
+    'The photos could not be saved on this phone. Free up some storage, then scan again.',
   ERR_CAPTURE_UNKNOWN: 'Something went wrong during the scan. Run it again.',
 };
 
@@ -162,6 +189,8 @@ export function captureErrorMessage(error: CaptureError): string {
 export interface CaptureFlowDeps {
   getAvailability(): Promise<CaptureAvailability>;
   startCapture(): Promise<CaptureResult>;
+  /** Photos mode: guided ARKit photo capture, no on-device reconstruction. */
+  startPhotoCapture(): Promise<PhotoCaptureResult>;
   reconstruct(options?: ReconstructOptions): Promise<ReconstructResult>;
   cancel(): Promise<void>;
   addCaptureStateListener(listener: (event: CaptureStateEvent) => void): EventSubscription;
@@ -174,6 +203,8 @@ export interface CaptureFlowDeps {
    * Injected so tests can drive upload states without a backend.
    */
   uploadScan?: (params: UploadScanParams) => Promise<UploadScanResult>;
+  /** Photos-mode counterpart of uploadScan; same opt-in rule. */
+  uploadPhotoBundle?: (params: UploadPhotoBundleParams) => Promise<UploadPhotoBundleResult>;
   /** Gather device/OS context for capture_meta. Optional; injected by the
    * screen so this module never imports react-native. */
   captureEnv?: () => CaptureMetaEnv;
@@ -185,11 +216,13 @@ export function defaultCaptureFlowDeps(captureEnv?: () => CaptureMetaEnv): Captu
   return {
     getAvailability: getCaptureAvailability,
     startCapture,
+    startPhotoCapture,
     reconstruct,
     cancel: cancelCapture,
     addCaptureStateListener,
     addReconstructionProgressListener,
     uploadScan,
+    uploadPhotoBundle,
     captureEnv,
   };
 }
@@ -220,6 +253,8 @@ export class CaptureFlowController {
   private captureStartedAt: number | null = null;
   /** Reconstruction result of the current attempt, so retryUpload can reuse it. */
   private lastResult: ReconstructResult | null = null;
+  /** Photo bundle of the current attempt (photos mode), for retryUpload. */
+  private lastPhotoCapture: PhotoCaptureResult | null = null;
   /** Scan id reused across upload retries so a partial failure is idempotent. */
   private uploadScanId: string | null = null;
 
@@ -244,7 +279,7 @@ export class CaptureFlowController {
     } catch {
       // getCaptureAvailability's contract is "never throws"; if an injected
       // implementation does anyway, treat it as an incapable device.
-      availability = { supported: false, reason: 'device' };
+      availability = { supported: false, reason: 'device', mode: null };
     }
     if (this.disposed) {
       return;
@@ -253,7 +288,7 @@ export class CaptureFlowController {
       this.patch({ phase: 'unsupported', unavailableReason: availability.reason });
       return;
     }
-    this.patch({ phase: 'ready' });
+    this.patch({ phase: 'ready', mode: availability.mode });
   }
 
   /**
@@ -271,6 +306,7 @@ export class CaptureFlowController {
     // so we never overwrite an already-saved scan with a new capture.
     this.uploadScanId = null;
     this.lastResult = null;
+    this.lastPhotoCapture = null;
     this.patch({
       phase: 'capturing',
       captureState: 'initializing',
@@ -278,10 +314,16 @@ export class CaptureFlowController {
       progressStage: null,
       capture: null,
       result: null,
+      photoCapture: null,
       error: null,
       uploadError: null,
       scanId: null,
     });
+
+    if (this.state.mode === 'photos') {
+      await this.runPhotoCapture();
+      return;
+    }
 
     let capture: CaptureResult;
     try {
@@ -317,38 +359,94 @@ export class CaptureFlowController {
     }
   }
 
+  /** Photos mode: capturing -> done (bundle on disk) -> upload. */
+  private async runPhotoCapture(): Promise<void> {
+    let photoCapture: PhotoCaptureResult;
+    try {
+      photoCapture = await this.deps.startPhotoCapture();
+    } catch (error) {
+      this.settleFailure(error);
+      return;
+    }
+    if (this.disposed) {
+      return;
+    }
+    this.lastPhotoCapture = photoCapture;
+    this.patch({ phase: 'done', photoCapture });
+    if (this.deps.uploadPhotoBundle && !this.disposed) {
+      await this.runPhotoUpload(photoCapture);
+    }
+  }
+
   /**
    * Retry only the upload after an upload failure, reusing the same scan id so
    * the storage object, scan row, and job are not duplicated. A full rescan is
    * still available via start().
    */
   async retryUpload(): Promise<void> {
-    if (this.disposed || this.state.phase !== 'upload_failed' || !this.lastResult) {
+    if (this.disposed || this.state.phase !== 'upload_failed') {
       return;
     }
-    await this.runUpload(this.lastResult);
+    if (this.lastPhotoCapture) {
+      await this.runPhotoUpload(this.lastPhotoCapture);
+    } else if (this.lastResult) {
+      await this.runUpload(this.lastResult);
+    }
   }
 
   /** Upload the reconstructed mesh: done -> uploading -> uploaded | upload_failed. */
   private async runUpload(result: ReconstructResult): Promise<void> {
-    if (this.disposed || !this.deps.uploadScan) {
+    const uploadScan = this.deps.uploadScan;
+    if (this.disposed || !uploadScan) {
       return;
     }
+    await this.uploadWith((scanId) =>
+      uploadScan({
+        localFileUri: result.objPath,
+        leg: this.leg,
+        captureMeta: this.buildCaptureMeta({
+          sessionId: result.sessionId,
+          imageCount: result.imageCount,
+          detail: result.detail,
+        }),
+        scanId,
+      }),
+    );
+  }
+
+  /** Upload the photo bundle: done -> uploading -> uploaded | upload_failed. */
+  private async runPhotoUpload(photoCapture: PhotoCaptureResult): Promise<void> {
+    const uploadPhotoBundle = this.deps.uploadPhotoBundle;
+    if (this.disposed || !uploadPhotoBundle) {
+      return;
+    }
+    await this.uploadWith((scanId) =>
+      uploadPhotoBundle({
+        bundleDir: photoCapture.bundleDir,
+        leg: this.leg,
+        captureMeta: this.buildCaptureMeta({
+          sessionId: photoCapture.sessionId,
+          imageCount: photoCapture.imageCount,
+          coverage: photoCapture.coverage,
+          captureKind: 'photos',
+        }),
+        scanId,
+      }),
+    );
+  }
+
+  /** Shared upload leg for both modes. */
+  private async uploadWith(upload: (scanId: string) => Promise<{ scanId: string }>): Promise<void> {
     // Allocate the scan id once and reuse it across retries: a retry then
-    // overwrites the same object, upserts the same row, and returns the same
+    // overwrites the same objects, upserts the same row, and returns the same
     // active job instead of orphaning a partially-uploaded scan.
     if (!this.uploadScanId) {
       this.uploadScanId = newScanId();
     }
     this.patch({ phase: 'uploading', uploadError: null });
-    let uploaded: UploadScanResult;
+    let uploaded: { scanId: string };
     try {
-      uploaded = await this.deps.uploadScan({
-        localFileUri: result.objPath,
-        leg: this.leg,
-        captureMeta: this.buildCaptureMeta(result),
-        scanId: this.uploadScanId,
-      });
+      uploaded = await upload(this.uploadScanId);
     } catch (error) {
       if (this.disposed) {
         return;
@@ -365,12 +463,8 @@ export class CaptureFlowController {
 
   /** Assemble capture_meta from what the flow knows plus injected device env.
    * Never geometry: just session/device/timing context (CLAUDE.md gotcha 5). */
-  private buildCaptureMeta(result: ReconstructResult): Record<string, unknown> {
-    const meta: Record<string, unknown> = {
-      sessionId: result.sessionId,
-      imageCount: result.imageCount,
-      detail: result.detail,
-    };
+  private buildCaptureMeta(base: Record<string, unknown>): Record<string, unknown> {
+    const meta: Record<string, unknown> = { ...base };
     if (this.captureStartedAt != null) {
       meta.captureDurationMs = Date.now() - this.captureStartedAt;
     }

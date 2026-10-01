@@ -55,7 +55,7 @@ export default function CaptureScreen() {
     <Screen>
       {state.phase === 'checking' && <CheckingSection />}
       {state.phase === 'unsupported' && <UnsupportedSection state={state} onBack={router.back} />}
-      {state.phase === 'ready' && <ReadySection onStart={start} />}
+      {state.phase === 'ready' && <ReadySection mode={state.mode} onStart={start} />}
       {state.phase === 'capturing' && <CapturingSection state={state} />}
       {state.phase === 'reconstructing' && <ReconstructingSection state={state} />}
       {(state.phase === 'done' || state.phase === 'uploading') && (
@@ -121,15 +121,29 @@ function UnsupportedSection({ state, onBack }: { state: CaptureFlowState; onBack
   );
 }
 
-function ReadySection({ onStart }: { onStart: () => void }) {
+function ReadySection({ mode, onStart }: { mode: CaptureFlowState['mode']; onStart: () => void }) {
   return (
     <>
       <Heading level="h1">Ready to scan.</Heading>
       <View style={{ height: spacing.md }} />
-      <Body>
-        The camera opens in Apple&apos;s guided capture. Keep the leg still, keep the whole leg in
-        frame, and walk one slow, full circle around it.
-      </Body>
+      {mode === 'photos' ? (
+        <>
+          <Body>
+            Walk one slow circle around the leg while the camera takes photos on its own. Keep the
+            leg still and keep ankle to knee in frame. Tap Done once the ring is mostly filled.
+          </Body>
+          <View style={{ height: spacing.sm }} />
+          <Body variant="bodySmall" color={colors.textSecondary}>
+            Bare skin is hard to rebuild in 3D. Wear a patterned sock over the shin, or draw a few
+            pen dots on it, before you start.
+          </Body>
+        </>
+      ) : (
+        <Body>
+          The camera opens in Apple&apos;s guided capture. Keep the leg still, keep the whole leg in
+          frame, and walk one slow, full circle around it.
+        </Body>
+      )}
       <View style={{ height: spacing.lg }} />
       <Button onPress={onStart}>Begin capture</Button>
       <Rule />
@@ -194,6 +208,23 @@ function ReconstructingSection({ state }: { state: CaptureFlowState }) {
  */
 function UploadingSection({ state }: { state: CaptureFlowState }) {
   const result = state.result;
+  const photos = state.photoCapture;
+  if (photos) {
+    return (
+      <>
+        <Heading level="h1">Saving your scan.</Heading>
+        <View style={{ height: spacing.md }} />
+        <Body>
+          Uploading {photos.imageCount} photos to your scan library. The 3D model is built on our
+          side once they arrive. Keep the app open.
+        </Body>
+        <Rule />
+        <InfoRow label="Session" value={photos.sessionId} />
+        <InfoRow label="Photos" value={String(photos.imageCount)} />
+        <InfoRow label="Coverage" value={`${Math.round(photos.coverage * 100)}%`} />
+      </>
+    );
+  }
   return (
     <>
       <Heading level="h1">Saving your scan.</Heading>
@@ -222,6 +253,15 @@ function UploadingSection({ state }: { state: CaptureFlowState }) {
  */
 function UploadedSection({ state }: { state: CaptureFlowState }) {
   const objPath = state.result?.objPath;
+  if (!hasSupabaseConfig() && state.photoCapture) {
+    return (
+      <>
+        <Heading level="h1">Scan finished.</Heading>
+        <View style={{ height: spacing.md }} />
+        <Body>No server is configured in this build, so the photos were not uploaded.</Body>
+      </>
+    );
+  }
   if (!hasSupabaseConfig() && objPath) {
     return (
       <>

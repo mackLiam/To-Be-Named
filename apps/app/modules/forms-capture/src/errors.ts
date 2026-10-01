@@ -21,6 +21,10 @@ export type CaptureErrorCode =
   | 'ERR_RECONSTRUCTION_FAILED'
   /** USDZ produced, but the USDZ->OBJ (ModelIO) export failed. */
   | 'ERR_EXPORT_FAILED'
+  /** The user denied camera access (ARKit cameraUnauthorized). */
+  | 'ERR_CAPTURE_CAMERA_DENIED'
+  /** Photos or capture.json could not be written (usually the disk is full). */
+  | 'ERR_CAPTURE_WRITE_FAILED'
   /** Anything we could not classify. */
   | 'ERR_CAPTURE_UNKNOWN';
 
@@ -31,6 +35,8 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<CaptureErrorCode>([
   'ERR_CAPTURE_NO_IMAGES',
   'ERR_RECONSTRUCTION_FAILED',
   'ERR_EXPORT_FAILED',
+  'ERR_CAPTURE_CAMERA_DENIED',
+  'ERR_CAPTURE_WRITE_FAILED',
   'ERR_CAPTURE_UNKNOWN',
 ]);
 
@@ -118,6 +124,12 @@ export function mapNativeError(error: unknown): CaptureError {
   const haystack = `${rawCode ?? ''} ${message}`.toLowerCase();
   if (/cancel/.test(haystack)) {
     return new CaptureError('ERR_CAPTURE_CANCELLED', message, error);
+  }
+  if (/cameradenied|camera access|unauthori|permission/.test(haystack)) {
+    return new CaptureError('ERR_CAPTURE_CAMERA_DENIED', message, error);
+  }
+  if (/writefailed|could not save|no space|disk full/.test(haystack)) {
+    return new CaptureError('ERR_CAPTURE_WRITE_FAILED', message, error);
   }
   if (/unsupported|not supported|no lidar|lidar/.test(haystack)) {
     return new CaptureError('ERR_CAPTURE_UNSUPPORTED_DEVICE', message, error);

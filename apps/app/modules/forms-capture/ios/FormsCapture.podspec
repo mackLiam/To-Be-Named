@@ -26,9 +26,10 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
-  # ObjectCaptureSession / PhotogrammetrySession live in RealityKit; MDLAsset
-  # (USDZ -> OBJ) in ModelIO. Both are system frameworks, no extra pods.
-  s.frameworks = 'RealityKit', 'ModelIO'
+  # ObjectCaptureSession / PhotogrammetrySession and ARView live in RealityKit;
+  # MDLAsset (USDZ -> OBJ) in ModelIO; photo capture uses ARKit world tracking
+  # and CoreImage for JPEG encoding. All system frameworks, no extra pods.
+  s.frameworks = 'RealityKit', 'ModelIO', 'ARKit', 'CoreImage', 'UIKit'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',

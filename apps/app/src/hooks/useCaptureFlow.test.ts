@@ -23,9 +23,18 @@ vi.mock('../lib/nativeCapture', () => ({
 }));
 
 import { CaptureError } from '../../modules/forms-capture';
-import type { CaptureResult, ReconstructResult } from '../../modules/forms-capture';
+import type {
+  CaptureResult,
+  PhotoCaptureResult,
+  ReconstructResult,
+} from '../../modules/forms-capture';
 import { UploadError } from '../lib/upload';
-import type { UploadScanParams, UploadScanResult } from '../lib/upload';
+import type {
+  UploadPhotoBundleParams,
+  UploadPhotoBundleResult,
+  UploadScanParams,
+  UploadScanResult,
+} from '../lib/upload';
 import {
   CAPTURE_ERROR_MESSAGES,
   CaptureFlowController,
@@ -44,6 +53,26 @@ const UPLOAD_RESULT: UploadScanResult = {
 /** A typed uploadScan mock so calls[].scanId etc. are inspectable. */
 function uploadMock() {
   return vi.fn((_params: UploadScanParams) => Promise.resolve(UPLOAD_RESULT));
+}
+
+const PHOTO_RESULT: PhotoCaptureResult = {
+  sessionId: 'photo-session-1',
+  bundleDir: '/sandbox/photo-captures/photo-session-1',
+  manifestPath: '/sandbox/photo-captures/photo-session-1/capture.json',
+  imageCount: 48,
+  coverage: 0.83,
+};
+
+const PHOTO_UPLOAD_RESULT: UploadPhotoBundleResult = {
+  scanId: 'scan-p',
+  bundlePath: 'user-1/scan-p',
+  imageCount: 48,
+  jobId: 'job-p',
+  fake: false,
+};
+
+function photoUploadMock() {
+  return vi.fn((_params: UploadPhotoBundleParams) => Promise.resolve(PHOTO_UPLOAD_RESULT));
 }
 
 const CAPTURE_RESULT: CaptureResult = {
@@ -81,7 +110,12 @@ function makeDeps(overrides: Partial<CaptureFlowDeps> = {}) {
   let progressListener: ((event: { fraction: number; stage?: string }) => void) | undefined;
 
   const deps: CaptureFlowDeps = {
-    getAvailability: vi.fn(async () => ({ supported: true, reason: 'ok' as const })),
+    getAvailability: vi.fn(async () => ({
+      supported: true,
+      reason: 'ok' as const,
+      mode: 'object' as const,
+    })),
+    startPhotoCapture: vi.fn(async () => PHOTO_RESULT),
     startCapture: vi.fn(async () => CAPTURE_RESULT),
     reconstruct: vi.fn(async () => RECONSTRUCT_RESULT),
     cancel: vi.fn(async () => {}),
@@ -122,7 +156,11 @@ describe('initialize (availability gate)', () => {
 
   it('short-circuits to unsupported with the reason, and start() is then a no-op', async () => {
     const { deps } = makeDeps({
-      getAvailability: vi.fn(async () => ({ supported: false, reason: 'platform' as const })),
+      getAvailability: vi.fn(async () => ({
+        supported: false,
+        reason: 'platform' as const,
+        mode: null,
+      })),
     });
     const { controller } = makeController(deps);
     await controller.initialize();
@@ -345,7 +383,7 @@ describe('cancellation', () => {
 
 describe('dispose (unmount)', () => {
   it('during checking: ignores the late availability result', async () => {
-    const availabilityCall = deferred<{ supported: boolean; reason: 'ok' }>();
+    const availabilityCall = deferred<{ supported: boolean; reason: 'ok'; mode: 'object' }>();
     const { deps } = makeDeps({
       getAvailability: vi.fn(() => availabilityCall.promise),
     });
@@ -353,7 +391,7 @@ describe('dispose (unmount)', () => {
     const initialized = controller.initialize();
 
     controller.dispose();
-    availabilityCall.resolve({ supported: true, reason: 'ok' });
+    availabilityCall.resolve({ supported: true, reason: 'ok', mode: 'object' });
     await initialized;
 
     expect(controller.getState().phase).toBe('checking');
@@ -553,6 +591,129 @@ describe('upload leg', () => {
     const secondId = uploadScan.mock.calls[1]?.[0]?.scanId;
     expect(firstId).toBeTruthy();
     expect(secondId).not.toBe(firstId);
+  });
+});
+
+describe('photos mode (non-LiDAR)', () => {
+  function photoDeps(overrides: Partial<CaptureFlowDeps> = {}) {
+    return makeDeps({
+      getAvailability: vi.fn(async () => ({
+        supported: true,
+        reason: 'ok' as const,
+        mode: 'photos' as const,
+      })),
+      ...overrides,
+    });
+  }
+
+  it('records the mode on ready', async () => {
+    const { deps } = photoDeps();
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    expect(controller.getState()).toMatchObject({ phase: 'ready', mode: 'photos' });
+  });
+
+  it('runs capturing -> done with the bundle and never reconstructs on device', async () => {
+    const { deps } = photoDeps();
+    const { controller, phases } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(phases()).toEqual(['checking', 'ready', 'capturing', 'done']);
+    expect(deps.startPhotoCapture).toHaveBeenCalledOnce();
+    expect(deps.startCapture).not.toHaveBeenCalled();
+    expect(deps.reconstruct).not.toHaveBeenCalled();
+    expect(controller.getState().photoCapture).toEqual(PHOTO_RESULT);
+    expect(controller.getState().result).toBeNull();
+  });
+
+  it('object mode never calls startPhotoCapture', async () => {
+    const { deps } = makeDeps({ uploadPhotoBundle: photoUploadMock() });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(deps.startPhotoCapture).not.toHaveBeenCalled();
+    expect(deps.uploadPhotoBundle).not.toHaveBeenCalled();
+  });
+
+  it('done -> uploading -> uploaded via uploadPhotoBundle with the bundle dir and meta', async () => {
+    const uploadPhotoBundle = photoUploadMock();
+    const uploadScan = uploadMock();
+    const { deps } = photoDeps({ uploadPhotoBundle, uploadScan });
+    const { controller, phases } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(phases()).toEqual(['checking', 'ready', 'capturing', 'done', 'uploading', 'uploaded']);
+    expect(uploadScan).not.toHaveBeenCalled();
+    const params = uploadPhotoBundle.mock.calls[0]?.[0];
+    expect(params).toMatchObject({
+      bundleDir: PHOTO_RESULT.bundleDir,
+      leg: 'L',
+      captureMeta: {
+        sessionId: 'photo-session-1',
+        imageCount: 48,
+        coverage: 0.83,
+        captureKind: 'photos',
+      },
+    });
+    expect(params?.scanId).toBeTruthy();
+    expect(controller.getState().scanId).toBe('scan-p');
+  });
+
+  it('cancel during photo capture returns to ready, not failed', async () => {
+    const { deps } = photoDeps({
+      startPhotoCapture: vi.fn(async () => {
+        throw { code: 'ERR_CAPTURE_CANCELLED', message: 'The capture session was cancelled.' };
+      }),
+    });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(controller.getState()).toMatchObject({ phase: 'ready', error: null, mode: 'photos' });
+  });
+
+  it('camera denied lands in failed with the typed code', async () => {
+    const { deps } = photoDeps({
+      startPhotoCapture: vi.fn(async () => {
+        throw { code: 'ERR_CAPTURE_CAMERA_DENIED', message: 'Camera access is denied.' };
+      }),
+    });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(controller.getState().phase).toBe('failed');
+    expect(controller.getState().error?.code).toBe('ERR_CAPTURE_CAMERA_DENIED');
+  });
+
+  it('upload failure then retryUpload reuses the scan id and the same bundle', async () => {
+    const uploadPhotoBundle = vi
+      .fn((_params: UploadPhotoBundleParams) => Promise.resolve(PHOTO_UPLOAD_RESULT))
+      .mockRejectedValueOnce(new UploadError('ERR_UPLOAD_STORAGE', 'net'));
+    const { deps } = photoDeps({ uploadPhotoBundle });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    await controller.start();
+    expect(controller.getState().phase).toBe('upload_failed');
+    expect(controller.getState().uploadError?.code).toBe('ERR_UPLOAD_STORAGE');
+
+    await controller.retryUpload();
+    expect(controller.getState().phase).toBe('uploaded');
+    expect(deps.startPhotoCapture).toHaveBeenCalledOnce();
+    const [first, second] = uploadPhotoBundle.mock.calls.map((call) => call[0]);
+    expect(second?.scanId).toBe(first?.scanId);
+    expect(second?.bundleDir).toBe(PHOTO_RESULT.bundleDir);
+  });
+
+  it('dispose during photo capture cancels native work and ignores the late result', async () => {
+    const call = deferred<PhotoCaptureResult>();
+    const { deps } = photoDeps({ startPhotoCapture: vi.fn(() => call.promise) });
+    const { controller } = makeController(deps);
+    await controller.initialize();
+    const started = controller.start();
+    controller.dispose();
+    call.resolve(PHOTO_RESULT);
+    await started;
+    expect(deps.cancel).toHaveBeenCalledOnce();
+    expect(controller.getState().phase).toBe('capturing');
   });
 });
 
