@@ -306,3 +306,36 @@ def test_store_null_storage_owner_raises_not_none_prefix(fake_db) -> None:
     fake_db(store, [("scan-1", None, "None/scan-1.obj", None)])
     with pytest.raises(ScanPathError):
         store.get_meshes_pending_deletion(retention_days=30, limit=10)
+
+
+def test_photos_scan_without_mesh_erases_prefix_only() -> None:
+    # 0015: a photos scan whose reconstruction failed has no mesh_path; its
+    # bundle is still erased and no single-object delete is attempted.
+    item = PendingMesh(
+        scan_id="scan-1", storage_user_id="user-1", mesh_path=None, job_completed_at=None
+    )
+    store = FakeRetentionStore(items=[item])
+    storage = FakeStorageClient(
+        files={
+            ("meshes", "user-1/scan-1/images/000.jpg"): b"x",
+            ("meshes", "user-1/scan-1/images/001.jpg"): b"x",
+        }
+    )
+    ctx = RetentionContext(store=store, storage=storage)
+
+    result = run_retention_sweep(ctx, retention_days=30, batch_size=100, dry_run=False)
+
+    assert result.deleted == 1 and result.failed == 0
+    assert storage.files == {}
+    assert {p for _, p in storage.deleted} == {
+        "user-1/scan-1/images/000.jpg",
+        "user-1/scan-1/images/001.jpg",
+    }
+    assert [scan_id for scan_id, _ in store.marked] == ["scan-1"]
+
+
+def test_store_keeps_null_mesh_path_as_none(fake_db) -> None:
+    store = PostgresRetentionStore(Settings())
+    fake_db(store, [("scan-1", GUEST, None, None)])
+    [item] = store.get_meshes_pending_deletion(retention_days=30, limit=10)
+    assert item.mesh_path is None

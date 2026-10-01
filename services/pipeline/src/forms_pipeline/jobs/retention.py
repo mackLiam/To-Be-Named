@@ -15,7 +15,9 @@ sweep. Idempotent by construction:
   scan never reappears in a later batch.
 - Everything under the scan's derived prefix `${storage_user_id}/${scan_id}/` (the
   photo bundle, plan A1/A8) is deleted along with mesh_path, so a photos scan
-  leaves no images behind.
+  leaves no images behind. Since 0015 failed and never-enqueued scans qualify
+  too, and a photos scan whose reconstruction failed has mesh_path null: only
+  its prefix is erased.
 - Storage deletion is itself idempotent: a 404 (object already gone --
   e.g. a prior run deleted the object but crashed before marking the row)
   is treated as success, not a failure, so a retry always converges.
@@ -41,13 +43,12 @@ from forms_pipeline.config import Settings, get_settings
 from forms_pipeline.jobs.runner import (
     StorageClient,
     SupabaseStorageClient,
-    owned_mesh_path,
     storage_owner,
 )
+from forms_pipeline.jobs.scan_deletion import erase_scan_objects
 
 logger = logging.getLogger(__name__)
 
-MESH_BUCKET = "meshes"
 RETENTION_ACTOR = "retention-worker"
 
 
@@ -57,7 +58,8 @@ class PendingMesh:
 
     scan_id: str
     storage_user_id: str
-    mesh_path: str
+    # None for a photos scan whose reconstruction never wrote a mesh (0015).
+    mesh_path: str | None
     job_completed_at: datetime | str | None
 
 
@@ -134,12 +136,7 @@ def run_retention_sweep(
 
 
 def _delete_one(ctx: RetentionContext, item: PendingMesh) -> None:
-    # Validate before deleting anything: mesh_path is client-writable, and the
-    # service role would otherwise delete another user's object.
-    mesh_path = owned_mesh_path(item.storage_user_id, item.mesh_path)
-    for path in ctx.storage.list(MESH_BUCKET, f"{item.storage_user_id}/{item.scan_id}/"):
-        ctx.storage.delete(MESH_BUCKET, path)
-    ctx.storage.delete(MESH_BUCKET, mesh_path)
+    erase_scan_objects(ctx.storage, item.storage_user_id, item.scan_id, item.mesh_path)
     ctx.store.mark_mesh_deleted(
         scan_id=item.scan_id,
         detail={
@@ -182,7 +179,7 @@ class PostgresRetentionStore:
             PendingMesh(
                 scan_id=str(r[0]),
                 storage_user_id=storage_owner(r[1]),
-                mesh_path=str(r[2]),
+                mesh_path=r[2],
                 job_completed_at=r[3],
             )
             for r in rows

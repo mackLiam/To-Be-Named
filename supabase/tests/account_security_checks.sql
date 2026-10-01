@@ -152,9 +152,16 @@ select sec.fails(format('insert into public.orders (user_id, product_id, scan_id
 -- 0011's trigger refuses a deleted scan before RLS is evaluated.
 select sec.fails(format('insert into public.orders (user_id, product_id, scan_id_left) values (%L, %L, %L)',
   :'member', :'product', :'m_del'), '23514', 'member cannot order on a deleted scan');
+-- No client inserts at all since 0017, not even an unpaid shell.
+select sec.fails(format('insert into public.orders (user_id, product_id, scan_id_left, scan_id_right) values (%L, %L, %L, %L)',
+  :'member', :'product', :'m_l', :'m_r'), '42501', 'member cannot insert even a valid pending order (checkout is server side)');
+select sec.fails(format('insert into public.orders (user_id, product_id, scan_id_left, stripe_checkout_session_id) values (%L, %L, %L, %L)',
+  :'member', :'product', :'m_l', 'cs_forged'), '42501', 'member cannot forge a checkout session id');
+commit;
+
+-- Checkout (service role) creates the order.
 insert into public.orders (user_id, product_id, scan_id_left, scan_id_right)
 values (:'member', :'product', :'m_l', :'m_r');
-commit;
 
 -- The policy refuses a deleted scan on its own too (0011 trigger off).
 begin;
@@ -193,7 +200,17 @@ select sec.fails(format('insert into public.scans (user_id, leg, mesh_path) valu
   '42501', 'client cannot insert a scan with mesh_path outside its prefix');
 select sec.fails(format('update public.scans set mesh_path = %L where id = %L', :'other', :'m_r'),
   '42501', 'mesh_path equal to another bare prefix is refused');
+select sec.fails(format('update public.scans set mesh_path = %L where id = %L', :'member' || '/../' || :'other' || '/a.obj', :'m_r'),
+  '42501', 'mesh_path with a dot-dot segment is refused');
+select sec.fails(format('update public.scans set mesh_path = %L where id = %L', :'member' || '/%2e%2e/' || :'other' || '/a.obj', :'m_r'),
+  '42501', 'mesh_path with a percent escape is refused');
+select sec.fails(format('update public.scans set mesh_path = %L where id = %L', :'member' || '/', :'m_r'),
+  '42501', 'mesh_path with an empty file segment is refused');
+update public.scans set deleted_at = now() where id = :'m_r';
 commit;
+
+select sec.eq((select count(*) from public.scans where id = :'m_r' and deleted_at is null), 1,
+  'client cannot set deleted_at directly (only the deletion RPCs can)');
 
 select sec.eq((select count(*) from public.scans where id = :'m_l'), 1, 'client cannot delete a scans row');
 select sec.eq((select count(*) from public.scans where id = :'m_r' and storage_user_id = :'member'), 1,
@@ -385,11 +402,14 @@ select sec.eq((select count(*) from public.get_scans_pending_purge(100)
 -- The purge worker (0011, 0015 purge_scan_row) erases the deleted scans,
 -- d_pend together with its dead order.
 delete from public.scans where id = :'d_free';
--- Past the 24-hour dead-order hold (0015); set_updated_at paused to backdate.
+-- Past the 24-hour dead-order hold (0015); set_updated_at paused to backdate,
+-- which needs the table owner.
+set local role postgres;
 alter table public.orders disable trigger set_updated_at;
 update public.orders set updated_at = now() - interval '2 days'
   where scan_id_left = :'d_pend' or scan_id_right = :'d_pend';
 alter table public.orders enable trigger set_updated_at;
+set local role service_role;
 select public.purge_scan_row(:'d_pend', 'checks');
 -- A client stamped an ordered scan deleted directly ("scans: update own"):
 -- the purge never takes it, so it must not hold the account back.

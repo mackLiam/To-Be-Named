@@ -135,3 +135,18 @@ def test_store_null_storage_owner_raises_not_none_prefix(fake_db):
     fake_db(store, [("s1", None, None)])
     with pytest.raises(ScanPathError):
         store.get_scans_pending_purge(limit=5)
+
+
+def test_store_delete_scan_calls_purge_scan_row(fake_db):
+    # 0015: dead orders and the audit rows go with the scan in one SQL call.
+    store = PostgresPurgeStore(Settings())
+    db = fake_db(store, [(True,)])
+    store.delete_scan("s1")
+    assert db.executed == [("select purge_scan_row(%s, %s)", ("s1", "scan-deletion-worker"))]
+
+
+def test_store_delete_scan_not_eligible_is_quiet_noop(fake_db):
+    store = PostgresPurgeStore(Settings())
+    db = fake_db(store, [(False,)])
+    store.delete_scan("s1")  # a live order now holds it: no raise, nothing else run
+    assert len(db.executed) == 1

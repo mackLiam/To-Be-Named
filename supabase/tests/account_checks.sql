@@ -58,14 +58,24 @@ select acct.eq((select count(*) from public.scans), 1, 'guest sees its own scan'
 select acct.eq((select count(*) from storage.objects), 1, 'guest sees its own mesh');
 commit;
 
--- The guest upgrades (same user id, now a member) and orders.
+-- The guest upgrades (same user id, now a member). Clients never insert
+-- orders (0017); checkout creates them with the service role.
 update auth.users set is_anonymous = false, email = 'guest@example.com' where id = :'guest';
 begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', :'guest', true);
 select set_config('request.jwt.claims', '{"is_anonymous": false}', true);
+select acct.denied(
+  format('insert into public.orders (user_id, product_id, scan_id_left) values (%L, %L, %L)',
+    '33333333-3333-3333-3333-333333333333', 'dddddddd-0000-0000-0000-000000000001', 'cccccccc-0000-0000-0000-000000000001'),
+  'a member cannot insert an order directly either');
+commit;
 insert into public.orders (user_id, product_id, scan_id_left)
 values (:'guest', 'dddddddd-0000-0000-0000-000000000001', :'scan_a');
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', :'guest', true);
+select set_config('request.jwt.claims', '{"is_anonymous": false}', true);
 select acct.eq((select count(*) from public.orders), 1, 'upgraded guest sees its own order');
 commit;
 

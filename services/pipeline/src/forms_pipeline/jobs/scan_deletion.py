@@ -3,8 +3,10 @@
 A user deleting a scan only stamps scans.deleted_at (clients have no storage
 DELETE policy, 0003). This sweep, run with the service role, does the erasing:
 every storage object under the scan's prefix plus its mesh_path, then the scans
-row, which cascades its measurements and pipeline_jobs. get_scans_pending_purge
-never returns a scan on an order or with a running job.
+row, which cascades its measurements and pipeline_jobs, together with any dead
+(cancelled, never paid) order on it (purge_scan_row, 0015).
+get_scans_pending_purge never returns a scan on a live order or with a running
+job.
 
 Irreversible deletion of (often minors') body-scan data, so it is dry run
 unless an operator passes --arm (root CLAUDE.md playbook rule 5: never infer
@@ -141,20 +143,16 @@ class PostgresPurgeStore:
         ]
 
     def delete_scan(self, scan_id: str) -> None:
-        """Delete the row and write an audit entry, atomically. Idempotent: the
-        deleted_at guard makes a repeat a zero-row delete with no audit row."""
+        """Delete the row, its dead (cancelled, never paid) orders and their
+        audit rows in one transaction via purge_scan_row (0015). Idempotent: a
+        repeat, or a scan a live order now holds, returns false and changes
+        nothing."""
         with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                "delete from public.scans where id = %s and deleted_at is not null returning id",
-                (scan_id,),
-            )
-            if cur.fetchone() is not None:
-                cur.execute(
-                    "insert into public.audit_log (actor, action, subject_table, subject_id) "
-                    "values (%s, %s, %s, %s)",
-                    (PURGE_ACTOR, "scan_purged", "scans", scan_id),
-                )
+            cur.execute("select purge_scan_row(%s, %s)", (scan_id, PURGE_ACTOR))
+            row = cur.fetchone()
             conn.commit()
+        if not (row and row[0]):
+            logger.info("scan purge: scan=%s no longer eligible, row kept", scan_id)
 
 
 def main(argv: list[str] | None = None) -> None:  # pragma: no cover - thin wiring
