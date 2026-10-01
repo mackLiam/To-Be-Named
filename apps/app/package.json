@@ -13,7 +13,7 @@
     "@expo-google-fonts/outfit": "^0.4.3",
     "@expo/vector-icons": "^15.0.2",
     "@forms/shared": "workspace:*",
-    "@supabase/supabase-js": "^2.110.0",
+    "@supabase/supabase-js": "^2.117.2",
     "expo": "~57.0.1",
     "expo-build-properties": "~57.0.2",
     "expo-constants": "~57.0.2",

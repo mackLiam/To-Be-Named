@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@forms/shared": "workspace:*",
-    "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2.110.0",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.2",
     "next": "^15.1.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
