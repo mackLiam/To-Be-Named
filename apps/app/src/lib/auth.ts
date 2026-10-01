@@ -82,13 +82,14 @@ export class AuthError extends Error {
 }
 
 export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
-  ERR_AUTH_EMAIL: 'That does not look like an email address. Check it and try again.',
-  ERR_AUTH_CODE: 'That code is wrong or has expired. Check the latest email, or send a new code.',
-  ERR_AUTH_RATE_LIMIT: 'Too many codes sent. Wait a minute, then try again.',
+  ERR_AUTH_EMAIL: 'That email address does not look right. Check it and try again.',
+  ERR_AUTH_CODE: 'That code is wrong or has expired. Check it, or send a new code.',
+  ERR_AUTH_RATE_LIMIT: 'Too many attempts. Wait a few minutes, then try again.',
   ERR_AUTH_EMAIL_TAKEN:
-    'That email already has an account. Sign out and sign in with it instead. Scans taken as a guest stay with the guest session.',
-  ERR_AUTH_GUEST_DISABLED: 'Guest access is switched off right now. Sign in with your email.',
-  ERR_AUTH_UNKNOWN: 'Something went wrong. Check your connection and try again.',
+    'That email already has an account. Use a different email to save these scans here.',
+  ERR_AUTH_GUEST_DISABLED:
+    'Guest access is switched off right now. Sign in with your email instead.',
+  ERR_AUTH_UNKNOWN: 'That did not work. Check your connection and try again.',
 };
 
 /** Map a supabase-js auth error (by its stable `code`) to a typed error. */

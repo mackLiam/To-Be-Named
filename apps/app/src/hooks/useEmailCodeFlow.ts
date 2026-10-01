@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import {
   asAuthError,
@@ -19,6 +19,8 @@ export interface EmailCodeState {
   email: string | null;
   busy: boolean;
   error: AuthError | null;
+  /** True after a successful resend, until the next request. */
+  resent: boolean;
 }
 
 export const INITIAL_EMAIL_CODE_STATE: EmailCodeState = {
@@ -26,6 +28,7 @@ export const INITIAL_EMAIL_CODE_STATE: EmailCodeState = {
   email: null,
   busy: false,
   error: null,
+  resent: false,
 };
 
 /**
@@ -78,6 +81,9 @@ export class EmailCodeFlow {
   async resend(): Promise<void> {
     if (this.state.email) {
       await this.submitEmail(this.state.email);
+      if (!this.state.error) {
+        this.patch({ resent: true });
+      }
     }
   }
 
@@ -90,7 +96,7 @@ export class EmailCodeFlow {
     if (this.state.busy) {
       return;
     }
-    this.patch({ busy: true, error: null });
+    this.patch({ busy: true, error: null, resent: false });
     try {
       await work();
       this.patch({ busy: false });
@@ -117,4 +123,22 @@ export function useEmailCodeFlow(mode: EmailCodeMode) {
     resend: () => void current.resend(),
     reset: () => current.reset(),
   };
+}
+
+/** Busy and typed-error state for a one-shot auth call (guest sign-in, sign-out). */
+export function useAuthAction(action: (backend: AuthBackend) => Promise<void>) {
+  const [state, setState] = useState<{ busy: boolean; error: AuthError | null }>({
+    busy: false,
+    error: null,
+  });
+  const run = useCallback(() => {
+    setState({ busy: true, error: null });
+    action(getAuthBackend()).then(
+      () => setState({ busy: false, error: null }),
+      (error: unknown) => setState({ busy: false, error: asAuthError(error) }),
+    );
+    // The action is a stable module-level arrow at every call site.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return { ...state, run };
 }

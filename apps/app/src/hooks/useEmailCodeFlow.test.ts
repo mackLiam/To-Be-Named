@@ -10,6 +10,22 @@ function setup(mode: EmailCodeMode, overrides: Partial<AuthBackend> = {}) {
 }
 
 describe('EmailCodeFlow', () => {
+  it('does not report a resend that failed', async () => {
+    let fail = false;
+    const { flow } = setup('sign_in', {
+      sendCode: async () => {
+        if (fail) throw { code: 'over_email_send_rate_limit' };
+      },
+    });
+    await flow.submitEmail('a@b.co');
+    fail = true;
+    await flow.resend();
+    expect(flow.getState()).toMatchObject({
+      resent: false,
+      error: { code: 'ERR_AUTH_RATE_LIMIT' },
+    });
+  });
+
   it('signs in: email then code, normalizing both', async () => {
     const { backend, flow } = setup('sign_in');
     await flow.submitEmail(' A@B.co ');
@@ -79,6 +95,7 @@ describe('EmailCodeFlow', () => {
     await flow.submitEmail('a@b.co');
     await flow.resend();
     expect(sendCode).toHaveBeenNthCalledWith(2, 'a@b.co');
+    expect(flow.getState().resent).toBe(true);
     flow.reset();
     expect(flow.getState()).toMatchObject({ step: 'email', email: null });
   });
