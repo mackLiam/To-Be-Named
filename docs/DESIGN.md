@@ -406,7 +406,10 @@ retrofitting features.
    the pipeline. Policy: auto-delete raw meshes N days after order delivery
    (keep only the 25 measurements, which are far less sensitive), with explicit
    opt-in to retain the scan for easy reordering. In-app "delete my scans" and
-   full account deletion (App Store requires account deletion anyway).
+   full account deletion (App Store requires account deletion anyway). Scan
+   deletion is a soft delete by the owner (RPC, refused for scans on an order)
+   followed by a service-role purge of storage and rows, armed explicitly
+   (supabase/migrations/0011, forms_pipeline.jobs.scan_deletion).
 4. **Minors:** likely under-16 users → parental-consent flow and a COPPA/GDPR-K
    review before launch. Flag for legal review; do not silently ignore.
 5. **Payments:** Stripe-hosted fields/sheets only; PCI SAQ-A scope. Store the

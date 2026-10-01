@@ -136,6 +136,19 @@ local dev):
    turn on CAPTCHA before launch, since anonymous sign-in is an open endpoint.
 4. Custom SMTP before real users: the built-in sender is heavily rate limited.
 
+## Scan deletion
+
+Users delete a scan (both legs) from the app via `request_scan_deletion`
+(`0011_scan_deletion.sql`): it checks ownership, refuses scans on an order,
+stamps `scans.deleted_at` (hidden from the Library at once) and dead-letters
+queued jobs. Nothing is erased client-side. The service-role purge worker
+erases storage objects and then the rows:
+
+    cd services/pipeline && .venv/bin/python -m forms_pipeline.jobs.scan_deletion        # dry run
+    cd services/pipeline && .venv/bin/python -m forms_pipeline.jobs.scan_deletion --arm  # erase
+
+Schedule it alongside the retention sweep. Checks: `tests/scan_deletion_checks.sql`.
+
 ## TODOs
 
 - **Guest cleanup.** Signed-out guests leave orphaned anonymous users and
@@ -148,12 +161,6 @@ local dev):
   corresponding storage objects in `meshes`, and sets
   `scans.mesh_deleted_at`. Needs to run as service role since users have no
   delete policy on the `meshes` bucket by design.
-- **User-initiated scan deletion.** DESIGN 9.3 promises an in-app "delete my
-  scans" action. There is currently no delete policy on `meshes` storage
-  objects or on `measurements`, on purpose (see `0003_storage.sql`). This
-  needs a dedicated server-side route (Edge Function or admin API) running
-  as service role, not a new client-facing RLS policy, so a rogue client
-  can't bypass the retention/audit trail.
 - **Stripe webhook idempotency table.** When payments land, add a table
   (e.g. `stripe_webhook_events`) recording processed Stripe event ids so a
   redelivered webhook can't double-apply an order status transition. Not
