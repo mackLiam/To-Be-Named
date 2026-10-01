@@ -1,17 +1,16 @@
 import { useState } from 'react';
-import { Image, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
 import { Body } from '../src/components/Body';
 import { Button } from '../src/components/Button';
 import { Heading } from '../src/components/Heading';
-import { Rule } from '../src/components/Rule';
 import { Screen } from '../src/components/Screen';
 import { CodeStep, FakeModeCaption } from '../src/components/EmailCodeSteps';
 import { TextField } from '../src/components/TextField';
 import { TextLink } from '../src/components/TextLink';
 import { PRIVACY_URL, TERMS_URL } from '../src/lib/links';
 import { useAuthAction, useEmailCodeFlow } from '../src/hooks/useEmailCodeFlow';
-import { colors, spacing } from '../src/theme/tokens';
+import { colors, radius, spacing } from '../src/theme/tokens';
 
 import brandIcon from '../assets/brand/icon-brick-512.png';
 
@@ -31,22 +30,12 @@ export default function SignInScreen() {
 
   return (
     <Screen>
-      <Image
-        source={brandIcon}
-        style={{ width: 48, height: 48 }}
-        accessibilityIgnoresInvertColors
-      />
-      <View style={{ height: spacing.xl }} />
+      <Image source={brandIcon} style={styles.icon} accessibilityIgnoresInvertColors />
 
       {state.step === 'email' ? (
-        <>
-          <Heading level="display">Sign in.</Heading>
-          <View style={{ height: spacing.md }} />
-          <Body>
-            Enter your email and we send you a 6-digit code. No password. New here? The same code
-            sets up your account.
-          </Body>
-          <View style={{ height: spacing.lg }} />
+        <View style={styles.stack}>
+          <Heading level="display">Sign in</Heading>
+          <Body color={colors.textSecondary}>We email you a code. No password.</Body>
           <TextField
             kind="email"
             label="Email"
@@ -58,37 +47,28 @@ export default function SignInScreen() {
             autoFocus
             onSubmitEditing={() => submitEmail(email)}
           />
-          <View style={{ height: spacing.lg }} />
           <Button onPress={() => submitEmail(email)} disabled={busy || email.trim() === ''}>
-            {state.busy ? 'Sending code' : 'Send code'}
+            {state.busy ? 'Sending code' : 'Continue'}
           </Button>
-          <FakeModeCaption />
-          <View style={{ height: spacing.md }} />
-          <Body variant="caption" color={colors.textSecondary}>
-            By continuing you agree to the <TextLink href={TERMS_URL}>Terms</TextLink> and{' '}
-            <TextLink href={PRIVACY_URL}>Privacy policy</TextLink>.
-          </Body>
-
-          <View style={{ height: spacing.xxl }} />
-          <Rule />
-          <Heading level="h3">Continue as guest</Heading>
-          <View style={{ height: spacing.sm }} />
-          <Body variant="bodySmall" color={colors.textSecondary}>
-            Scan straight away, no email needed. Your scans stay on this phone. To order, you save
-            them to an account, it takes one code.
-          </Body>
-          <View style={{ height: spacing.lg }} />
-          <Button variant="outline" onPress={guest.run} disabled={busy}>
+          <Button variant="text" onPress={guest.run} disabled={busy}>
             {guest.busy ? 'Starting' : 'Continue as guest'}
           </Button>
+          <Body variant="caption" color={colors.textSecondary} style={styles.center}>
+            Guest scans stay on this phone. To order, save them to an account. It takes one code.
+          </Body>
           {guest.error && (
-            <View accessibilityLiveRegion="polite" style={{ marginTop: spacing.sm }}>
+            <View accessibilityLiveRegion="polite">
               <Body variant="bodySmall" color={colors.danger}>
                 {guest.error.message}
               </Body>
             </View>
           )}
-        </>
+          <FakeModeCaption />
+          <Body variant="caption" color={colors.textSecondary} style={styles.legal}>
+            By continuing you agree to the <TextLink href={TERMS_URL}>Terms</TextLink> and{' '}
+            <TextLink href={PRIVACY_URL}>Privacy policy</TextLink>.
+          </Body>
+        </View>
       ) : (
         <CodeStep
           email={state.email ?? ''}
@@ -112,3 +92,16 @@ export default function SignInScreen() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  icon: {
+    width: 56,
+    height: 56,
+    borderRadius: radius,
+    marginTop: spacing.xl,
+    marginBottom: spacing.xl,
+  },
+  stack: { gap: spacing.md },
+  center: { textAlign: 'center' },
+  legal: { marginTop: spacing.xl },
+});

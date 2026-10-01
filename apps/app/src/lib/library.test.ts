@@ -187,6 +187,8 @@ describe('failed step guidance', () => {
     expect(new Set(all).size).toBe(all.length);
     for (const copy of all) {
       expect(copy).not.toMatch(/[\u2013\u2014]/);
+      // Shown as a one-line detail under the leg row on the scan screen.
+      expect(copy.length).toBeLessThanOrEqual(80);
     }
     expect(failedStepGuidance('measuring')).toMatch(/ankle to knee/);
     expect(failedStepGuidance('reconstructing')).toMatch(/all the way around/);

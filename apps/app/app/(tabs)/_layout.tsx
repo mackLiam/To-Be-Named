@@ -26,13 +26,12 @@ export default function TabsLayout() {
           paddingTop: 10,
         },
         tabBarLabelStyle: {
-          fontFamily: typography.caption.fontFamily,
+          fontFamily: typography.label.fontFamily,
           fontSize: 11,
         },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Scan', tabBarIcon: tabIcon('camera') }} />
-      <Tabs.Screen name="scans" options={{ title: 'Library', tabBarIcon: tabIcon('layers') }} />
+      <Tabs.Screen name="index" options={{ title: 'Scans', tabBarIcon: tabIcon('aperture') }} />
       <Tabs.Screen name="shop" options={{ title: 'Shop', tabBarIcon: tabIcon('shopping-bag') }} />
       <Tabs.Screen name="orders" options={{ title: 'Orders', tabBarIcon: tabIcon('package') }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: tabIcon('user') }} />

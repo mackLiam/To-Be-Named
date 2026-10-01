@@ -1,21 +1,20 @@
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { Platform, Share, StyleSheet, View } from 'react-native';
-
-import { BRAND_NAME } from '@forms/shared/brand';
+import { ActivityIndicator, Platform, Share, StyleSheet, View } from 'react-native';
 
 import { Body } from '../src/components/Body';
 import { Button } from '../src/components/Button';
 import { Heading } from '../src/components/Heading';
-import { Rule } from '../src/components/Rule';
 import { Screen } from '../src/components/Screen';
+import { StepBar } from '../src/components/StepBar';
+import { UnavailableNotice } from '../src/components/UnavailableNotice';
 import { captureErrorMessage, useCaptureFlow } from '../src/hooks/useCaptureFlow';
 import type { CaptureFlowState, CaptureMetaEnv } from '../src/hooks/useCaptureFlow';
 import { isSessionComplete } from '../src/lib/captureSession';
 import { hasSupabaseConfig } from '../src/lib/supabase';
 import { uploadErrorMessage } from '../src/lib/upload';
 import type { Leg } from '../src/lib/upload';
-import type { CaptureState } from '../modules/forms-capture';
+import type { CaptureState, PhotoCaptureMode } from '../modules/forms-capture';
 import { colors, radius, spacing } from '../src/theme/tokens';
 
 /** Device/OS context stamped onto the scan. Built here (not in useCaptureFlow)
@@ -31,17 +30,13 @@ function readCaptureEnv(): CaptureMetaEnv {
 }
 
 /**
- * The guided capture flow (ROADMAP.md week 2). Deliberately a lab tool:
- * plain phase readouts, raw file paths, reason codes. The polish pass comes
- * after the pipeline proves itself on real legs.
- *
- * All state logic lives in useCaptureFlow; this screen only renders the
- * current phase. Backing out of the screen unmounts the hook, which cancels
- * any in-flight native work and removes event listeners.
+ * The guided capture flow, one phase per screen. All state logic lives in
+ * useCaptureFlow; backing out unmounts the hook, which cancels any in-flight
+ * native work and removes event listeners.
  */
 export default function CaptureScreen() {
   const router = useRouter();
-  const { state, start, retryUpload, nextLeg } = useCaptureFlow({
+  const { state, start, retryUpload, nextLeg, choosePhotoMode } = useCaptureFlow({
     pair: true,
     captureEnv: readCaptureEnv,
   });
@@ -57,216 +52,211 @@ export default function CaptureScreen() {
     }
   }, [state.phase, pairComplete, session, router]);
 
-  return (
-    <Screen>
-      {state.phase === 'checking' && <CheckingSection />}
-      {state.phase === 'unsupported' && <UnsupportedSection state={state} onBack={router.back} />}
-      {state.phase === 'ready' && (
-        <ReadySection mode={state.mode} leg={state.leg} onStart={start} />
-      )}
-      {state.phase === 'capturing' && <CapturingSection state={state} />}
-      {state.phase === 'reconstructing' && <ReconstructingSection state={state} />}
-      {(state.phase === 'done' || state.phase === 'uploading') && (
-        <UploadingSection state={state} />
-      )}
-      {state.phase === 'uploaded' && (
-        <UploadedSection state={state} pairComplete={pairComplete} onNextLeg={nextLeg} />
-      )}
-      {state.phase === 'upload_failed' && (
-        <UploadFailedSection state={state} onRetry={retryUpload} onRescan={start} />
-      )}
-      {state.phase === 'failed' && <FailedSection state={state} onRetry={start} />}
-    </Screen>
-  );
+  switch (state.phase) {
+    case 'unsupported':
+      return (
+        <Screen
+          footer={
+            <Button variant="outline" onPress={router.back}>
+              Back
+            </Button>
+          }
+        >
+          <UnavailableNotice reason={state.unavailableReason} />
+        </Screen>
+      );
+    case 'ready':
+      return <ReadySection state={state} onStart={start} onChoosePhotoMode={choosePhotoMode} />;
+    case 'capturing':
+      return <CapturingSection state={state} />;
+    case 'reconstructing':
+      return <ReconstructingSection state={state} />;
+    case 'done':
+    case 'uploading':
+      return <UploadingSection state={state} />;
+    case 'uploaded':
+      return <UploadedSection state={state} pairComplete={pairComplete} onNextLeg={nextLeg} />;
+    case 'upload_failed':
+      return <UploadFailedSection state={state} onRetry={retryUpload} onRescan={start} />;
+    case 'failed':
+      return <FailedSection state={state} onRetry={start} />;
+    default:
+      return (
+        <Screen>
+          <ActivityIndicator color={colors.textPrimary} accessibilityLabel="Checking this phone" />
+        </Screen>
+      );
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Phase sections
 // ---------------------------------------------------------------------------
 
-function CheckingSection() {
+const LEG_TITLE: Record<Leg, string> = { L: 'Left leg', R: 'Right leg' };
+const LEG_STEP: Record<Leg, number> = { L: 1, R: 2 };
+
+function LegHeader({ leg, title }: { leg: Leg; title?: string }) {
   return (
     <>
-      <Heading level="h1">Checking this device.</Heading>
-      <View style={{ height: spacing.md }} />
-      <Body color={colors.textSecondary}>
-        Confirming the LiDAR sensor and capture support before the scan starts.
-      </Body>
+      <StepBar step={LEG_STEP[leg]} total={2} />
+      <Heading level="display">{title ?? LEG_TITLE[leg]}</Heading>
+      <View style={{ height: spacing.lg }} />
     </>
   );
 }
 
-/**
- * Copy per unavailability reason. Mirrors the explanatory path on the Scan
- * tab and capture-info: an unsupported device gets told why and what works
- * instead, never a dead end.
- */
-const UNSUPPORTED_COPY: Record<'platform' | 'module' | 'device', string> = {
-  platform:
-    'Guided capture runs on iPhone only. Your scan library, orders, and shop work the same on this device once a scan exists.',
-  module: `This build does not include the capture module. Open ${BRAND_NAME} in the dev client (an EAS or local dev build), not Expo Go.`,
-  device:
-    'This iPhone cannot run guided capture. It needs a LiDAR sensor (iPhone 12 Pro or later Pro model) and iOS 17 or later.',
+/** Photos mode steps per answer to "Is someone helping you?". */
+const PHOTO_STEPS: Record<PhotoCaptureMode, string[]> = {
+  solo: [
+    'Sit on a chair, foot flat on the floor, other leg moved out of the way.',
+    'Point the circle at the front of your shin, halfway up, and tap.',
+    'Sweep the phone from the inner side, across the front, to the outer side, then reach behind as far as is comfortable. Switch hands for the far side.',
+  ],
+  helper: [
+    'Stand or sit still.',
+    'Your helper points the circle at the front of your shin, halfway up, and taps.',
+    "Your helper walks one slow, full circle around your leg at arm's length.",
+  ],
 };
 
-function UnsupportedSection({ state, onBack }: { state: CaptureFlowState; onBack: () => void }) {
-  const reason =
-    state.unavailableReason === 'platform' || state.unavailableReason === 'module'
-      ? state.unavailableReason
-      : 'device';
-  return (
-    <>
-      <Heading level="h1">Capture is not available here.</Heading>
-      <View style={{ height: spacing.md }} />
-      <Body>{UNSUPPORTED_COPY[reason]}</Body>
-      <View style={{ height: spacing.sm }} />
-      <Body variant="caption" color={colors.textTertiary}>
-        Reason code: {reason}
-      </Body>
-      <View style={{ height: spacing.lg }} />
-      <Button variant="outline" onPress={onBack}>
-        Back
-      </Button>
-    </>
-  );
-}
+const PHOTO_TITLE: Record<PhotoCaptureMode, string> = {
+  solo: 'Sweep the phone around your leg.',
+  helper: 'Your helper walks one slow circle.',
+};
 
-const LEG_LABEL: Record<Leg, string> = { L: 'Left leg', R: 'Right leg' };
-const LEG_STEP: Record<Leg, string> = { L: 'Step 1 of 2', R: 'Step 2 of 2' };
+const PHOTO_TARGET: Record<PhotoCaptureMode, string> = {
+  solo: 'Done unlocks at about half way around, with the front and both sides covered.',
+  helper: 'Done unlocks once the ring is almost full.',
+};
 
 function ReadySection({
-  mode,
-  leg,
+  state,
   onStart,
+  onChoosePhotoMode,
 }: {
-  mode: CaptureFlowState['mode'];
-  leg: Leg;
+  state: CaptureFlowState;
   onStart: () => void;
+  onChoosePhotoMode: (mode: PhotoCaptureMode | null) => void;
 }) {
-  return (
-    <>
-      <Body variant="label" color={colors.textSecondary}>
-        {LEG_STEP[leg]}
-      </Body>
-      <View style={{ height: spacing.xs }} />
-      <Heading level="h1">{LEG_LABEL[leg]}.</Heading>
-      <View style={{ height: spacing.md }} />
-      {mode === 'photos' ? (
-        <>
-          <Body>
-            Walk one slow circle around the leg while the camera takes photos on its own. Keep the
-            leg still and keep ankle to knee in frame. Tap Done once the ring is mostly filled.
-          </Body>
-          <View style={{ height: spacing.sm }} />
-          <Body variant="bodySmall" color={colors.textSecondary}>
-            Bare skin is hard to rebuild in 3D. Wear a patterned sock over the shin, or draw a few
-            pen dots on it, before you start.
-          </Body>
-        </>
-      ) : (
-        <Body>
-          The camera opens in Apple&apos;s guided capture. Keep the leg still, keep the whole leg in
-          frame, and walk one slow, full circle around it.
+  const { mode, leg, photoMode } = state;
+
+  if (mode === 'photos' && photoMode === null) {
+    return (
+      <Screen
+        footer={
+          <>
+            <Button onPress={() => onChoosePhotoMode('solo')}>No, I am on my own</Button>
+            <Button variant="outline" onPress={() => onChoosePhotoMode('helper')}>
+              Yes, someone is helping
+            </Button>
+          </>
+        }
+      >
+        <LegHeader leg={leg} />
+        <Heading level="h2">Is someone helping you?</Heading>
+        <View style={{ height: spacing.md }} />
+        <Body color={colors.textSecondary}>
+          On your own, you cover the front and sides from a chair. A helper can walk all the way
+          around.
         </Body>
-      )}
-      <View style={{ height: spacing.lg }} />
-      <Button onPress={onStart}>Begin capture</Button>
-      <Rule />
-      <Body variant="bodySmall" color={colors.textSecondary}>
-        Backing out of the camera brings you back here. Nothing is saved until the scan completes.
-      </Body>
-    </>
+      </Screen>
+    );
+  }
+
+  if (mode === 'photos' && photoMode !== null) {
+    return (
+      <Screen
+        footer={
+          <>
+            <Button onPress={() => onStart()}>Start</Button>
+            <Button
+              variant="text"
+              onPress={() => onChoosePhotoMode(photoMode === 'helper' ? 'solo' : 'helper')}
+            >
+              {photoMode === 'helper' ? 'I am on my own instead' : 'Someone is helping me instead'}
+            </Button>
+          </>
+        }
+      >
+        <LegHeader leg={leg} />
+        <Heading level="h2">{PHOTO_TITLE[photoMode]}</Heading>
+        <View style={styles.steps}>
+          {PHOTO_STEPS[photoMode].map((step, i) => (
+            <View key={step} style={styles.step}>
+              <Body variant="bodyStrong" color={colors.action} style={styles.stepNum}>
+                {i + 1}
+              </Body>
+              <Body style={styles.stepText}>{step}</Body>
+            </View>
+          ))}
+        </View>
+        <Body color={colors.textSecondary}>
+          Shorts on or trousers rolled up, good light, and a patterned sock or a few pen dots on the
+          shin. {PHOTO_TARGET[photoMode]}
+        </Body>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen footer={<Button onPress={() => onStart()}>Start</Button>}>
+      <LegHeader leg={leg} />
+      <Heading level="h2">Walk one slow circle around your leg.</Heading>
+      <View style={{ height: spacing.md }} />
+      <Body color={colors.textSecondary}>Keep the leg still and fully in frame.</Body>
+    </Screen>
   );
 }
 
 /** Short instruction per native capture state, shown while the guided UI runs. */
 const CAPTURE_STATE_COPY: Record<CaptureState, string> = {
   initializing: 'Starting the camera.',
-  ready: 'Point the camera at the leg.',
-  detecting: 'Finding the leg. Keep it centered in the frame.',
-  capturing: 'Capturing. Walk slowly around the leg.',
-  finishing: 'Finishing the pass. Hold steady.',
-  completed: 'Capture complete.',
-  cancelled: 'Capture cancelled.',
-  failed: 'Capture hit a problem.',
+  ready: 'Point the camera at your leg.',
+  detecting: 'Finding your leg. Keep it centered.',
+  capturing: 'Walk slowly around your leg.',
+  finishing: 'Hold steady.',
+  completed: 'Done.',
+  cancelled: 'Cancelled.',
+  failed: 'Something went wrong.',
 };
 
 function CapturingSection({ state }: { state: CaptureFlowState }) {
-  const captureState = state.captureState ?? 'initializing';
   return (
-    <>
-      <Heading level="h1">Capture in progress.</Heading>
-      <View style={{ height: spacing.md }} />
-      <Body>{CAPTURE_STATE_COPY[captureState]}</Body>
-      <View style={{ height: spacing.sm }} />
-      <Body variant="caption" color={colors.textTertiary}>
-        Session state: {captureState}
-      </Body>
-    </>
+    <Screen>
+      <LegHeader leg={state.leg} />
+      <View accessibilityLiveRegion="polite">
+        <Heading level="h2">{CAPTURE_STATE_COPY[state.captureState ?? 'initializing']}</Heading>
+      </View>
+    </Screen>
   );
 }
 
 function ReconstructingSection({ state }: { state: CaptureFlowState }) {
   const percent = Math.round(state.progress * 100);
   return (
-    <>
-      <Heading level="h1">Building the mesh.</Heading>
+    <Screen>
+      <LegHeader leg={state.leg} title="Building your model" />
+      <Heading level="display" color={colors.brick[500]}>
+        {percent}%
+      </Heading>
       <View style={{ height: spacing.md }} />
-      <Body>
-        Turning {state.capture?.imageCount ?? 'the captured'} photos into a 3D model, all on this
-        phone. Keep the app open.
-      </Body>
-      <View style={{ height: spacing.lg }} />
       <ProgressBar fraction={state.progress} />
-      <View style={{ height: spacing.sm }} />
-      <Body variant="label" color={colors.textSecondary}>
-        {percent}%{state.progressStage ? `, ${state.progressStage}` : ''}
-      </Body>
-    </>
+      <View style={{ height: spacing.md }} />
+      <Body color={colors.textSecondary}>Keep the app open.</Body>
+    </Screen>
   );
 }
 
-/**
- * Reconstruction finished; the mesh is being saved to the scan library. Covers
- * both the transient 'done' phase and the 'uploading' phase so there is no
- * flicker between them.
- */
+/** Covers both the transient 'done' phase and 'uploading' so there is no flicker between them. */
 function UploadingSection({ state }: { state: CaptureFlowState }) {
-  const result = state.result;
-  const photos = state.photoCapture;
-  if (photos) {
-    return (
-      <>
-        <Heading level="h1">Saving your scan.</Heading>
-        <View style={{ height: spacing.md }} />
-        <Body>
-          Uploading {photos.imageCount} photos to your scan library. The 3D model is built on our
-          side once they arrive. Keep the app open.
-        </Body>
-        <Rule />
-        <InfoRow label="Session" value={photos.sessionId} />
-        <InfoRow label="Photos" value={String(photos.imageCount)} />
-        <InfoRow label="Coverage" value={`${Math.round(photos.coverage * 100)}%`} />
-      </>
-    );
-  }
   return (
-    <>
-      <Heading level="h1">Saving your scan.</Heading>
-      <View style={{ height: spacing.md }} />
-      <Body>
-        The mesh is built. Uploading it to your scan library and queuing it for measurement. Keep
-        the app open.
-      </Body>
-      <Rule />
-      {result && (
-        <>
-          <InfoRow label="Session" value={result.sessionId} />
-          <InfoRow label="Images used" value={String(result.imageCount)} />
-          <InfoRow label="Detail level" value={result.detail} />
-        </>
-      )}
-    </>
+    <Screen>
+      <LegHeader leg={state.leg} title="Saving" />
+      <ActivityIndicator size="large" color={colors.textPrimary} style={styles.spinner} />
+      <View style={{ height: spacing.lg }} />
+      <Body color={colors.textSecondary}>Uploading your scan. Keep the app open.</Body>
+    </Screen>
   );
 }
 
@@ -274,10 +264,6 @@ function UploadingSection({ state }: { state: CaptureFlowState }) {
  * A leg finished. Before the last leg: an interstitial with Continue. After it:
  * a brief state before the router opens the pair, or with no backend a plain
  * finished message.
- *
- * The offline branch is a dev-only escape hatch until hosted Supabase exists
- * (ROADMAP.md week 5): share each leg's OBJ off the phone (AirDrop to the Mac)
- * so it can be run through forms-extract by hand. Never shown with a backend.
  */
 function UploadedSection({
   state,
@@ -288,59 +274,54 @@ function UploadedSection({
   pairComplete: boolean;
   onNextLeg: () => void;
 }) {
-  const offline = !hasSupabaseConfig();
   if (!pairComplete) {
     return (
-      <>
-        <Heading level="h1">Left leg saved. Now the right leg.</Heading>
+      <Screen footer={<Button onPress={onNextLeg}>Continue</Button>}>
+        <LegHeader leg={state.leg} title={`${LEG_TITLE[state.leg]} done`} />
+        <Heading level="h2">Now the other leg.</Heading>
         <OfflineLegNote state={state} />
-        <View style={{ height: spacing.lg }} />
-        <Button onPress={onNextLeg}>Continue</Button>
-      </>
+      </Screen>
     );
   }
-  if (offline) {
+  if (!hasSupabaseConfig()) {
     return (
-      <>
-        <Heading level="h1">Both legs finished.</Heading>
+      <Screen>
+        <Heading level="display">Both legs done</Heading>
         <OfflineLegNote state={state} />
-      </>
+      </Screen>
     );
   }
   return (
-    <>
-      <Heading level="h1">Both legs saved.</Heading>
-      <View style={{ height: spacing.md }} />
-      <Body>Opening your scan.</Body>
-    </>
+    <Screen>
+      <Heading level="display">Both legs saved</Heading>
+      <View style={{ height: spacing.lg }} />
+      <ActivityIndicator color={colors.textPrimary} accessibilityLabel="Opening your scan" />
+    </Screen>
   );
 }
 
-/** Offline only: what happened to this leg's capture, plus the share escape hatch. */
+/**
+ * No backend configured (local dev builds only): nothing was uploaded, so
+ * offer to share each leg's OBJ off the phone. Never shown with a backend.
+ */
 function OfflineLegNote({ state }: { state: CaptureFlowState }) {
   const objPath = state.result?.objPath;
   if (hasSupabaseConfig()) {
     return null;
   }
-  if (state.photoCapture) {
+  if (state.photoCapture || !objPath) {
     return (
-      <>
-        <View style={{ height: spacing.md }} />
-        <Body>No server is configured in this build, so the photos were not uploaded.</Body>
-      </>
+      <Body color={colors.textSecondary} style={styles.offline}>
+        Not uploaded: this build has no server.
+      </Body>
     );
-  }
-  if (!objPath) {
-    return null;
   }
   return (
     <>
-      <View style={{ height: spacing.md }} />
-      <Body>
-        No server is configured in this build, so the scan was not uploaded. Share the file to get
-        it off this phone.
+      <Body color={colors.textSecondary} style={styles.offline}>
+        Not uploaded: this build has no server.
       </Body>
-      <View style={{ height: spacing.lg }} />
+      <View style={{ height: spacing.md }} />
       <Button
         variant="outline"
         onPress={() =>
@@ -363,50 +344,41 @@ function UploadFailedSection({
   onRescan: () => void;
 }) {
   return (
-    <>
-      <Heading level="h1">The scan did not save.</Heading>
+    <Screen
+      footer={
+        <>
+          {/* Retry uploads the same capture (no rescan): idempotent, reuses the scan id. */}
+          <Button onPress={onRetry}>Retry upload</Button>
+          <Button variant="text" onPress={onRescan}>
+            Scan again
+          </Button>
+        </>
+      }
+    >
+      <Heading level="display" color={colors.danger}>
+        Upload failed
+      </Heading>
       <View style={{ height: spacing.md }} />
       <Body>
         {state.uploadError
           ? uploadErrorMessage(state.uploadError)
           : 'Something went wrong saving the scan.'}
       </Body>
-      {state.uploadError && (
-        <>
-          <View style={{ height: spacing.sm }} />
-          <Body variant="caption" color={colors.textTertiary}>
-            Error code: {state.uploadError.code}
-          </Body>
-        </>
-      )}
-      <View style={{ height: spacing.lg }} />
-      {/* Retry uploads the same mesh (no rescan): idempotent, reuses the scan id. */}
-      <Button onPress={onRetry}>Retry upload</Button>
-      <View style={{ height: spacing.sm }} />
-      <Button variant="outline" onPress={onRescan}>
-        Scan again
-      </Button>
-    </>
+      {state.uploadError && <ErrorCode code={state.uploadError.code} />}
+    </Screen>
   );
 }
 
 function FailedSection({ state, onRetry }: { state: CaptureFlowState; onRetry: () => void }) {
   return (
-    <>
-      <Heading level="h1">The scan did not finish.</Heading>
+    <Screen footer={<Button onPress={onRetry}>Try again</Button>}>
+      <Heading level="display" color={colors.danger}>
+        Scan failed
+      </Heading>
       <View style={{ height: spacing.md }} />
       <Body>{state.error ? captureErrorMessage(state.error) : 'Something went wrong.'}</Body>
-      {state.error && (
-        <>
-          <View style={{ height: spacing.sm }} />
-          <Body variant="caption" color={colors.textTertiary}>
-            Error code: {state.error.code}
-          </Body>
-        </>
-      )}
-      <View style={{ height: spacing.lg }} />
-      <Button onPress={onRetry}>Try again</Button>
-    </>
+      {state.error && <ErrorCode code={state.error.code} />}
+    </Screen>
   );
 }
 
@@ -414,36 +386,39 @@ function FailedSection({ state, onRetry }: { state: CaptureFlowState; onRetry: (
 // Pieces
 // ---------------------------------------------------------------------------
 
-/**
- * Determinate reconstruction progress: a flat brick fill on a brown-tinted
- * track. Color block, not shadow or glow (banned looks #5 and #9); the one
- * shared radius token, not a pill (banned look #3).
- */
+/** Kept as a tiny caption so support can match a report to a cause. */
+function ErrorCode({ code }: { code: string }) {
+  return (
+    <Body variant="caption" color={colors.textTertiary} style={styles.code}>
+      Code: {code}
+    </Body>
+  );
+}
+
+/** Determinate progress: a flat brick fill on a brown-tinted track, no glow. */
 function ProgressBar({ fraction }: { fraction: number }) {
   const percent = Math.max(0, Math.min(100, Math.round(fraction * 100)));
   return (
-    <View style={styles.progressTrack}>
+    <View
+      style={styles.progressTrack}
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: percent }}
+    >
       <View style={[styles.progressFill, { width: `${percent}%` }]} />
     </View>
   );
 }
 
-/** Lab-tool metadata row: uppercase label over a raw value, no card, no chip. */
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ marginBottom: spacing.md }}>
-      <Body variant="label" color={colors.textTertiary}>
-        {label}
-      </Body>
-      <View style={{ height: spacing.xs }} />
-      <Body variant="bodySmall">{value}</Body>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
+  spinner: { alignSelf: 'flex-start' },
+  offline: { marginTop: spacing.md },
+  code: { marginTop: spacing.md },
+  steps: { marginTop: spacing.md, marginBottom: spacing.lg, gap: spacing.md },
+  step: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.md },
+  stepNum: { width: spacing.lg },
+  stepText: { flex: 1 },
   progressTrack: {
-    height: 10,
+    height: 8,
     backgroundColor: colors.border,
     borderRadius: radius,
     overflow: 'hidden',

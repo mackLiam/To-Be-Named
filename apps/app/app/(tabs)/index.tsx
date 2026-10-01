@@ -1,74 +1,131 @@
-import { useRouter } from 'expo-router';
-import { Platform, View } from 'react-native';
-
-import { BRAND_NAME } from '@forms/shared/brand';
+import { Feather } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef } from 'react';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
-import { Rule } from '../../src/components/Rule';
 import { Screen } from '../../src/components/Screen';
+import { SESSION_TONE, StatusLabel } from '../../src/components/StatusLabel';
+import { useScanSessions } from '../../src/hooks/useScans';
 import { isCaptureSupported } from '../../src/lib/capture';
-import { colors, spacing } from '../../src/theme/tokens';
+import {
+  formatSessionDate,
+  SCAN_STATUS_LABEL,
+  SESSION_STATUS_LABEL,
+  sessionStatus,
+  type Scan,
+  type ScanSession,
+} from '../../src/lib/library';
+import { colors, radius, spacing } from '../../src/theme/tokens';
 
-const DEVICE_REQUIREMENTS = [
-  'iPhone 12 Pro or later Pro model (LiDAR sensor required)',
-  'iOS 17 or later',
-  `A dev-build install of ${BRAND_NAME}, not the App Store build yet (Phase 0)`,
-];
-
-export default function ScanScreen() {
+export default function ScansScreen() {
   const router = useRouter();
-  // hasLiDAR is unknown until the native capture module ships and can query
-  // the device (see src/lib/capture.ts). Passing undefined here means: show
-  // the entry point on any iPhone for now, and tighten this once the module
-  // can positively confirm or rule out LiDAR.
+  const { sessions, loading, error, reload } = useScanSessions();
+  // hasLiDAR is unknown until the native module can query it (src/lib/capture.ts),
+  // so every iPhone sees the entry point; capture-info runs the real check.
   const canCapture = isCaptureSupported(Platform.OS);
 
-  if (!canCapture) {
-    return (
-      <Screen>
-        <Heading level="display">Scan on your iPhone.</Heading>
-        <View style={{ height: spacing.md }} />
-        <Body>
-          It appears here. Capture only runs on a LiDAR iPhone right now, your scan library, orders,
-          and shop work the same on every device once a scan exists.
-        </Body>
-        <Rule />
-        <Heading level="h3">Why iPhone only</Heading>
-        <View style={{ height: spacing.sm }} />
-        <Body color={colors.textSecondary} variant="bodySmall">
-          The guard is built from a 3D reconstruction of your leg, captured with Apple&apos;s LiDAR
-          scanner. Android and browser capture are on the roadmap (see docs/DESIGN.md section 5):
-          they will land as a photo-upload path once the server-side reconstruction worker ships.
-        </Body>
-      </Screen>
-    );
-  }
+  // Refresh when the tab regains focus (e.g. back from a capture) but not on
+  // the first focus, which the hook's own initial load already covers.
+  const focusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedOnce.current) {
+        reload();
+      }
+      focusedOnce.current = true;
+    }, [reload]),
+  );
+
+  const firstLoad = loading && sessions.length === 0;
 
   return (
-    <Screen>
-      <Heading level="display">Scan your leg.</Heading>
-      <View style={{ height: spacing.md }} />
-      <Body>
-        Ten minutes with your phone gets you a guard molded to your leg, not off a shelf. Walk
-        around it once, we take it from there.
-      </Body>
-      <View style={{ height: spacing.lg }} />
-      <Button onPress={() => router.push('/capture-info')}>Start a scan</Button>
-      <Rule />
-      <Heading level="h3">Before you start</Heading>
-      <View style={{ height: spacing.sm }} />
-      {DEVICE_REQUIREMENTS.map((requirement) => (
-        <View key={requirement} style={{ flexDirection: 'row', marginBottom: spacing.xs }}>
-          <Body color={colors.textSecondary} variant="bodySmall">
-            {'- '}
-          </Body>
-          <Body color={colors.textSecondary} variant="bodySmall" style={{ flex: 1 }}>
-            {requirement}
-          </Body>
-        </View>
+    <Screen title="Scans" onRefresh={reload} refreshing={loading && sessions.length > 0}>
+      <View style={styles.hero}>
+        <View style={styles.accent} />
+        <Heading level="h1" color={colors.onDark}>
+          {canCapture ? 'Scan your legs' : 'Scan on your iPhone'}
+        </Heading>
+        <Body color={colors.onDarkMuted}>
+          {canCapture
+            ? 'Both legs, about ten minutes.'
+            : 'Needs an iPhone Pro with LiDAR. Scans show up here.'}
+        </Body>
+        {canCapture && (
+          <View style={styles.heroAction}>
+            <Button onPress={() => router.push('/capture-info')}>Start a scan</Button>
+          </View>
+        )}
+      </View>
+
+      {firstLoad && <ActivityIndicator color={colors.textPrimary} style={styles.loader} />}
+
+      {error && (
+        <Body color={colors.danger}>Could not load your scans. Pull down to try again.</Body>
+      )}
+
+      {sessions.length > 0 && (
+        <Body variant="label" color={colors.textSecondary} style={styles.listLabel}>
+          Your scans
+        </Body>
+      )}
+      {sessions.map((session) => (
+        <SessionRow
+          key={session.key}
+          session={session}
+          onPress={() => router.push({ pathname: '/scan/[key]', params: { key: session.key } })}
+        />
       ))}
     </Screen>
   );
 }
+
+function SessionRow({ session, onPress }: { session: ScanSession; onPress: () => void }) {
+  const status = sessionStatus(session);
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Scan from ${formatSessionDate(session.createdAt)}, ${SESSION_STATUS_LABEL[status]}. Left: ${legStatus(session.left)}. Right: ${legStatus(session.right)}.`}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
+      <View style={styles.rowText}>
+        <Heading level="h3">{formatSessionDate(session.createdAt)}</Heading>
+        <StatusLabel label={SESSION_STATUS_LABEL[status]} tone={SESSION_TONE[status]} />
+      </View>
+      <Feather name="chevron-right" size={22} color={colors.textSecondary} />
+    </Pressable>
+  );
+}
+
+function legStatus(scan: Scan | null): string {
+  return scan ? SCAN_STATUS_LABEL[scan.status] : 'Not scanned';
+}
+
+const styles = StyleSheet.create({
+  hero: {
+    backgroundColor: colors.surfaceDark,
+    borderRadius: radius,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  accent: { width: 40, height: 4, backgroundColor: colors.accentOnDark, marginBottom: spacing.sm },
+  heroAction: { marginTop: spacing.md },
+  loader: { marginTop: spacing.lg },
+  listLabel: { marginBottom: spacing.xs },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  rowPressed: { backgroundColor: colors.surfaceMuted },
+  rowText: { flex: 1, gap: spacing.xs },
+});

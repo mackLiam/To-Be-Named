@@ -73,7 +73,7 @@ function RootStack({ fontsReady }: { fontsReady: boolean }) {
             options={{
               headerShown: true,
               headerTitle: 'Scan',
-              headerBackTitle: 'Library',
+              headerBackTitle: 'Scans',
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.textPrimary,
               headerShadowVisible: false,

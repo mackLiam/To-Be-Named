@@ -1,19 +1,18 @@
+import * as Linking from 'expo-linking';
 import { useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
 import { CodeStep, FakeModeCaption } from '../../src/components/EmailCodeSteps';
 import { Heading } from '../../src/components/Heading';
-import { Rule } from '../../src/components/Rule';
+import { ListGroup, ListRow } from '../../src/components/List';
 import { Screen } from '../../src/components/Screen';
-import { TextLink } from '../../src/components/TextLink';
 import { TextField } from '../../src/components/TextField';
 import { useAccount } from '../../src/hooks/useAccount';
 import { useAuthAction, useEmailCodeFlow } from '../../src/hooks/useEmailCodeFlow';
 import type { AuthBackend } from '../../src/lib/auth';
 import { dataExportFile } from '../../src/lib/dataExport';
-import { shareFile } from '../../src/lib/shareFile';
 import {
   PRIVACY_URL,
   SUPPORT_EMAIL,
@@ -21,7 +20,8 @@ import {
   SUPPORT_URL,
   TERMS_URL,
 } from '../../src/lib/links';
-import { colors, spacing } from '../../src/theme/tokens';
+import { shareFile } from '../../src/lib/shareFile';
+import { colors, radius, spacing } from '../../src/theme/tokens';
 
 const signOut = (backend: AuthBackend) => backend.signOut('local');
 const signOutEverywhere = (backend: AuthBackend) => backend.signOut('global');
@@ -29,130 +29,86 @@ const deleteAccount = (backend: AuthBackend) => backend.deleteAccount();
 const exportData = async (backend: AuthBackend) =>
   shareFile(dataExportFile(await backend.exportMyData(), new Date()));
 
+/** Same words in the "Your data" footnote and the delete confirm, so they never disagree. */
+const DELETION_LINE =
+  'Deleting hides your scans and signs you out everywhere at once. Erasure finishes within a few days.';
+
+const SUPPORT_LINKS = [
+  { label: 'Email support', value: SUPPORT_EMAIL, href: SUPPORT_MAILTO },
+  { label: 'Help pages', href: SUPPORT_URL },
+  { label: 'Privacy policy', href: PRIVACY_URL },
+  { label: 'Terms', href: TERMS_URL },
+];
+
 export default function ProfileScreen() {
   const { account, justSaved } = useAccount();
+  const member = account?.kind === 'member';
 
   return (
-    <Screen>
+    <Screen title="Profile">
       {account?.kind === 'member' ? (
-        <MemberSection email={account.email} justSaved={justSaved} />
-      ) : (
-        <GuestSection />
-      )}
-
-      <Rule />
-      <Heading level="h3">Your data</Heading>
-      <View style={{ height: spacing.sm }} />
-      <Body color={colors.textSecondary} variant="bodySmall">
-        A leg scan is personal data. The raw scan file is deleted 30 days after it is measured,
-        whether or not you order. Delete a scan, or your account, and it is erased right away. The
-        measurements are kept until you delete your account, so a reorder never needs a rescan.
-      </Body>
-      <View style={{ height: spacing.md }} />
-      <DataExport />
-
-      <Rule />
-      <Heading level="h3">Support</Heading>
-      <View style={{ height: spacing.sm }} />
-      <Body color={colors.textSecondary} variant="bodySmall">
-        Scan trouble, order questions, fit issues: email{' '}
-        <TextLink href={SUPPORT_MAILTO}>{SUPPORT_EMAIL}</TextLink> or visit{' '}
-        <TextLink href={SUPPORT_URL}>FORMS support</TextLink>. Read our{' '}
-        <TextLink href={PRIVACY_URL}>privacy policy</TextLink> and{' '}
-        <TextLink href={TERMS_URL}>terms</TextLink>.
-      </Body>
-
-      {account?.kind === 'guest' && (
         <>
-          <Rule />
+          <MemberHeader email={account.email} justSaved={justSaved} />
+          <MemberSignOut />
+        </>
+      ) : (
+        <>
+          <GuestSave />
           <GuestSignOut />
         </>
       )}
 
-      <Rule />
-      <DeleteAccount />
+      <DataGroup member={member} />
+
+      <ListGroup title="Support">
+        {SUPPORT_LINKS.map((link) => (
+          <ListRow
+            key={link.label}
+            label={link.label}
+            value={link.value}
+            icon="external-link"
+            accessibilityRole="link"
+            accessibilityHint="Opens outside the app"
+            onPress={() => void Linking.openURL(link.href)}
+          />
+        ))}
+      </ListGroup>
     </Screen>
   );
 }
 
-function MemberSection({ email, justSaved }: { email: string | null; justSaved: boolean }) {
-  const out = useAuthAction(signOut);
-  const outEverywhere = useAuthAction(signOutEverywhere);
-  const busy = out.busy || outEverywhere.busy;
+function MemberHeader({ email, justSaved }: { email: string | null; justSaved: boolean }) {
   return (
-    <>
-      <Heading level="display">Your account.</Heading>
-      <View style={{ height: spacing.lg }} />
+    <View style={styles.header}>
       <Body variant="label" color={colors.textSecondary}>
-        Signed in as
+        Signed in
       </Body>
-      <View style={{ height: spacing.xs }} />
       <Heading level="h2">{email}</Heading>
       {justSaved && (
-        <>
-          <View style={{ height: spacing.sm }} />
-          <Body variant="bodyStrong">Saved. Your scans and orders are on this account now.</Body>
-        </>
+        <Body variant="bodyStrong" color={colors.action}>
+          Saved. Your scans are on this account now.
+        </Body>
       )}
-      <View style={{ height: spacing.md }} />
-      <Body variant="bodySmall" color={colors.textSecondary}>
-        Your scans and orders are saved to this account. Sign in with the same email on any phone or
-        on the web to see them.
-      </Body>
-      <View style={{ height: spacing.lg }} />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-        <Button variant="outline" onPress={out.run} disabled={busy}>
-          {out.busy ? 'Signing out' : 'Sign out'}
-        </Button>
-        <Button variant="outline" onPress={outEverywhere.run} disabled={busy}>
-          {outEverywhere.busy ? 'Signing out' : 'Sign out on all devices'}
-        </Button>
-      </View>
-      <ActionError message={out.error?.message ?? outEverywhere.error?.message} />
-    </>
+    </View>
   );
 }
 
-function GuestSection() {
+function GuestSave() {
   const { state, resendWait, submitEmail, submitCode, resend, reset } = useEmailCodeFlow('upgrade');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
 
   return (
-    <>
-      <Heading level="display">Guest mode.</Heading>
-      <View style={{ height: spacing.lg }} />
-      <View
-        style={{
-          marginHorizontal: -spacing.lg,
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.xl,
-          backgroundColor: colors.surfaceDark,
-        }}
-      >
-        <View style={{ width: 48, height: 4, backgroundColor: colors.accentOnDark }} />
-        <View style={{ height: spacing.md }} />
+    <View style={styles.header}>
+      <View style={styles.guestBlock}>
+        <View style={styles.accent} />
         <Heading level="h2" color={colors.onDark}>
-          On this phone only.
+          Save your scans
         </Heading>
-        <View style={{ height: spacing.sm }} />
-        <Body color={colors.onDarkMuted}>
-          Your scans are tied to this guest session. Sign out, delete the app, or switch phones and
-          they are gone. Ordering a guard needs an account: save your scans to one below to order
-          and to keep them.
-        </Body>
+        <Body color={colors.onDarkMuted}>Guest scans live on this phone only.</Body>
       </View>
-
-      <View style={{ height: spacing.xl }} />
-      <Heading level="h2">Save your scans to an account.</Heading>
-      <View style={{ height: spacing.sm }} />
       {state.step === 'email' ? (
-        <>
-          <Body>
-            Enter your email and we send you a 6-digit code. Every scan from this guest session
-            moves to the account. Already have an account? Use its email and the scans move there.
-          </Body>
-          <View style={{ height: spacing.lg }} />
+        <View style={styles.form}>
           <TextField
             kind="email"
             label="Email"
@@ -163,33 +119,58 @@ function GuestSection() {
             error={state.error?.message}
             onSubmitEditing={() => submitEmail(email)}
           />
-          <View style={{ height: spacing.lg }} />
           <Button onPress={() => submitEmail(email)} disabled={state.busy || email.trim() === ''}>
             {state.busy ? 'Sending code' : 'Send code'}
           </Button>
           <FakeModeCaption />
-        </>
+        </View>
       ) : (
-        <CodeStep
-          email={state.email ?? ''}
-          code={code}
-          onChangeCode={setCode}
-          busy={state.busy}
-          error={state.error?.message}
-          resent={state.resent}
-          resendWait={resendWait}
-          merge={state.merge}
-          onVerify={() => submitCode(code)}
-          onResend={resend}
-          onChangeEmail={() => {
-            setCode('');
-            reset();
-          }}
-          verifyLabel={state.merge ? 'Sign in and move scans' : 'Save to account'}
-          verifyBusyLabel={state.merge ? 'Moving scans' : 'Saving'}
-        />
+        <View style={styles.form}>
+          <CodeStep
+            email={state.email ?? ''}
+            code={code}
+            onChangeCode={setCode}
+            busy={state.busy}
+            error={state.error?.message}
+            resent={state.resent}
+            resendWait={resendWait}
+            merge={state.merge}
+            onVerify={() => submitCode(code)}
+            onResend={resend}
+            onChangeEmail={() => {
+              setCode('');
+              reset();
+            }}
+            verifyLabel={state.merge ? 'Sign in and move scans' : 'Save to account'}
+            verifyBusyLabel={state.merge ? 'Moving scans' : 'Saving'}
+          />
+        </View>
       )}
-    </>
+    </View>
+  );
+}
+
+function MemberSignOut() {
+  const out = useAuthAction(signOut);
+  const outEverywhere = useAuthAction(signOutEverywhere);
+  const busy = out.busy || outEverywhere.busy;
+  return (
+    <ListGroup title="Account">
+      <ListRow
+        label={out.busy ? 'Signing out' : 'Sign out'}
+        onPress={out.run}
+        disabled={busy}
+        icon={null}
+      />
+      <ListRow
+        label={outEverywhere.busy ? 'Signing out' : 'Sign out on all devices'}
+        onPress={outEverywhere.run}
+        disabled={busy}
+        icon={null}
+      >
+        <ActionError message={out.error?.message ?? outEverywhere.error?.message} />
+      </ListRow>
+    </ListGroup>
   );
 }
 
@@ -198,98 +179,99 @@ function GuestSection() {
 function GuestSignOut() {
   const [confirming, setConfirming] = useState(false);
   const out = useAuthAction(signOut);
-
-  if (!confirming) {
-    return (
-      <>
-        <Heading level="h3">Sign out</Heading>
-        <View style={{ height: spacing.sm }} />
-        <Button variant="outline" onPress={() => setConfirming(true)}>
-          Sign out of guest mode
-        </Button>
-      </>
-    );
-  }
   return (
-    <View
-      accessibilityLiveRegion="polite"
-      style={{ backgroundColor: colors.surfaceMuted, padding: spacing.lg }}
-    >
-      <Heading level="h3">Sign out and lose your scans?</Heading>
-      <View style={{ height: spacing.sm }} />
-      <Body variant="bodySmall">
-        Your guest scans cannot be recovered after you sign out, not on this phone and not by
-        support. Save them to an account first if you want to keep them.
-      </Body>
-      <View style={{ height: spacing.lg }} />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-        <Button variant="secondary" onPress={out.run} disabled={out.busy}>
-          {out.busy ? 'Signing out' : 'Sign out and lose scans'}
-        </Button>
-        <Button variant="outline" onPress={() => setConfirming(false)} disabled={out.busy}>
-          Keep my scans
-        </Button>
-      </View>
-      <ActionError message={out.error?.message} />
-    </View>
-  );
-}
-
-function DataExport() {
-  const action = useAuthAction(exportData);
-  return (
-    <>
-      <Button variant="outline" onPress={action.run} disabled={action.busy}>
-        {action.busy ? 'Preparing your data' : 'Get a copy of your data'}
-      </Button>
-      <ActionError message={action.error?.message} />
-    </>
+    <ListGroup title="Account">
+      <ListRow
+        label="Sign out"
+        onPress={() => setConfirming(true)}
+        disabled={confirming}
+        icon={null}
+        accessibilityState={{ expanded: confirming }}
+      >
+        {confirming && (
+          <Confirm
+            line="Guest scans cannot be recovered after you sign out."
+            action={out.busy ? 'Signing out' : 'Sign out and lose scans'}
+            cancel="Keep my scans"
+            busy={out.busy}
+            onConfirm={out.run}
+            onCancel={() => setConfirming(false)}
+            error={out.error?.message}
+          />
+        )}
+      </ListRow>
+    </ListGroup>
   );
 }
 
 /** Inline two-step confirm, like GuestSignOut: Alert does nothing on web and
- * erasure cannot be undone. A refusal (order in progress) keeps the session. */
-function DeleteAccount() {
+ * erasure cannot be undone. A refusal (order in progress) keeps the session.
+ * Guests cannot order, so their copy never mentions orders. */
+function DataGroup({ member }: { member: boolean }) {
+  const exporting = useAuthAction(exportData);
+  const deleting = useAuthAction(deleteAccount);
   const [confirming, setConfirming] = useState(false);
-  const action = useAuthAction(deleteAccount);
-
   return (
-    <>
-      <Heading level="h3">Delete account</Heading>
-      <View style={{ height: spacing.sm }} />
-      <Body variant="bodySmall" color={colors.textSecondary}>
-        Deletes your scans, your measurements and your account. Records of past orders are kept,
-        without your account attached. Deletion finishes within a few days.
-      </Body>
-      <View style={{ height: spacing.md }} />
-      {confirming ? (
-        <View
-          accessibilityLiveRegion="polite"
-          style={{ backgroundColor: colors.surfaceMuted, padding: spacing.lg }}
-        >
-          <Heading level="h3">Delete your account?</Heading>
-          <View style={{ height: spacing.sm }} />
-          <Body variant="bodySmall">
-            This cannot be undone. Your scans, measurements and account are erased, and you are
-            signed out on every device.
-          </Body>
-          <View style={{ height: spacing.lg }} />
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-            <Button variant="secondary" onPress={action.run} disabled={action.busy}>
-              {action.busy ? 'Deleting' : 'Delete my account'}
-            </Button>
-            <Button variant="outline" onPress={() => setConfirming(false)} disabled={action.busy}>
-              Keep my account
-            </Button>
-          </View>
-          <ActionError message={action.error?.message} />
-        </View>
-      ) : (
-        <Button variant="outline" onPress={() => setConfirming(true)}>
-          Delete account
-        </Button>
-      )}
-    </>
+    <ListGroup
+      title="Your data"
+      footnote={`Raw scans are deleted 30 days after measuring.${member ? ` ${DELETION_LINE}` : ''}`}
+    >
+      <ListRow
+        label={exporting.busy ? 'Preparing your data' : 'Get a copy of your data'}
+        onPress={exporting.run}
+        disabled={exporting.busy}
+        icon="download"
+      >
+        <ActionError message={exporting.error?.message} />
+      </ListRow>
+      <ListRow
+        label={member ? 'Delete account' : 'Delete my scans'}
+        tone="danger"
+        onPress={() => setConfirming(true)}
+        disabled={confirming}
+        icon={null}
+        accessibilityState={{ expanded: confirming }}
+      >
+        {confirming && (
+          <Confirm
+            line={
+              member
+                ? `${DELETION_LINE} Past order records are kept without your account. This cannot be undone.`
+                : "Deletes every scan in this phone's guest session. This cannot be undone."
+            }
+            action={deleting.busy ? 'Deleting' : member ? 'Delete my account' : 'Delete my scans'}
+            cancel={member ? 'Keep my account' : 'Keep my scans'}
+            busy={deleting.busy}
+            onConfirm={deleting.run}
+            onCancel={() => setConfirming(false)}
+            error={deleting.error?.message}
+          />
+        )}
+      </ListRow>
+    </ListGroup>
+  );
+}
+
+function Confirm(props: {
+  line: string;
+  action: string;
+  cancel: string;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  error?: string;
+}) {
+  return (
+    <View accessibilityLiveRegion="polite" style={styles.confirm}>
+      <Body variant="bodySmall">{props.line}</Body>
+      <Button variant="danger" onPress={props.onConfirm} disabled={props.busy}>
+        {props.action}
+      </Button>
+      <Button variant="text" onPress={props.onCancel} disabled={props.busy}>
+        {props.cancel}
+      </Button>
+      <ActionError message={props.error} />
+    </View>
   );
 }
 
@@ -298,10 +280,24 @@ function ActionError({ message }: { message?: string }) {
     return null;
   }
   return (
-    <View accessibilityLiveRegion="polite" style={{ marginTop: spacing.sm }}>
+    <View accessibilityLiveRegion="polite">
       <Body variant="bodySmall" color={colors.danger}>
         {message}
       </Body>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  header: { gap: spacing.sm, marginBottom: spacing.xl },
+  guestBlock: {
+    backgroundColor: colors.surfaceDark,
+    borderRadius: radius,
+    padding: spacing.lg,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  accent: { width: 40, height: 4, backgroundColor: colors.accentOnDark, marginBottom: spacing.sm },
+  form: { gap: spacing.md },
+  confirm: { gap: spacing.sm },
+});

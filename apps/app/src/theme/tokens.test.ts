@@ -102,6 +102,7 @@ describe('typography', () => {
     expect(typography.body.fontFamily).toContain('Manrope');
     expect(typography.bodySmall.fontFamily).toContain('Manrope');
     expect(typography.caption.fontFamily).toContain('Manrope');
+    expect(typography.button.fontFamily).toContain('Manrope');
   });
 
   it('has a large jump between body text and the smallest heading', () => {

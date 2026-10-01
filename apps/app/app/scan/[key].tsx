@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import type { Measurements } from '@forms/shared';
 
@@ -8,8 +8,9 @@ import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
 import { FitPreview } from '../../src/components/FitPreview';
 import { Heading } from '../../src/components/Heading';
-import { Rule } from '../../src/components/Rule';
+import { ListGroup, ListRow } from '../../src/components/List';
 import { Screen } from '../../src/components/Screen';
+import { SESSION_TONE, StatusLabel } from '../../src/components/StatusLabel';
 import { useDeleteScanSession, useScanSession } from '../../src/hooks/useScans';
 import {
   failedStepGuidance,
@@ -46,10 +47,14 @@ export default function ScanDetailScreen() {
   const { session, measurements, loading, error, reload } = useScanSession(key ?? '');
   const { remove, deleting, error: deleteError } = useDeleteScanSession(session);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showMeasurements, setShowMeasurements] = useState(false);
 
-  async function deleteThen(next: '/' | '/scans') {
+  async function deleteThen(rescan: boolean) {
     if (await remove()) {
-      router.navigate(next);
+      router.navigate('/');
+      if (rescan) {
+        router.push('/capture-info');
+      }
     }
   }
 
@@ -57,15 +62,11 @@ export default function ScanDetailScreen() {
     return (
       <Screen onRefresh={reload} refreshing={false}>
         {loading ? (
-          <Body color={colors.textSecondary}>Loading this scan.</Body>
+          <ActivityIndicator color={colors.textPrimary} />
         ) : error ? (
           <Body color={colors.danger}>Could not load this scan. Pull down to try again.</Body>
         ) : (
-          <>
-            <Heading level="h2">Scan not found.</Heading>
-            <View style={{ height: spacing.sm }} />
-            <Body color={colors.textSecondary}>It may have been removed from your library.</Body>
-          </>
+          <Heading level="h2">Scan not found</Heading>
         )}
       </Screen>
     );
@@ -75,179 +76,158 @@ export default function ScanDetailScreen() {
   const orderable = orderableLegs(session, measurements);
   const leftValues = session.left ? measurements.get(session.left.id) : undefined;
   const rightValues = session.right ? measurements.get(session.right.id) : undefined;
+  const measured = [
+    { leg: 'L' as const, values: leftValues },
+    { leg: 'R' as const, values: rightValues },
+  ].filter((m): m is { leg: Leg; values: Measurements } => Boolean(m.values));
 
   return (
     <Screen onRefresh={reload} refreshing={loading}>
-      <Body
-        variant="label"
-        color={status === 'needs_rescan' ? colors.danger : colors.textSecondary}
-      >
-        {SESSION_STATUS_LABEL[status]}
-      </Body>
+      <StatusLabel label={SESSION_STATUS_LABEL[status]} tone={SESSION_TONE[status]} />
       <View style={{ height: spacing.sm }} />
       <Heading level="h1">{formatSessionDate(session.createdAt)}</Heading>
       <View style={{ height: spacing.lg }} />
 
-      {fresh === '1' && !confirmingDelete && (
-        <View style={styles.freshPanel}>
-          <Heading level="h3">Saved to your library.</Heading>
-          <View style={{ height: spacing.xs }} />
-          <Body variant="bodySmall" color={colors.textSecondary}>
-            Happy with this scan? Keep it for later. If something looks off, delete it and scan
-            again.
-          </Body>
-          <View style={{ height: spacing.md }} />
-          <View style={styles.actions}>
-            <Button onPress={() => router.navigate('/scans')}>Keep it</Button>
-            <Button variant="outline" onPress={() => setConfirmingDelete(true)}>
-              Delete and rescan
-            </Button>
-          </View>
-          <View style={{ height: spacing.lg }} />
-        </View>
-      )}
+      <FitPreview left={leftValues} right={rightValues} />
+      <View style={{ height: spacing.lg }} />
 
-      {(orderable.length > 0 || status === 'one_leg' || status === 'needs_rescan') && (
-        <View style={styles.actions}>
-          {status === 'needs_rescan' && (
-            <Button onPress={() => router.navigate('/')}>{rescanLabel(session)}</Button>
-          )}
-          {orderable.length > 0 && (
-            <Button
-              variant={status === 'needs_rescan' ? 'outline' : 'primary'}
-              onPress={() => router.navigate(`/order/${session.key}`)}
-            >
-              Order a guard
-            </Button>
-          )}
-          {status === 'one_leg' && (
-            <Button variant="outline" onPress={() => router.navigate('/')}>
-              Scan the other leg
-            </Button>
-          )}
-        </View>
-      )}
+      <View style={styles.actions}>
+        {status === 'needs_rescan' && (
+          <Button onPress={() => router.push('/capture-info')}>{rescanLabel(session)}</Button>
+        )}
+        {orderable.length > 0 && (
+          <Button
+            variant={status === 'needs_rescan' ? 'outline' : 'primary'}
+            onPress={() => router.navigate(`/order/${session.key}`)}
+          >
+            Order a guard
+          </Button>
+        )}
+        {fresh === '1' && orderable.length === 0 && status !== 'needs_rescan' && (
+          <Button onPress={() => router.navigate('/')}>Done</Button>
+        )}
+        {status === 'one_leg' && (
+          <Button variant="text" onPress={() => router.push('/capture-info')}>
+            Scan the other leg
+          </Button>
+        )}
+      </View>
       {status === 'processing' && (
-        <Body color={colors.textSecondary}>
-          Measuring takes a few minutes per leg. Pull down to check again.
+        <Body color={colors.textSecondary} style={styles.note}>
+          Measuring takes a few minutes. Pull down to refresh.
         </Body>
       )}
-
       {error && (
-        <>
-          <View style={{ height: spacing.md }} />
-          <Body color={colors.danger}>Could not load measurements. Pull down to try again.</Body>
-        </>
+        <Body color={colors.danger} style={styles.note}>
+          Could not load measurements. Pull down to try again.
+        </Body>
       )}
+      <View style={{ height: spacing.xl }} />
 
-      <Rule />
-      <LegSection leg="L" scan={session.left} values={leftValues} />
-      <LegSection leg="R" scan={session.right} values={rightValues} />
+      <ListGroup>
+        <LegRow leg="L" scan={session.left} pairId={pairIdOf(session)} />
+        <LegRow leg="R" scan={session.right} pairId={pairIdOf(session)} />
+        {measured.length > 0 && (
+          <ListRow
+            label="Measurements"
+            onPress={() => setShowMeasurements((v) => !v)}
+            icon={showMeasurements ? 'chevron-up' : 'chevron-down'}
+            accessibilityState={{ expanded: showMeasurements }}
+          >
+            {showMeasurements &&
+              measured.map((m) => <LegTable key={m.leg} leg={m.leg} values={m.values} />)}
+          </ListRow>
+        )}
+      </ListGroup>
 
-      <Heading level="h2">Fit preview</Heading>
-      <View style={{ height: spacing.sm }} />
-      <FitPreview left={leftValues} right={rightValues} />
-      <Rule />
-
-      {confirmingDelete ? (
-        <View accessibilityLiveRegion="polite">
-          <Heading level="h3">Delete both legs for good?</Heading>
-          <View style={{ height: spacing.xs }} />
-          <Body variant="bodySmall" color={colors.textSecondary}>
-            The 3D scans and measurements are erased. This cannot be undone.
-          </Body>
-          <View style={{ height: spacing.md }} />
-          <View style={styles.actions}>
-            <Button variant="secondary" disabled={deleting} onPress={() => deleteThen('/')}>
-              Delete and rescan
-            </Button>
-            <Button variant="outline" disabled={deleting} onPress={() => deleteThen('/scans')}>
-              Delete only
-            </Button>
-            <Button
-              variant="outline"
-              disabled={deleting}
-              onPress={() => setConfirmingDelete(false)}
-            >
-              Cancel
-            </Button>
-          </View>
-        </View>
-      ) : (
-        <Button variant="outline" onPress={() => setConfirmingDelete(true)}>
-          Delete this scan
-        </Button>
-      )}
-      {deleteError && (
-        <>
-          <View style={{ height: spacing.sm }} />
-          <Body color={colors.danger}>{deleteError}</Body>
-        </>
-      )}
+      <ListGroup>
+        <ListRow
+          label="Delete scan"
+          tone="danger"
+          icon={null}
+          onPress={() => setConfirmingDelete(true)}
+          disabled={confirmingDelete}
+          accessibilityState={{ expanded: confirmingDelete }}
+        >
+          {confirmingDelete && (
+            <View accessibilityLiveRegion="polite" style={styles.actions}>
+              <Body variant="bodySmall">Both legs are erased. This cannot be undone.</Body>
+              <Button variant="danger" disabled={deleting} onPress={() => deleteThen(true)}>
+                Delete and rescan
+              </Button>
+              <Button variant="outline" disabled={deleting} onPress={() => deleteThen(false)}>
+                Delete only
+              </Button>
+              <Button variant="text" disabled={deleting} onPress={() => setConfirmingDelete(false)}>
+                Cancel
+              </Button>
+            </View>
+          )}
+          {deleteError && <Body color={colors.danger}>{deleteError}</Body>}
+        </ListRow>
+      </ListGroup>
     </Screen>
   );
 }
 
-function LegSection({
-  leg,
-  scan,
-  values,
-}: {
-  leg: Leg;
-  scan: Scan | null;
-  values: Measurements | null | undefined;
-}) {
+/** The pair both legs share, or '' for a lone unpaired leg. */
+function pairIdOf(session: ScanSession): string {
+  return session.left?.pairId ?? session.right?.pairId ?? '';
+}
+
+/** Tapping a leg opens the hand-measurement screen: enter values for a
+ * failed or missing leg, or check and adjust a measured one. */
+function LegRow({ leg, scan, pairId }: { leg: Leg; scan: Scan | null; pairId: string }) {
+  const router = useRouter();
+  const failed = scan !== null && scan.status === 'failed';
+  const action = !scan
+    ? { mode: 'manual', scanId: 'new', hint: 'Enter this leg by hand' }
+    : failed
+      ? { mode: 'manual', scanId: scan.id, hint: 'Enter this leg by hand' }
+      : scan.status === 'ready'
+        ? { mode: 'adjust', scanId: scan.id, hint: 'Check or adjust the measurements' }
+        : null;
   return (
-    <View style={{ marginBottom: spacing.lg }}>
-      <View style={styles.legHeader}>
-        <Heading level="h2">{LEG_LABEL[leg]}</Heading>
-        <Body
-          variant="bodySmall"
-          color={scan?.status === 'failed' ? colors.danger : colors.textSecondary}
-        >
-          {scan ? SCAN_STATUS_LABEL[scan.status] : 'Not scanned'}
-        </Body>
-      </View>
-      <View style={{ height: spacing.sm }} />
-      <LegBody scan={scan} values={values} />
-      <Rule />
-    </View>
+    <ListRow
+      label={LEG_LABEL[leg]}
+      value={scan ? SCAN_STATUS_LABEL[scan.status] : 'Not scanned'}
+      detail={
+        failed
+          ? `${failedStepGuidance(scan.failedStep)} Or tap to enter it by hand.`
+          : action && !scan
+            ? 'Tap to enter it by hand.'
+            : undefined
+      }
+      tone={failed ? 'danger' : 'default'}
+      accessibilityHint={action?.hint}
+      onPress={
+        action
+          ? () =>
+              router.navigate({
+                pathname: '/measure/[scanId]',
+                params: {
+                  scanId: action.scanId,
+                  mode: action.mode,
+                  pairId,
+                  ...(scan ? {} : { leg }),
+                },
+              })
+          : undefined
+      }
+    />
   );
 }
 
-function LegBody({ scan, values }: { scan: Scan | null; values: Measurements | null | undefined }) {
-  if (!scan) {
-    return (
-      <Body color={colors.textSecondary} variant="bodySmall">
-        This leg was not scanned in this session.
-      </Body>
-    );
-  }
-  if (scan.status === 'failed') {
-    return (
-      <Body color={colors.textSecondary} variant="bodySmall">
-        {failedStepGuidance(scan.failedStep)}
-      </Body>
-    );
-  }
-  if (!values) {
-    return (
-      <Body color={colors.textSecondary} variant="bodySmall">
-        Measurements appear here once this leg is measured.
-      </Body>
-    );
-  }
+function LegTable({ leg, values }: { leg: Leg; values: Measurements }) {
   return (
-    <View>
+    <View style={styles.table}>
       <View style={styles.legLength}>
-        <Body color={colors.textSecondary}>Leg length, ankle to knee</Body>
+        <Body variant="bodyStrong">{LEG_LABEL[leg]}</Body>
         <Body variant="bodyStrong">{formatMm(values.Leg_Length)}</Body>
       </View>
-      <View style={{ height: spacing.md }} />
-      <Body variant="caption" color={colors.textTertiary}>
-        Slices, millimetres, measured up from the ankle
+      <Body variant="caption" color={colors.textSecondary}>
+        Millimetres, measured up from the ankle
       </Body>
-      <View style={{ height: spacing.xs }} />
       <View
         style={styles.tableRow}
         accessibilityElementsHidden
@@ -255,7 +235,7 @@ function LegBody({ scan, values }: { scan: Scan | null; values: Measurements | n
       >
         <View style={styles.dimCell} />
         {SLICES.map((slice) => (
-          <Body key={slice} variant="caption" color={colors.textTertiary} style={styles.cell}>
+          <Body key={slice} variant="caption" color={colors.textSecondary} style={styles.cell}>
             {SLICE_HEIGHT[slice]}
           </Body>
         ))}
@@ -296,15 +276,12 @@ const styles = StyleSheet.create({
   actions: {
     gap: spacing.sm,
   },
-  freshPanel: {
-    borderLeftWidth: 4,
-    borderLeftColor: colors.textPrimary,
-    paddingLeft: spacing.md,
+  note: {
+    marginTop: spacing.md,
   },
-  legHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
+  table: {
+    marginTop: spacing.md,
+    gap: spacing.xs,
   },
   legLength: {
     flexDirection: 'row',

@@ -60,7 +60,7 @@ export function TextField({
 }: TextFieldProps) {
   const [focused, setFocused] = useState(false);
   return (
-    <View style={kind === 'email' ? styles.wrapEmail : styles.wrapCode}>
+    <View style={styles.wrap}>
       <Body variant="label">{label}</Body>
       <View style={{ height: spacing.sm }} />
       <TextInput
@@ -99,8 +99,7 @@ export function TextField({
 }
 
 const styles = StyleSheet.create({
-  wrapEmail: { alignSelf: 'stretch', maxWidth: 480 },
-  wrapCode: { width: 240 },
+  wrap: { alignSelf: 'stretch' },
   field: {
     minHeight: 56,
     borderWidth: 2,

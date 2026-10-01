@@ -112,14 +112,12 @@ export const LEG_LABEL: Record<Leg, string> = { L: 'Left leg', R: 'Right leg' };
 
 /** Rescan guidance for a failed leg, keyed by the step that failed. */
 export const FAILED_STEP_GUIDANCE: Record<FailedStep, string> = {
-  reconstructing:
-    'We could not build a 3D model from this scan. Scan this leg again with more of it in frame, walking all the way around it in even light.',
-  measuring:
-    'The scan could not be measured, so nothing was sent to print. Scan this leg again with the whole lower leg visible from ankle to knee: wear shorts or roll your trousers up.',
+  reconstructing: 'No 3D model. Rescan in even light, walking all the way around the leg.',
+  measuring: 'Could not measure. Rescan with the leg bare from ankle to knee.',
 };
 
 const GENERIC_RESCAN_GUIDANCE =
-  'The measurements did not pass our checks, so nothing was sent to print. Scan this leg again in good light, walking a full circle around it.';
+  'Measurements failed our checks. Rescan in good light, walking a full circle.';
 
 export function failedStepGuidance(step: FailedStep | null): string {
   return step ? FAILED_STEP_GUIDANCE[step] : GENERIC_RESCAN_GUIDANCE;

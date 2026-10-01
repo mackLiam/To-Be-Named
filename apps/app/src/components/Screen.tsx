@@ -1,47 +1,56 @@
-import type { PropsWithChildren } from 'react';
+import type { PropsWithChildren, ReactNode } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '../theme/tokens';
+import { Heading } from './Heading';
 
 interface ScreenProps extends PropsWithChildren {
-  scroll?: boolean;
-  /** Enables pull-to-refresh on scrolling screens. */
+  /** Large left-aligned screen title, no trailing period. */
+  title?: string;
+  /** Pinned below the scroll area: the one primary action on flow screens. */
+  footer?: ReactNode;
+  /** Enables pull-to-refresh. */
   onRefresh?: () => void;
   refreshing?: boolean;
 }
 
 /**
- * Base page frame: card yellow field, generous left-aligned margins, no centered
- * max-width container. Every tab screen wraps its content in this so spacing
- * stays consistent without every screen re-deriving it.
+ * Base page frame on the card yellow field. Content is left-aligned and capped
+ * so buttons stay thumb-width on a wide web window; tab screens get their
+ * bottom inset from the tab bar, footer screens take it here.
  */
-export function Screen({ children, scroll = true, onRefresh, refreshing = false }: ScreenProps) {
+export function Screen({ children, title, footer, onRefresh, refreshing = false }: ScreenProps) {
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      {scroll ? (
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={styles.content}
-          // A tap on a button while the keyboard is up should press it, not
-          // only dismiss the keyboard (sign-in and profile forms).
-          keyboardShouldPersistTaps="handled"
-          refreshControl={
-            onRefresh && (
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={colors.textPrimary}
-                colors={[colors.action]}
-              />
-            )
-          }
-        >
-          {children}
-        </ScrollView>
-      ) : (
-        <View style={[styles.container, styles.content]}>{children}</View>
-      )}
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={footer ? ['top', 'left', 'right', 'bottom'] : ['top', 'left', 'right']}
+    >
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        // A tap on a button while the keyboard is up should press it, not
+        // only dismiss the keyboard (sign-in and profile forms).
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          onRefresh && (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.textPrimary}
+              colors={[colors.action]}
+            />
+          )
+        }
+      >
+        {title && (
+          <Heading level="h1" style={styles.title}>
+            {title}
+          </Heading>
+        )}
+        {children}
+      </ScrollView>
+      {footer && <View style={styles.footer}>{footer}</View>}
     </SafeAreaView>
   );
 }
@@ -55,8 +64,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
+    width: '100%',
+    maxWidth: 560,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
+  },
+  title: {
+    marginBottom: spacing.lg,
+  },
+  footer: {
+    width: '100%',
+    maxWidth: 560,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    gap: spacing.xs,
   },
 });

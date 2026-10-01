@@ -1,35 +1,22 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
-
-import { BRAND_NAME } from '@forms/shared/brand';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Body } from '../src/components/Body';
 import { Button } from '../src/components/Button';
 import { Heading } from '../src/components/Heading';
-import { Rule } from '../src/components/Rule';
 import { Screen } from '../src/components/Screen';
+import { UnavailableNotice } from '../src/components/UnavailableNotice';
 import { getCaptureAvailability } from '../src/lib/nativeCapture';
 import type { CaptureAvailability } from '../src/lib/nativeCapture';
 import { colors, spacing } from '../src/theme/tokens';
 
 /**
- * Pre-capture info screen and the availability gate in front of the guided
- * flow (app/capture.tsx). Runs getCaptureAvailability() on mount: a supported
- * device gets the start button, an unsupported one gets the reason. Capture
- * itself still only runs inside the FORMS dev client on a physical LiDAR
- * iPhone, never in Expo Go (CLAUDE.md gotcha 3, docs/DESIGN.md section 5).
+ * Pre-capture checklist and the availability gate in front of the guided
+ * flow (app/capture.tsx): a supported device gets Start, an unsupported one
+ * gets the reason. Capture only runs in the custom dev client on a LiDAR
+ * iPhone, never in Expo Go (root CLAUDE.md gotcha 3).
  */
-/** Copy per unavailability reason. 'module' is a build problem (Expo Go, or
- * autolinking dropped the module); 'device' is a hardware limit. */
-const UNAVAILABLE_COPY: Record<CaptureAvailability['reason'], string> = {
-  ok: '',
-  platform: `Guided capture runs on iPhone only. Open ${BRAND_NAME} on a LiDAR iPhone (12 Pro or later Pro model) to scan; everything else works here.`,
-  module: `This build does not include the capture module. Open ${BRAND_NAME} in the dev client (an EAS or local dev build), not Expo Go.`,
-  device:
-    'This iPhone cannot run guided capture. It needs a LiDAR sensor (12 Pro or later Pro model) and iOS 17 or later.',
-};
-
 export default function CaptureInfoScreen() {
   const router = useRouter();
   const [availability, setAvailability] = useState<CaptureAvailability | null>(null);
@@ -46,53 +33,60 @@ export default function CaptureInfoScreen() {
     };
   }, []);
 
+  if (availability === null) {
+    return (
+      <Screen>
+        <ActivityIndicator color={colors.textPrimary} accessibilityLabel="Checking this phone" />
+      </Screen>
+    );
+  }
+
+  if (!availability.supported) {
+    return (
+      <Screen
+        footer={
+          <Button variant="outline" onPress={router.back}>
+            Back
+          </Button>
+        }
+      >
+        <UnavailableNotice reason={availability.reason} />
+      </Screen>
+    );
+  }
+
+  const tips = [
+    'Shorts on, or trousers rolled above the knee.',
+    availability.mode === 'photos'
+      ? 'Good light, and a patterned sock or a few pen dots on the shin.'
+      : 'Even light, no harsh shadows.',
+    availability.mode === 'photos'
+      ? 'A chair to sit on, or someone to walk a circle around you.'
+      : 'Room to walk one slow circle around your leg.',
+  ];
+
   return (
-    <Screen>
-      <Heading level="h1">Capture ships with the dev build.</Heading>
-      <View style={{ height: spacing.md }} />
-      <Body>
-        The guided scan uses Apple&apos;s ObjectCaptureSession through a native module built
-        specifically for {BRAND_NAME}. It only runs inside the {BRAND_NAME} dev client (an EAS
-        build), never inside Expo Go.
-      </Body>
-      <Rule />
-      {availability === null && (
-        <Body variant="bodySmall" color={colors.textSecondary}>
-          Checking this device for capture support...
-        </Body>
-      )}
-      {availability?.supported && (
-        <>
-          <Heading level="h3">This device is ready</Heading>
-          <View style={{ height: spacing.sm }} />
-          <Body variant="bodySmall">
-            {availability.mode === 'photos'
-              ? 'Give yourself room to walk one slow circle around the leg. Bare skin is hard to rebuild in 3D, so wear a patterned sock or draw a few pen dots on the shin first.'
-              : 'Give yourself room to walk a full circle around the leg, then start the guided capture.'}
-          </Body>
-          <View style={{ height: spacing.md }} />
-          <Button onPress={() => router.push('/capture')}>Start capture</Button>
-        </>
-      )}
-      {availability !== null && !availability.supported && (
-        <>
-          <Heading level="h3">This device cannot capture</Heading>
-          <View style={{ height: spacing.sm }} />
-          <Body variant="bodySmall">{UNAVAILABLE_COPY[availability.reason]}</Body>
-          <View style={{ height: spacing.sm }} />
-          <Body variant="caption" color={colors.textTertiary}>
-            Reason code: {availability.reason}
-          </Body>
-        </>
-      )}
-      <Rule />
-      <Heading level="h3">What happens in a scan</Heading>
-      <View style={{ height: spacing.sm }} />
-      <Body variant="bodySmall">
-        {availability?.mode === 'photos'
-          ? 'Walk around your leg once while the camera takes photos on its own. The photos upload to your private scan library, the 3D model is built on our side, and the scan is queued for measurement.'
-          : 'Walk around your leg once and the native module reconstructs a 3D mesh on-device. The mesh then uploads to your private scan library and is queued for measurement, and you land back in the library when it is saved.'}
-      </Body>
+    <Screen footer={<Button onPress={() => router.push('/capture')}>Start</Button>}>
+      <Heading level="display">Before you start</Heading>
+      <View style={styles.tips}>
+        {tips.map((tip, i) => (
+          <View key={tip} style={styles.tip}>
+            <Heading level="h2" color={colors.action} style={styles.num}>
+              {i + 1}
+            </Heading>
+            <Body variant="bodyStrong" style={styles.tipText}>
+              {tip}
+            </Body>
+          </View>
+        ))}
+      </View>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  tips: { marginTop: spacing.xl, gap: spacing.lg },
+  tip: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.md },
+  num: { width: spacing.lg },
+  tipText: { flex: 1 },
+});

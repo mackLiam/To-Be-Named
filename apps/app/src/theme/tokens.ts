@@ -87,7 +87,7 @@ export const colors = {
 // Radius - one value, everywhere. Rectangles, not pills (banned look #3).
 // ---------------------------------------------------------------------------
 
-export const radius = 4;
+export const radius = 8;
 
 // ---------------------------------------------------------------------------
 // Spacing - an intentionally uneven scale (not a flat 4px-linear ramp) so
@@ -134,6 +134,8 @@ export const typography = {
     letterSpacing: 0.6,
   },
   caption: { fontFamily: fontFamily.bodyMedium, fontSize: 12, lineHeight: 16, letterSpacing: 0 },
+  /** Button and tappable-row labels: sentence case, never uppercase. */
+  button: { fontFamily: fontFamily.bodyBold, fontSize: 17, lineHeight: 22, letterSpacing: 0 },
 } as const;
 
 // Fonts to load with expo-font in the root layout. Keys match fontFamily
