@@ -26,6 +26,7 @@ call and surface as a MeshValidationError, not a silent misparse.
 
 from __future__ import annotations
 
+import io
 import logging
 from pathlib import Path
 
@@ -77,6 +78,15 @@ def _check_counts(mesh: trimesh.Trimesh, settings: Settings) -> None:
             f"Mesh has {len(mesh.vertices):,} vertices, which exceeds the "
             f"{settings.max_vertices:,} limit. Please rescan at a lower resolution."
         )
+    # A closed triangle mesh has about two faces per vertex, so twice the
+    # vertex cap admits every real scan while still bounding a file that
+    # reuses a few vertices across millions of faces.
+    max_faces = 2 * settings.max_vertices
+    if len(mesh.faces) > max_faces:
+        raise MeshValidationError(
+            f"Mesh has {len(mesh.faces):,} faces, which exceeds the "
+            f"{max_faces:,} limit. Please rescan at a lower resolution."
+        )
 
 
 def _check_not_degenerate(mesh: trimesh.Trimesh) -> None:
@@ -110,8 +120,17 @@ def load_mesh(path: str | Path, settings: Settings | None = None) -> trimesh.Tri
     _check_extension(path)
     _check_file_size(path, settings)
 
+    # Parse from bytes, never from the path: given a path, trimesh resolves
+    # references inside the file (OBJ mtllib, glTF buffer/image uris) against
+    # the filesystem, so a hostile upload could make the worker read files
+    # outside its temp dir. Without a resolver those references are ignored.
     try:
-        loaded = trimesh.load(path, force="mesh", process=False)
+        loaded = trimesh.load(
+            io.BytesIO(path.read_bytes()),
+            file_type=path.suffix.lower().lstrip("."),
+            force="mesh",
+            process=False,
+        )
     except MeshValidationError:
         raise
     except Exception as exc:
