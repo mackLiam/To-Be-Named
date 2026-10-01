@@ -34,6 +34,9 @@ export function AdminShell({ fake, children }: { fake: boolean; children: React.
           <Link href="/admin" className={styles.navLink}>
             Pipeline queue
           </Link>
+          <Link href="/admin/audit" className={styles.navLink}>
+            Audit log
+          </Link>
           {fake ? null : (
             <form action={signOut}>
               <button type="submit" className={styles.navButton}>

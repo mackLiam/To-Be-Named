@@ -7,8 +7,10 @@ import { BRAND_NAME } from '@forms/shared/brand';
 import styles from '../../admin.module.css';
 import { AdminShell } from '../../AdminShell';
 import { StatusBadge } from '../../StatusBadge';
+import { retryJob } from '../actions';
 import { requireAdmin } from '@/lib/admin-auth';
 import { getTriage } from '@/lib/data';
+import { firstValue } from '@/lib/pagination';
 import { formatDateTime, groupMeasurements, shortId } from '@/lib/view';
 
 export const metadata: Metadata = {
@@ -31,9 +33,16 @@ function gateRange(min?: number, max?: number): string {
   return 'outside plausible range';
 }
 
-export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const ctx = await requireAdmin();
   const { id } = await params;
+  const error = firstValue((await searchParams).error);
 
   const triage = await getTriage(id);
   if (!triage) {
@@ -57,6 +66,20 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <StatusBadge status={job.status} />
         </div>
       </div>
+
+      {error ? <p className={styles.formError}>{error}</p> : null}
+
+      {job.status === 'dead_letter' ? (
+        <form action={retryJob} className={styles.actionBar}>
+          <input type="hidden" name="id" value={job.id} />
+          <button type="submit" className={styles.downloadBtn}>
+            Retry job
+          </button>
+          <p className={styles.actionNote}>
+            Re-queues the job at its failed step with attempts reset.
+          </p>
+        </form>
+      ) : null}
 
       <p className={styles.sectionLabel}>Job state</p>
       <div className={styles.factGrid}>
