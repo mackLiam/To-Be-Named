@@ -348,8 +348,11 @@ select sec.eq((select count(*) from public.orders where id = :'d_o1' and status 
   'delivered order is untouched');
 select sec.eq((select count(*) from public.scans where id = :'d_free' and deleted_at is not null), 1,
   'unordered scan is stamped deleted');
-select sec.eq((select count(*) from public.scans where id in (:'d_ord', :'d_pend') and deleted_at is null), 2,
-  'ordered scans are kept');
+-- 0015: only a live order keeps a scan. d_o2 was just cancelled unpaid (dead).
+select sec.eq((select count(*) from public.scans where id = :'d_ord' and deleted_at is null), 1,
+  'scan on a live order is kept');
+select sec.eq((select count(*) from public.scans where id = :'d_pend' and deleted_at is not null), 1,
+  'scan whose only order was cancelled unpaid is stamped deleted');
 select sec.eq((select count(*) from public.pipeline_jobs where scan_id = :'d_free' and status = 'dead_letter'
   and error ->> 'reason' = 'account_deleted'), 1, 'pending job of the stamped scan is dead-lettered');
 select sec.eq((select count(*) from public.account_deletion_requests where user_id = :'del' and reason = 'user_request'), 1,
@@ -359,7 +362,7 @@ begin;
 set local role authenticated;
 select sec.as_user(:'del', false);
 select sec.fails(format('insert into public.orders (user_id, product_id, scan_id_left) values (%L, %L, %L)',
-  :'del', :'product', :'d_pend'), '42501', 'no new order once account deletion is requested');
+  :'del', :'product', :'d_ord'), '42501', 'no new order once account deletion is requested');
 rollback;
 
 -- ---------------------------------------------------------------------------
@@ -379,30 +382,37 @@ select sec.eq((select count(*) from public.get_accounts_pending_deletion() where
   'merged guest waits for its deleted capture to be purged');
 select sec.eq((select count(*) from public.get_scans_pending_purge(100)
   where scan_id = :'t_cap' and storage_user_id = :'tguest'), 1, 'purge batch returns storage_user_id');
--- The purge worker (0011) erases the deleted scan.
+-- The purge worker (0011, 0015 purge_scan_row) erases the deleted scans,
+-- d_pend together with its dead order.
 delete from public.scans where id = :'d_free';
+-- Past the 24-hour dead-order hold (0015); set_updated_at paused to backdate.
+alter table public.orders disable trigger set_updated_at;
+update public.orders set updated_at = now() - interval '2 days'
+  where scan_id_left = :'d_pend' or scan_id_right = :'d_pend';
+alter table public.orders enable trigger set_updated_at;
+select public.purge_scan_row(:'d_pend', 'checks');
 -- A client stamped an ordered scan deleted directly ("scans: update own"):
 -- the purge never takes it, so it must not hold the account back.
-update public.scans set deleted_at = now() where id = :'d_pend';
+update public.scans set deleted_at = now() where id = :'d_ord';
 select sec.eq((select count(*) from public.get_accounts_pending_deletion() where user_id = :'del' and reason = 'user_request'), 1,
   'account is ready once its deleted scans are purged');
-select sec.eq((select count(*) from public.get_account_meshes_to_erase(:'del')), 2,
+select sec.eq((select count(*) from public.get_account_meshes_to_erase(:'del')), 1,
   'kept ordered scans are listed for mesh erase');
 select sec.eq((select count(*) from public.get_account_meshes_to_erase(:'del')
   where storage_user_id = :'del' and mesh_path = :'del' || '/ord.obj'), 1, 'mesh erase rows carry the storage prefix owner');
 select public.mark_mesh_erased(:'d_ord');
 select public.mark_mesh_erased(:'d_ord');
-select sec.eq((select count(*) from public.get_account_meshes_to_erase(:'del')), 1,
+select sec.eq((select count(*) from public.get_account_meshes_to_erase(:'del')), 0,
   'mark_mesh_erased removes the scan from the erase list (idempotent)');
 select sec.eq(public.stamp_stray_scans_deleted(:'del'), 0, 'no stray unordered scans left to stamp');
 commit;
 
 -- The worker deletes the auth user via the Admin API.
 delete from auth.users where id = :'del';
-select sec.eq((select count(*) from public.orders where id in (:'d_o1', :'d_o2') and user_id is null), 2,
+select sec.eq((select count(*) from public.orders where id = :'d_o1' and user_id is null), 1,
   'orders survive the auth user with user_id null');
-select sec.eq((select count(*) from public.scans where id in (:'d_ord', :'d_pend')
-  and user_id is null and storage_user_id = :'del'), 2, 'ordered scans survive with user_id null and storage_user_id intact');
+select sec.eq((select count(*) from public.scans where id = :'d_ord'
+  and user_id is null and storage_user_id = :'del'), 1, 'ordered scans survive with user_id null and storage_user_id intact');
 select sec.eq((select count(*) from public.measurements where scan_id = :'d_ord'), 1, 'measurements of a kept scan survive');
 select sec.eq((select count(*) from public.account_deletion_requests where user_id = :'del'), 0,
   'the request goes with the auth user');

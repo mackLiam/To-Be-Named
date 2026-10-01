@@ -81,3 +81,6 @@ coverage/
 
 # Swift build output (services/reconstruct)
 services/reconstruct/.build/
+
+# Replay recordings: body scan data, never committed (forms-replay)
+services/pipeline/recordings/

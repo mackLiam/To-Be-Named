@@ -36,6 +36,7 @@ dev = [
 [project.scripts]
 forms-extract = "forms_pipeline.extract.cli:run"
 forms-retention = "forms_pipeline.jobs.retention:main"
+forms-replay = "forms_pipeline.replay.cli:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
