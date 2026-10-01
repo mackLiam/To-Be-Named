@@ -80,7 +80,10 @@ export default function HomePage() {
       <dl className={styles.specs}>
         <div className={styles.specRow}>
           <dt className={styles.specTerm}>Needs</dt>
-          <dd className={styles.specDetail}>iPhone 12 Pro or later Pro model, iOS 17.</dd>
+          <dd className={styles.specDetail}>
+            An iPhone on iOS 17. Pro models with LiDAR (12 Pro and later) scan fastest; other
+            iPhones use guided photo capture.
+          </dd>
         </div>
         <div className={styles.specRow}>
           <dt className={styles.specTerm}>After launch</dt>
