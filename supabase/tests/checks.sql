@@ -175,8 +175,10 @@ select checks.eq(
   'measure job has no product_id');
 select checks.expect_error(
   format('insert into public.pipeline_jobs (scan_id, step) values (%L, %L)', :'s_both', 'measuring'), '23505');
+-- 0016: at most one active CAD job per (order, scan).
 select checks.expect_error(
-  format('insert into public.pipeline_jobs (scan_id, product_id, step) values (%L, %L, %L)', :'s_both', :'p_ok', 'generating_cad'), '23505');
+  format('insert into public.pipeline_jobs (scan_id, product_id, order_id, step) values (%L, %L, %L, %L)',
+    :'s_both', :'p_ok', 'cccccccc-0000-0000-0000-000000000001', 'generating_cad'), '23505');
 
 -- A second template bought for the same scan gets its own job.
 insert into public.orders (user_id, product_id, scan_id_left, status) values
