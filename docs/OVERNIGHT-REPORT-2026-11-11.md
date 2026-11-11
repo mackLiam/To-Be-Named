@@ -13,8 +13,9 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Iteration on the two test videos | done: IMG_3834 measures, IMG_3836 fails on the knee (da80ef4, 8ebbd81, a957033) |
 | Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
 | Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
-| Admin product management | round 1 in progress (catalog depth, photos; migrations 0022, 0023) |
-| UI and UX pass | not started |
+| Admin product management | round 1 done (9ccd578, 0a1a2e6); round 2 (orders: remakes, partial refunds, customer lookup, emails; 0024-0026) in progress |
+| Phase 0.5 sweep capture spike (Swift, behind a flag) | in progress |
+| UI and UX pass | apps/app in progress with forms-designer; apps/web after admin |
 | docs/BUSINESS-GAPS.md | done (5ad999e) |
 
 ## Done (with commits)
@@ -84,6 +85,16 @@ every milestone, so the latest commit on the branch holds the latest state.
   in React Native (it pulled in a module that reads the schema with node:fs);
   fixed in cfb44c0 with bundle-safe subpath exports. The viewer is on a
   dev-only route; no production screen uses it yet.
+
+- Admin catalog (9ccd578): migrations 0022 (display order, availability
+  available / coming soon / paused, sizing modes sold, "available" needs a
+  CAD model) and 0023 (product_images, public product-images bucket). Upload
+  route validates admin aal2, same origin plus custom header, a streamed 5 MB
+  cap, magic bytes and dimensions, and builds the path server-side. Checkout
+  refuses anything not purchasable. Fixed the admin order page crash for
+  deleted accounts. I removed the agent's storage select policy on the photo
+  bucket: public URLs work without it and it let anyone list photo names for
+  paused products. SQL checks pass.
 
 ## Video results (counts and ratios only)
 
@@ -182,6 +193,16 @@ capture is Mac-side only.
 - Harness: floor-rule constants (leg-below 2%, floor gap 0.5 of leg height,
   cell size 3 tolerances, floor tilt 50 deg) are principled guesses. With no
   floor, up comes from the leg itself and the tilt gate is not exercised.
+- Catalog: a product row is one model tier (Club, Pro, Junior Max) and
+  `sizing_modes` is the "tiers sold" (custom, preset S/M/L); checkout sells
+  custom only. Confirm, or ask for a grouping column.
+- Catalog: preset S/M/L value sets, lead time and capacity, launch
+  availability per product, prices and the photos themselves are not set.
+- Catalog: photo EXIF/GPS is not stripped (needs an image library or a
+  photographer workflow).
+- The app Shop tab still lists by price and ignores availability; until it
+  is updated a coming-soon product looks buyable in the app (checkout
+  refuses it server-side).
 - Estimator conservative defaults: manual input accepts any non-empty subset
   of the 9 typed keys; a missing or invalid tolerance makes the gate fail,
   never pass; keys already typed are not offered as tape actions.
