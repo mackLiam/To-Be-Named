@@ -544,6 +544,15 @@ Rules (both validators):
   length. Server-side segmentation would then need a permissively licensed
   model (never AGPL, SCAN-PLAN.md section 3). This is the hardest tier to
   make accurate; it comes last and only if demand shows up.
+- **One tape measurement per leg adds real scale.** Everything a plain
+  video yields is a ratio (OD/OW, widths relative to S3, Leg_Length
+  relative to width). A single typed number per leg, Leg_Length from the
+  floor to the knee crease or OW at one mark, fixes the one unknown scale
+  factor, and the ratios carry it to all 25 values. It is the cheapest
+  scale reference there is (no paper detection, no LiDAR) and it is the
+  same observation the estimator already takes from manual entry (section
+  4.4). The local video harness (docs/VIDEO-HARNESS.md, 2026-11-11) reports
+  ratios only for exactly this reason.
 
 ### 5.8 What happens to the existing tiers
 
