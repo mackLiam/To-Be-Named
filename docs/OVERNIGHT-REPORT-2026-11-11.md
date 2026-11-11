@@ -55,8 +55,10 @@ docs/OVERNIGHT-2026-11-11.md. This is the final state.
 | Report kept current and pushed after each milestone, finished before 07:00 | met | this file |
 
 Not a brief requirement, reported as findings: the estimator's provisional
-feasibility table misses the plan's "full sweep is none" target (the plan
-says tolerances or capture change, not the bands); nothing ran on a phone
+feasibility table misses the plan's "full sweep is none" target. The plan's
+remedy is a capture or tolerance change, not the bands; the recommended
+capture change (tape Leg_Length) lifts a full sweep to "optional", and the
+rest needs calibrated noise or Zane's tolerances. Nothing ran on a phone
 (human-only).
 
 ## Status at a glance
@@ -154,8 +156,16 @@ Earlier run (about 01:15):
   Plan 4.6 requires a full sweep to come out "none". Leg_Length binds: 5 mm
   landmark sigma plus the per-capture scale term gives 7.6 mm against a
   15 mm tolerance. Widths and depths pass (r up to 0.95). Per the plan the
-  tolerance or the capture changes, not the bands: a decision for Liam and
-  Zane after the Phase 0 calibration.
+  tolerance or the capture changes, not the bands.
+
+  Capture change tested (same provisional numbers, prior 0.1.1): adding the
+  recommended tape Leg_Length moves a full sweep from "required" (r 1.01)
+  to "optional" (r 0.86; span 150 the same, span 120 "required" 1.51), and
+  a plain video at span 180 plus tape to "optional" (r 0.98). The binding
+  value becomes depth at S2 and S3. "none" (r at most 0.6) needs OD sigma
+  at or below about 1.8 mm against the 6 mm placeholder tolerance, so it
+  waits on the Phase 0 calibration of real noise or a tolerance decision
+  with Zane (plan section 15, decision 7); no band was changed.
 
 - Business gaps audit (5ad999e): 20 areas ranked by launch impact. The
   blockers (tax, shipping, policies, checkout completion, fulfillment) all
