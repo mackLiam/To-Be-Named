@@ -496,8 +496,14 @@ allows.
 
 In order, for Liam:
 
-0. **Decide the capture pose** (top TODO above); until then every seated
-   scan fails on the bent-knee rule.
+0. **Capture pose: decided in the morning, scan only** (Liam, 2026-11-11:
+   the user types and measures nothing; the typed Leg_Length mode stays a
+   hidden fallback). Work starts 2026-11-12 on a front-edge knee finder; the
+   first probe and its caveats are in SCAN-V3-PLAN.md 5.1 and the probe is
+   `services/pipeline/scripts/knee_front_probe.py`. Order: run the probe
+   through the masks and dual-conic slices, add the shin-thigh hinge as a
+   second finder, then tape ground truth on real seated legs. Until it
+   lands, every seated scan fails on the bent-knee rule.
 1. **Tape ground truth (Phase 0, human-only).** Five then ten legs with tape
    and books, logged in docs/accuracy-log.md. Everything provisional tonight
    (estimator noise, tolerances, the bent-knee window, IMG_3834's short
