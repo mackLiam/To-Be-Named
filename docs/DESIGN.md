@@ -222,6 +222,10 @@ Step details:
    human-plausible ranges (e.g., calf width 6-16 cm); out-of-range → job fails
    with a user-facing "please rescan" reason rather than generating garbage
    geometry. Log all 25 values per job for drift analysis.
+   The leg estimator (`forms_pipeline/shape`, SCAN-V3-PLAN.md section 4,
+   contracts in docs/ESTIMATOR-V1.md) and its versioned prior exist since
+   2026-11-11 but are **not wired**: measuring still runs extraction only
+   until Phase 1b, after the Phase 0 ground truth.
 3. **CAD (worker):** push variables to Onshape via REST, poll regeneration,
    export STL, store next to the scan. **Units:** Onshape stores meters
    internally regardless of display units - the worker owns a single
@@ -404,6 +408,10 @@ Notes:
 - Measurements stored as versioned JSONB against the frozen schema - when the
   extraction algorithm changes, `extraction_version` lets you re-run and compare.
 - A guard is per-leg: orders reference up to two scans.
+- Documented contracts with no tables yet (2026-11-11, docs/ESTIMATOR-V1.md):
+  forms.leg-model v1 (the 3D leg, owner-visible later) and
+  forms.measurement-quality v1 (per-key provenance VALUE_SOURCES and sigma,
+  server and admin only). Migrations 0018-0021 stay reserved for Phase 1b.
 - A scan's files are always under `<storage_user_id>/` in storage. Ownership
   (`user_id`) can change (guest merge) or vanish (account deletion) without the
   files moving, so every worker derives storage paths from `storage_user_id`.
@@ -597,6 +605,10 @@ code-CAD port when volume justifies it.
    single mm-to-meter conversion. The wrap fractions are provisional until a
    print made through the automated path is checked on a real leg; until
    then the automated scan-to-CAD path is not enabled for real orders.
+   The leg estimator (docs/ESTIMATOR-V1.md, 2026-11-11) projects to the same
+   1.1.0 leg meaning; its leg model's crest is model-derived (the section's
+   anterior extreme in v1), and profile.py stays the only crest-relative
+   converter.
 3. **Device floor** - LiDAR-only capture may exclude a large share of the target
    market; server-side reconstruction path (§5) is the hedge. Decide early.
 4. **Protective-equipment compliance** - soccer shin guards are safety gear

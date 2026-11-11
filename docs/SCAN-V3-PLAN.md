@@ -75,7 +75,7 @@ zero manual CAD per customer.
 | "Won't save" upload failure on device is still unexplained. | SCAN-PLAN.md section 9 item 7 |
 | LiDAR path (T1, ObjectCapture) never run on a LiDAR phone. | SCAN-PLAN.md section 4 |
 | Manual entry derives the 16 inner values as a symmetric split (ISW = ICW = OW/2, ISD = ICD = OD). | apps/app/src/lib/manualMeasurements.ts |
-| The 2D FitPreview draws leg and guard from the 25 values with ellipse sections and template coverage fractions (Club 0.12-0.88 of Leg_Length). | apps/app/src/lib/fitPreview.ts |
+| The 2D FitPreview draws leg and guard from the 25 values with ellipse sections and template coverage fractions (Club 0.12-0.88 of Leg_Length; corrected to 0.2-0.8 on 2026-11-11). | apps/app/src/lib/fitPreview.ts |
 | The meaning of ISW/ISD/ICW/ICD inside the Onshape model is still unconfirmed. | DESIGN.md section 12.2 |
 | A guard has been printed and fit well (2026-11-10), from values set by hand in Onshape and a hand export. The automated scan-to-STL round trip has not run; Onshape API access is confirmed. | ROADMAP.md section 14, accuracy-log.md |
 
@@ -157,12 +157,12 @@ The 25 contract values are deterministic functions of x evaluated at the
 model's contour at t = 0.2..0.8 (strictly, f(posterior mean), not posterior
 means of each value). The model and the contract can never disagree.
 
-**The meaning of the slice values is now known (section 6a), and it is
-not what extraction computes today.** The leg model's 25-value projection
-uses the verified crest-relative meaning: per slice, find the crest, take the
-product's wrap widths, read the leg surface's fall-back depths there. The
-paragraph below records the earlier concern and still applies to the
-version bump. **This is a semantic change to the values, stated openly.**
+**Superseded 2026-11-11 (docs/ESTIMATOR-V1.md):** the leg model's 25-value
+projection produces schema 1.1.0 **leg measurements**, the same meaning
+extraction stores. It never emits crest-relative values; those are made only
+by cad/profile.py (section 6a.3, DESIGN.md 12.2). The paragraph below records
+the earlier concern about the inner values, which still applies when the
+anatomical split replaces v1's symmetric split.
 extraction/measure.py works in a PCA frame whose eigenvector signs are
 arbitrary, splits each section at the mean of its boundary vertices, and has
 no notion of medial or anterior. The leg model uses an anatomical frame
@@ -899,8 +899,8 @@ until those CAD models exist.
 
 ### 7.4 Size as a percent of the leg, on the leg
 
-Guard templates are already defined as fractions of Leg_Length (Club 0.12 to
-0.88). On the model:
+Guard templates are already defined as fractions of Leg_Length (Club 0.2 to
+0.8, the model's S1 to S4). On the model:
 
 - The coverage band is drawn on the leg itself, with a bracket and the label
   of section 7.1: "76%" large, "of your shin, 268 mm tall" as the caption.
@@ -1116,6 +1116,17 @@ bundle.py (MAX_SILHOUETTE_IMAGES) and the fixed stations stand in the way.
   writing the estimator around it.
 
 ### Phase 1: the estimator (server only, invisible to users)
+
+**Split 2026-11-11 (forms-architect review, docs/ESTIMATOR-V1.md).**
+Phase 1a: the pure shape/ package, unwired, plus the forms.leg-model v1 and
+forms.measurement-quality v1 contracts with shared fixtures. v1 state is log L
+plus log OW and log OD at 21 heights; anterior offset, medial share, shape
+harmonics, Gauss-Newton, bilateral and guard shells are deferred, and
+evidence comes from mesh sections. Phase 1b, after Phase 0 is green: runner
+wiring, migrations 0018, 0019 and 0021, the manual payload change, the folded
+extraction_version (`est-<estimator>+p<prior>`), the order snapshot and the
+DESIGN.md section 6 rewrite, reviewed as one security surface. The list below
+is the original whole-phase scope.
 
 - forms_pipeline/shape/ as in 6.2: nuisance states, bootstrap prior, fusion,
   typed EstimatorError, gate, leg model and guard shells.
