@@ -113,8 +113,109 @@ export function getCheckoutAllowedOrigins(): string[] {
   return commaList(process.env.CHECKOUT_ALLOWED_ORIGINS);
 }
 
-/** ISO country codes Stripe Checkout may ship to. */
-export function getStripeShippingCountries(): string[] {
-  const countries = commaList(process.env.STRIPE_SHIPPING_COUNTRIES).map((c) => c.toUpperCase());
+/**
+ * A checkout env variable holds a value that must not be used. Messages name
+ * the variable and the rule, never the value.
+ */
+export class EnvConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EnvConfigError';
+  }
+}
+
+// Stripe's own caps: 5 shipping options per Checkout Session.
+export const MAX_SHIPPING_RATE_IDS = 5;
+export const MAX_SHIPPING_COUNTRIES = 50;
+const SHIPPING_RATE_ID = /^shr_[A-Za-z0-9]+$/;
+const COUNTRY_CODE = /^[A-Z]{2}$/;
+
+type Env = Record<string, string | undefined>;
+
+/** Unset or empty is off, exactly "true" is on, anything else is a config error. */
+function envFlag(env: Env, name: string): boolean {
+  const raw = env[name]?.trim() ?? '';
+  if (raw === '') {
+    return false;
+  }
+  if (raw === 'true') {
+    return true;
+  }
+  throw new EnvConfigError(`${name} must be exactly "true" or unset.`);
+}
+
+function strictList(
+  env: Env,
+  name: string,
+  max: number,
+  valid: (entry: string) => boolean,
+  what: string,
+): string[] {
+  const entries = commaList(env[name]);
+  if (entries.length > max) {
+    throw new EnvConfigError(`${name} lists more than ${max} entries.`);
+  }
+  entries.forEach((entry, index) => {
+    if (!valid(entry)) {
+      throw new EnvConfigError(`${name} entry ${index + 1} is not ${what}.`);
+    }
+  });
+  if (new Set(entries).size !== entries.length) {
+    throw new EnvConfigError(`${name} lists the same entry twice.`);
+  }
+  return entries;
+}
+
+/**
+ * ISO 3166-1 alpha-2 codes Stripe Checkout may ship to; US when unset.
+ * Lowercase is accepted and uppercased, as before validation existed.
+ */
+export function getStripeShippingCountries(env: Env = process.env): string[] {
+  const countries = strictList(
+    { STRIPE_SHIPPING_COUNTRIES: env.STRIPE_SHIPPING_COUNTRIES?.toUpperCase() },
+    'STRIPE_SHIPPING_COUNTRIES',
+    MAX_SHIPPING_COUNTRIES,
+    (c) => COUNTRY_CODE.test(c),
+    'a two-letter ISO 3166-1 country code',
+  );
   return countries.length > 0 ? countries : ['US'];
+}
+
+/**
+ * Optional Stripe Checkout features, each OFF unless its variable is set.
+ * Every one of them also needs Stripe dashboard setup (see .env.example), so
+ * none may default on.
+ */
+export interface CheckoutGates {
+  /** STRIPE_AUTOMATIC_TAX: Stripe Tax computes and adds tax. */
+  automaticTax: boolean;
+  /** STRIPE_SHIPPING_RATE_IDS: shipping rates offered, in order; empty means none. */
+  shippingRateIds: readonly string[];
+  /** STRIPE_TERMS_CONSENT: the customer must tick the terms of service box. */
+  termsConsent: boolean;
+  /** STRIPE_ALLOW_PROMOTION_CODES: the customer may enter a promotion code. */
+  allowPromotionCodes: boolean;
+}
+
+export const CHECKOUT_GATES_OFF: CheckoutGates = Object.freeze({
+  automaticTax: false,
+  shippingRateIds: Object.freeze([]),
+  termsConsent: false,
+  allowPromotionCodes: false,
+});
+
+/** Throws EnvConfigError on any bad value; a typo never turns a gate on or off silently. */
+export function getCheckoutGates(env: Env = process.env): CheckoutGates {
+  return {
+    automaticTax: envFlag(env, 'STRIPE_AUTOMATIC_TAX'),
+    shippingRateIds: strictList(
+      env,
+      'STRIPE_SHIPPING_RATE_IDS',
+      MAX_SHIPPING_RATE_IDS,
+      (id) => SHIPPING_RATE_ID.test(id),
+      'a Stripe shipping rate id (shr_ followed by letters and digits)',
+    ),
+    termsConsent: envFlag(env, 'STRIPE_TERMS_CONSENT'),
+    allowPromotionCodes: envFlag(env, 'STRIPE_ALLOW_PROMOTION_CODES'),
+  };
 }

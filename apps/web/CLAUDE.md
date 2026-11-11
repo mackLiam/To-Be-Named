@@ -39,6 +39,17 @@ starts growing conditionals, extract them down into lib.
   Preserve it on new pages; it is how the panel is developed and CI-built
   without a hosted project.
 
+## Checkout gates
+
+Stripe Tax, shipping rates, terms consent and promotion codes are optional
+Checkout features behind server-only env vars (env.ts getCheckoutGates,
+documented in .env.example). Each is OFF unless set, a bad value throws
+EnvConfigError per request before any order exists, and with all off
+buildSessionParams must stay deep-equal to the frozen baseline in
+checkout.test.ts. A gate adds keys; it never changes pricing (priceOrder).
+Promotion codes must never reach a zero total: the webhook ignores sessions
+that are not payment_status paid.
+
 ## Design notes
 
 Admin is an internal tool: dense tables, fast scanning, no decoration. Still

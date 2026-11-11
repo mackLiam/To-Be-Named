@@ -3,6 +3,7 @@ import type { OrderStatus, ScanStatus } from '@forms/shared';
 import type Stripe from 'stripe';
 
 import { isPurchasable } from './catalog';
+import { CHECKOUT_GATES_OFF, getCheckoutGates, type CheckoutGates } from './env';
 import { isUuid } from './shop';
 
 /**
@@ -250,6 +251,11 @@ export interface CheckoutConfig {
   configured: boolean;
   siteUrl: string;
   shippingCountries: string[];
+  /**
+   * Optional Checkout features. Absent: read from env per request by
+   * getCheckoutGates, which throws on a bad value before any order exists.
+   */
+  gates?: CheckoutGates;
 }
 
 export interface CheckoutDeps {
@@ -274,6 +280,7 @@ export async function handleCheckout(deps: CheckoutDeps): Promise<CheckoutResult
   if (!deps.config.configured) {
     return fail('payments_not_configured');
   }
+  const gates = deps.config.gates ?? getCheckoutGates();
   if (deps.rawBody === null) {
     return fail('invalid_request');
   }
@@ -362,6 +369,7 @@ export async function handleCheckout(deps: CheckoutDeps): Promise<CheckoutResult
         price,
         email: user.email,
         config: deps.config,
+        gates,
         now,
       }),
       { idempotencyKey: `checkout-${orderId}` },
@@ -395,9 +403,11 @@ export function buildSessionParams(input: {
   price: OrderPrice;
   email: string | null;
   config: CheckoutConfig;
+  gates?: CheckoutGates;
   now: Date;
 }): Stripe.Checkout.SessionCreateParams {
   const { orderId, product, price, email, config, now } = input;
+  const gates = input.gates ?? CHECKOUT_GATES_OFF;
   return {
     mode: 'payment',
     // Cards only (wallets such as Apple Pay are cards): delayed methods would
@@ -423,6 +433,16 @@ export function buildSessionParams(input: {
     success_url: `${config.siteUrl}/checkout/success?order=${orderId}`,
     cancel_url: `${config.siteUrl}/checkout/cancelled?order=${orderId}`,
     expires_at: Math.floor(now.getTime() / 1000) + SESSION_TTL_SECONDS,
+    // Each gate adds its key only when on, so all-off params stay identical
+    // to the pre-gate shape. The paid total then differs from amount_cents;
+    // stripe_checkout_completed (0013) stores amount_total, it never compares.
+    // Tax is computed on the shipping address collected above.
+    ...(gates.automaticTax ? { automatic_tax: { enabled: true } } : {}),
+    ...(gates.shippingRateIds.length > 0
+      ? { shipping_options: gates.shippingRateIds.map((id) => ({ shipping_rate: id })) }
+      : {}),
+    ...(gates.termsConsent ? { consent_collection: { terms_of_service: 'required' } } : {}),
+    ...(gates.allowPromotionCodes ? { allow_promotion_codes: true } : {}),
   };
 }
 

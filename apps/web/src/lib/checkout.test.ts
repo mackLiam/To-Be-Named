@@ -5,12 +5,14 @@ import {
   PENDING_ORDER_CAP,
   SESSION_TTL_SECONDS,
   bearerToken,
+  buildSessionParams,
   corsHeaders,
   handleCheckout,
   parseCheckoutBody,
   preflightHeaders,
   priceOrder,
   readCappedText,
+  type CheckoutConfig,
   type CheckoutDeps,
   type CheckoutProduct,
   type CheckoutScan,
@@ -18,7 +20,14 @@ import {
   type CheckoutStripe,
   type NewOrder,
 } from './checkout';
-import { getCheckoutAllowedOrigins, getSiteUrl, getStripeShippingCountries } from './env';
+import {
+  CHECKOUT_GATES_OFF,
+  EnvConfigError,
+  getCheckoutAllowedOrigins,
+  getSiteUrl,
+  getStripeShippingCountries,
+  type CheckoutGates,
+} from './env';
 
 const USER = '00000000-0000-4000-8000-0000000000d1';
 const OTHER = '00000000-0000-4000-8000-0000000000d2';
@@ -218,6 +227,219 @@ describe('checkout env readers', () => {
     expect(getStripeShippingCountries()).toEqual(['US']);
     process.env.STRIPE_SHIPPING_COUNTRIES = 'us, ca';
     expect(getStripeShippingCountries()).toEqual(['US', 'CA']);
+  });
+});
+
+const SESSION_PRODUCT: CheckoutProduct = {
+  id: PRODUCT,
+  name: 'Custom Shin Guard',
+  base_price_cents: 8900,
+  currency: 'usd',
+  active: true,
+  availability: 'available',
+  sizing_modes: ['custom'],
+};
+
+const SESSION_CONFIG: CheckoutConfig = {
+  configured: true,
+  siteUrl: 'https://zells.com',
+  shippingCountries: ['US', 'CA'],
+};
+
+// Frozen before the env gates existed: with every gate off, the params must
+// stay exactly this, key for key.
+const BASELINE_PARAMS = {
+  mode: 'payment',
+  allowed_payment_method_types: ['card'],
+  line_items: [
+    {
+      price_data: {
+        currency: 'usd',
+        unit_amount: 8900,
+        product_data: { name: 'Custom Shin Guard' },
+      },
+      quantity: 2,
+    },
+  ],
+  client_reference_id: ORDER,
+  metadata: { order_id: ORDER },
+  customer_email: 'kid@example.com',
+  shipping_address_collection: { allowed_countries: ['US', 'CA'] },
+  success_url: `https://zells.com/checkout/success?order=${ORDER}`,
+  cancel_url: `https://zells.com/checkout/cancelled?order=${ORDER}`,
+  expires_at: Math.floor(NOW.getTime() / 1000) + SESSION_TTL_SECONDS,
+};
+
+describe('buildSessionParams, all gates off', () => {
+  it('produces exactly the pre-gate params', () => {
+    const params = buildSessionParams({
+      orderId: ORDER,
+      product: SESSION_PRODUCT,
+      price: priceOrder(SESSION_PRODUCT, 2),
+      email: 'kid@example.com',
+      config: SESSION_CONFIG,
+      now: NOW,
+    });
+    expect(params).toStrictEqual(BASELINE_PARAMS);
+    expect(Object.keys(params)).toEqual(Object.keys(BASELINE_PARAMS));
+  });
+
+  it('is the same when the off gates are passed explicitly', () => {
+    const params = buildSessionParams({
+      orderId: ORDER,
+      product: SESSION_PRODUCT,
+      price: priceOrder(SESSION_PRODUCT, 2),
+      email: 'kid@example.com',
+      config: { ...SESSION_CONFIG, gates: CHECKOUT_GATES_OFF },
+      gates: CHECKOUT_GATES_OFF,
+      now: NOW,
+    });
+    expect(params).toStrictEqual(BASELINE_PARAMS);
+  });
+});
+
+describe('buildSessionParams gates', () => {
+  const build = (gates: Partial<CheckoutGates>) =>
+    buildSessionParams({
+      orderId: ORDER,
+      product: SESSION_PRODUCT,
+      price: priceOrder(SESSION_PRODUCT, 2),
+      email: 'kid@example.com',
+      config: SESSION_CONFIG,
+      gates: { ...CHECKOUT_GATES_OFF, ...gates },
+      now: NOW,
+    });
+
+  it('automatic tax adds only automatic_tax and keeps the shipping address it taxes on', () => {
+    expect(build({ automaticTax: true })).toStrictEqual({
+      ...BASELINE_PARAMS,
+      automatic_tax: { enabled: true },
+    });
+  });
+
+  it('shipping rates add shipping_options in the configured order', () => {
+    expect(build({ shippingRateIds: ['shr_b', 'shr_a'] })).toStrictEqual({
+      ...BASELINE_PARAMS,
+      shipping_options: [{ shipping_rate: 'shr_b' }, { shipping_rate: 'shr_a' }],
+    });
+  });
+
+  it('terms consent adds only consent_collection', () => {
+    expect(build({ termsConsent: true })).toStrictEqual({
+      ...BASELINE_PARAMS,
+      consent_collection: { terms_of_service: 'required' },
+    });
+  });
+
+  it('promotion codes add only allow_promotion_codes', () => {
+    expect(build({ allowPromotionCodes: true })).toStrictEqual({
+      ...BASELINE_PARAMS,
+      allow_promotion_codes: true,
+    });
+  });
+
+  it('all gates on together leave the line items and pricing untouched', () => {
+    const params = build({
+      automaticTax: true,
+      shippingRateIds: ['shr_std', 'shr_exp'],
+      termsConsent: true,
+      allowPromotionCodes: true,
+    });
+    expect(params).toStrictEqual({
+      ...BASELINE_PARAMS,
+      automatic_tax: { enabled: true },
+      shipping_options: [{ shipping_rate: 'shr_std' }, { shipping_rate: 'shr_exp' }],
+      consent_collection: { terms_of_service: 'required' },
+      allow_promotion_codes: true,
+    });
+  });
+
+  it('uses the configured shipping countries for address collection', () => {
+    const params = buildSessionParams({
+      orderId: ORDER,
+      product: SESSION_PRODUCT,
+      price: priceOrder(SESSION_PRODUCT, 1),
+      email: null,
+      config: { ...SESSION_CONFIG, shippingCountries: ['GB'] },
+      gates: { ...CHECKOUT_GATES_OFF, shippingRateIds: ['shr_uk'] },
+      now: NOW,
+    });
+    expect(params.shipping_address_collection).toEqual({ allowed_countries: ['GB'] });
+    expect(params).not.toHaveProperty('customer_email');
+  });
+});
+
+describe('handleCheckout gates from env', () => {
+  const NAMES = [
+    'STRIPE_AUTOMATIC_TAX',
+    'STRIPE_SHIPPING_RATE_IDS',
+    'STRIPE_TERMS_CONSENT',
+    'STRIPE_ALLOW_PROMOTION_CODES',
+  ];
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+  const clear = () => {
+    for (const name of NAMES) {
+      delete process.env[name];
+    }
+  };
+
+  it('sends the baseline params when no gate variable is set', async () => {
+    clear();
+    const { deps, log } = setup();
+    expect((await handleCheckout(deps())).status).toBe(200);
+    expect(log.stripeCalls[0]!.params).toStrictEqual(BASELINE_PARAMS);
+  });
+
+  it('applies gates read from env when config carries none', async () => {
+    clear();
+    process.env.STRIPE_AUTOMATIC_TAX = 'true';
+    process.env.STRIPE_SHIPPING_RATE_IDS = 'shr_std';
+    const { deps, log } = setup();
+    expect((await handleCheckout(deps())).status).toBe(200);
+    expect(log.stripeCalls[0]!.params).toStrictEqual({
+      ...BASELINE_PARAMS,
+      automatic_tax: { enabled: true },
+      shipping_options: [{ shipping_rate: 'shr_std' }],
+    });
+  });
+
+  it('prefers gates passed in config over env', async () => {
+    clear();
+    process.env.STRIPE_ALLOW_PROMOTION_CODES = 'true';
+    const { deps, log } = setup();
+    await handleCheckout(
+      deps({
+        config: { ...SESSION_CONFIG, gates: { ...CHECKOUT_GATES_OFF, termsConsent: true } },
+      }),
+    );
+    expect(log.stripeCalls[0]!.params).toStrictEqual({
+      ...BASELINE_PARAMS,
+      consent_collection: { terms_of_service: 'required' },
+    });
+  });
+
+  it('throws on a bad gate value before any order or session exists', async () => {
+    clear();
+    process.env.STRIPE_TERMS_CONSENT = '1';
+    const { deps, log } = setup();
+    await expect(handleCheckout(deps())).rejects.toThrow(EnvConfigError);
+    await expect(handleCheckout(deps())).rejects.toThrow(/^STRIPE_TERMS_CONSENT /);
+    expect(log.inserted).toEqual([]);
+    expect(log.stripeCalls).toEqual([]);
+  });
+
+  it('a bad gate value does not mask payments_not_configured', async () => {
+    clear();
+    process.env.STRIPE_SHIPPING_RATE_IDS = 'not-a-rate';
+    const { deps } = setup();
+    expect(
+      await handleCheckout(
+        deps({ config: { configured: false, siteUrl: '', shippingCountries: ['US'] } }),
+      ),
+    ).toEqual({ status: 501, body: { error: 'payments_not_configured' } });
   });
 });
 
