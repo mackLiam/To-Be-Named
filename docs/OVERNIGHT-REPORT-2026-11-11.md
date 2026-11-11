@@ -10,7 +10,7 @@ every milestone, so the latest commit on the branch holds the latest state.
 |---|---|
 | Video harness: Swift forms-video | done (bf48577) |
 | Video harness: Python driver | done (9424e5c) |
-| Iteration on the two test videos | in progress |
+| Iteration on the two test videos | round 2 in progress |
 | Phase 1a estimator (pure, unwired) and shared contracts | in progress (contracts pinned 5022b62) |
 | Admin product management | not started |
 | UI and UX pass | not started |
@@ -65,6 +65,27 @@ Baseline, production math unchanged (9424e5c):
 Both fail at the first gate because close-up footage runs the thigh or foot
 off the frame in almost every frame, and today any cut-off view fails the
 whole scan.
+
+Round 1 (d39e5f1 silhouette, 83e1efb harness):
+
+- Loft fix: rings no longer twist half or quarter turns between heights
+  (a slice in a twisted band read 0.2% of the true section area).
+- Cut-off framing no longer fails the scan; only border edges are dropped,
+  and when too little remains the reason names the missing part. Synthetic
+  legs cropped by an exact camera model recover within 2%.
+- Harness: up for an upside-down phone (floor of either sign, else the leg
+  axis signed by the narrow ankle end).
+- Result at 60 frames: IMG_3834 "The knee was outside the frame in most of
+  the photos" (10 of 15 views run off at the knee end; the 5 that see it
+  span 36 deg). IMG_3836 fails the 120 deg span gate at 103 deg because
+  photogrammetry registered only frames 0 to 37.
+
+Denser sampling (forms-video --max-frames 120): registration goes from 44/60
+to 119/120 (IMG_3834) and 38/60 to 103/103 (IMG_3836); spans 214 and 173
+deg. The unregistered stretches were the knee close-ups. New failures, under
+investigation in round 2: IMG_3834 "Keep your shin upright" (axis 43 deg
+from a floor plane that is probably the wrong plane), IMG_3836 "The ankle was
+outside the frame".
 
 ## Untested on a device
 
