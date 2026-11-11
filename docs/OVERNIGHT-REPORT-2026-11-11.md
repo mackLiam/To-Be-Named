@@ -11,7 +11,7 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Video harness: Swift forms-video | done (bf48577) |
 | Video harness: Python driver | done (9424e5c) |
 | Iteration on the two test videos | in progress |
-| Phase 1 estimator | brief under forms-architect review |
+| Phase 1a estimator (pure, unwired) and shared contracts | in progress (contracts pinned 5022b62) |
 | Admin product management | not started |
 | UI and UX pass | not started |
 | docs/BUSINESS-GAPS.md | not started |
@@ -73,7 +73,18 @@ capture is Mac-side only.
 
 ## TODO(liam) defaults taken
 
-None yet.
+- **Phase 1 migrations deferred (against the brief).** forms-architect
+  reviewed the Phase 1 brief and recommended 0018, 0019 and 0021 wait for
+  Phase 1b (wiring after the Phase 0 ground truth): a quality table and a
+  leg-models table with no writer are dead schema; 0021's refusion RPC is a
+  client-callable SECURITY DEFINER function with no caller and a "refuse when
+  adjusted" rule SQL cannot express yet (adjusted and manual share
+  source 'manual'); the order snapshot changes the Stripe paid transition,
+  which should not change unattended. The numbers stay reserved. Tonight
+  ships the pure estimator and the two contracts (docs/ESTIMATOR-V1.md).
+- Estimator noise levels, the bootstrap prior and the gate tolerances (15 mm
+  Leg_Length, 6 mm fit-critical OW and OD) are provisional placeholders,
+  flagged `provisional` in the files, until the Phase 0 calibration.
 
 ## Onshape copies created
 
