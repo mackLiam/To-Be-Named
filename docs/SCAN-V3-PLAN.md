@@ -727,13 +727,16 @@ mm), an adult (81 x 218 x 26) and a large adult (97 x 260 x 30).
 
 ### 6a.3 What this changes in the scan work
 
-1. **The extraction and the schema are wrong, not the model.** Today's
-   extraction emits full section extents, and the schema gates every slice
-   value at 30-220 mm, so correct values (depths of a few mm) would be
-   rejected and extraction output would build a guard that wraps almost to
-   the calf. Fix first, before any automated order: schema 1.1.0 (same
-   names, corrected descriptions and ranges), crest-relative extraction,
-   extraction_version bump, lockstep TS and Python (KNOWN-ISSUES.md).
+1. **Leg values must not go to the model unconverted.** Sent as is, the
+   leg's full widths would build a guard that wraps almost to the calf.
+   Resolved by schema 1.1.0 (2026-11-10), which turned out not to need new
+   meanings for the stored values: they stay leg measurements, because the
+   app's preview, manual entry, the measurement table and the admin all use
+   them that way. Instead the CAD descriptor gained a required `profile`,
+   and `forms_pipeline/cad/profile.py` converts leg values into the model's
+   crest-relative points in one place (DESIGN.md 7a.2 and 12.2). v1 treats
+   each section as an ellipse; the leg model (section 4) later supplies the
+   real contour through the same boundary.
 2. **The scan's real job gets smaller and clearer.** Per slice it must find
    the shin crest and measure how far the leg surface falls back at given
    distances to each side of it. That is the front of the leg, the part
@@ -1069,9 +1072,9 @@ closes it before any estimator code is trusted:
 
 - Fix the "won't save" upload failure from the dev flow logs (blocks every
   real test). Code: Sonnet-tier, apps/app upload path, after the device log.
-- **Schema 1.1.0 and crest-relative extraction** (section 6a.3 item 1):
-  the first code change, ahead of everything else, because nothing scanned
-  can reach CAD correctly until it lands.
+- **Schema 1.1.0 and the CAD profile conversion** (section 6a.3 item 1):
+  done 2026-11-10. The wrap fractions are provisional until a print made
+  through the automated path is checked on a real leg.
 - The printed guard (done by hand, 2026-11-10, fit well): record the exact
   variable values used and tape-measure that leg at 20/40/60/80%. Comparing
   the two answers what OW/OD mean in the model, since the template still
@@ -1219,8 +1222,9 @@ it is made.
    and OD).
 8. Re-date ROADMAP.md now: Phase 0 absorbs the red Month 1 gate, so the App
    Store and launch weeks move (section 13 note).
-9. Approve schema 1.1.0: same 25 names, descriptions and ranges corrected to
-   the crest-relative meaning (section 6a), with Zane told.
+9. Schema 1.1.0 approved and done (2026-11-10): leg measurements kept, CAD
+   profile conversion added (section 6a.3). Tell Zane the model's inputs are
+   now computed this way.
 10. Wrap widths per product tier (how far round each guard reaches), with
     Zane: the first real product-line parameter.
 

@@ -34,7 +34,9 @@ docs/              Design docs (DESIGN.md is the source of truth)
    nearest the ankle) × 6 dims (`ISW`,`ISD`,`ICW`,`ICD`,`OW`,`OD`). Names must
    match the Onshape model exactly. Single source of truth: JSON Schema in
    `packages/shared` - extraction script, TS types, and Onshape client all validate
-   against it. Never rename ad hoc.
+   against it. Never rename ad hoc. Since 1.1.0 the stored values are **leg
+   measurements**; the model's same-named variables are crest-relative guard
+   points, produced only in `forms_pipeline/cad/profile.py` (DESIGN.md 12.2).
 3. **PhotogrammetrySession does not work in Expo Go.** Capture requires the custom dev
    client + native module + EAS build, on a physical LiDAR iPhone.
 4. **OBJ files have no units.** Non-LiDAR photogrammetry meshes have arbitrary scale.

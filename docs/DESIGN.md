@@ -329,6 +329,13 @@ Each row in `products` carries a `cad_model` JSONB descriptor (contract shape in
   means identity mapping.
 - `schema_version`: which measurement schema version the model was built
   against, so a future schema 2.x cannot be silently fed to a 1.x model.
+- `profile` (required, added with schema 1.1.0): how the stored leg
+  measurements become the model's variables. `{"kind": "identity"}` passes
+  them through; `{"kind": "crest_spline_v1", "wrap": {"inner_shin",
+  "inner_calf", "outer"}}` builds the crest-relative points the FORMS
+  Onshape model reads (section 12.2), with the wrap fractions saying how far
+  round each side the guard reaches. Wrap is per product, which is how one
+  model serves a narrow Pro and a wide Junior Max.
 
 The Onshape client resolves the descriptor per job from the ordered product.
 Nothing about a specific document is hardcoded in the worker. Adding a model =
@@ -579,9 +586,17 @@ code-CAD port when volume justifies it.
    schema ranges (30-220 mm for every slice value) both encode the wrong
    meaning: correct depth values are a few mm to about 15 mm. The model
    regenerated cleanly on a private workbench copy for child, adult and
-   large-adult legs under the verified meaning. Until the schema and
-   extraction are corrected (a versioned lockstep change), the automated
-   scan-to-CAD path must not be enabled for real orders.
+   large-adult legs under the verified meaning.
+
+   **Resolution (schema 1.1.0, 2026-11-10):** the stored 25 values stay LEG
+   measurements (what extraction, manual entry, the fit preview and the
+   measurement table all already use); schema 1.1.0 only makes their
+   descriptions exact. The model's same-named variables are produced in one
+   place, `services/pipeline/src/forms_pipeline/cad/profile.py`, selected by
+   the descriptor's `profile` (section 7a.2), in mm before the provider's
+   single mm-to-meter conversion. The wrap fractions are provisional until a
+   print made through the automated path is checked on a real leg; until
+   then the automated scan-to-CAD path is not enabled for real orders.
 3. **Device floor** - LiDAR-only capture may exclude a large share of the target
    market; server-side reconstruction path (§5) is the hedge. Decide early.
 4. **Protective-equipment compliance** - soccer shin guards are safety gear

@@ -24,9 +24,13 @@ finishing a task checks this file for anything its change closes.
 - `apps/app/src/lib/fitPreview.ts` Club template says coverage 0.12-0.88 of
   Leg_Length with `placeholder: false`; the model lofts S1 to S4, so 0.2-0.8
   (minus a small ankle trim).
-- Close by: schema 1.1.0 (descriptions and ranges) plus the crest-relative
-  extraction, lockstep TS/Python, extraction_version bump; then fitPreview
-  coverage. Blocks the automated round trip for real orders.
+- Partly closed 2026-11-10 by schema 1.1.0: stored values stay leg
+  measurements and `forms_pipeline/cad/profile.py` converts them to the
+  model's variables (DESIGN.md 12.2), so the schema ranges are right for
+  what they gate. Still open: the wrap fractions are provisional (no print
+  through the automated path yet), extraction's medial/lateral halves are
+  not anatomically oriented (v1 conversion ignores them), and the fitPreview
+  coverage numbers.
 
 ### 2026-09-30: maintenance sweeps are not scheduled anywhere
 

@@ -14,7 +14,7 @@ must match the Onshape parametric model exactly. The extraction script, the
 TypeScript types in this package, and the Onshape client all validate against
 the same JSON Schema file so the three cannot drift apart.
 
-**Status: CONFIRMED (schema 1.0.0).** The 25 variable names and the slice
+**Status: CONFIRMED (schema 1.1.0; names unchanged since 1.0.0).** The 25 variable names and the slice
 position convention were confirmed against the Onshape model's variable table
 on 2026-07-02. Any future rename requires a coordinated schema version bump
 across this package, the Python pipeline, and the Onshape model, never an ad

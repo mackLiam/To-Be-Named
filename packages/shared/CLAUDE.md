@@ -19,7 +19,9 @@ that needs it; promotion into shared is cheap later, demotion is churn.
 ## The frozen schema: rules of engagement
 
 Schema 1.0.0 names were confirmed against the Onshape variable table on
-2026-07-02. Treat every name and range as an external API owned jointly with
+2026-07-02; 1.1.0 (2026-11-10) kept names and ranges and made the descriptions
+exact: the values are leg measurements, converted to the model's own
+crest-relative variables only in the pipeline's cad/profile.py. Treat every name and range as an external API owned jointly with
 the CAD collaborator:
 
 - Never rename, add, or remove a variable in a normal PR. A schema change is a
@@ -48,7 +50,7 @@ CAD descriptors). They are one logical artifact:
 
 ## Versioning semantics used across the product
 
-- schema_version: shape and meaning of the 25 values. Frozen at 1.0.0.
+- schema_version: shape and meaning of the 25 values. Currently 1.1.0.
 - extraction_version: the algorithm that produced values (Python-owned).
 - Rows in measurements are keyed (scan_id, extraction_version) so re-running a
   new algorithm on an old mesh creates a comparable row, never overwrites
