@@ -25,6 +25,40 @@ docs/OVERNIGHT-2026-11-11.md. This is the final state.
    unused) before the web build (0025 before the refund webhook change).
 5. **Never create a 100%-off promotion code** until the webhook handles it.
 
+## Brief checklist (docs/OVERNIGHT-2026-11-11.md, item by item)
+
+| Brief item | Status | Evidence |
+|---|---|---|
+| Branch feat/overnight-2026-11-11, never main, not merged | met | every commit on the branch; develop and main untouched |
+| Read-first docs, operating procedure per task | met | contracts pinned before building (2d15b35, 5022b62); forms-architect reviewed Phase 1 first |
+| Delegate big pieces; subagents leave changes uncommitted; orchestrator reviews and commits | met | every code commit reviewed and verified by the orchestrator before commit |
+| No git add -A, no stash, git alone in its own calls | met | explicit-path commits only |
+| Tests with every change; verification commands pass | met | Verification section; `make lint typecheck test` and SQL checks green |
+| No emojis, no em or en dashes, Conventional Commits, no AI attribution | met | dash scans on every commit; three pre-existing dash cases fixed |
+| Onshape: copies only, never the original | met | no Onshape call at all |
+| No system packages, no AGPL, no external data, no human-only work (device runs) | met | only MIT/BSD/Apache npm deps; `pod install` regenerated gitignored files only; device runs are human-only per line 44 of the brief, so none were attempted |
+| Videos treated as body data; derived output only under recordings/ or the scratchpad (brief line 62) | met | nothing committed or uploaded; docs carry counts and ratios only |
+| 1. Swift harness CLI (AVFoundation keyframes, Vision mask and pose, PhotogrammetrySession, bundle) | met | bf48577 |
+| 1. Python driver and results table | met | 9424e5c, 5e1ffb3 |
+| 1. Scale-free metrics, gate reasons, mask quality, agreement | met | results.md per run; agreement table needs two measured videos |
+| 1. Iterate until bad videos give a sane leg or a clear, fixable failure | met | both end in fixable framing or pose reasons; six real defects fixed (d39e5f1 to e43035b) |
+| 1. Tests for every fix on synthetic legs, never the videos | met | test_silhouette_cutoff, _loft, _tilt, _typed_length, test_bent_knee, test_harness_* |
+| 1. docs/VIDEO-HARNESS.md: how to run, what each video taught | met | a957033, 0d8c801, 9f781cb |
+| 1. Note in SCAN-V3-PLAN.md 5.7 on tape scale | met | 2d15b35, corrected to two values in 0d8c801 |
+| 1. Estimator ideas, sweep spike, capture UX where they help | met | 5e1ffb3, ff4c296, 8192b45, SCAN-V3-PLAN.md 5.3 lessons |
+| If time: Phase 1 estimator, architect review first, migrations 0018, 0019, 0021 | met | a81fca2, 6159a30, 89c2e50; migrations 802e730 (first deferred on the architect's advice, then built unwired) |
+| If time: Phase 2 r3f + expo-gl spike (stop and report if it fails) | met (passed) | d373476; full iOS simulator app build succeeds; on-device rendering is human-only |
+| 2. Admin products, photos, orders, tracking, refunds, remakes, customer lookup; authz, RLS, validated uploads, migrations from 0022 | met | 9ccd578, 7b3369f, c7978b2 |
+| 2. UI and UX pass led by forms-designer | met | e4b8960, 8aa4481 |
+| 2. docs/BUSINESS-GAPS.md and top code-only items | met | 5ad999e, b6f4a8d, 0b51a39 |
+| Loose end: fitPreview Club 0.12 to 0.88 | met | 5054ca1 |
+| Report kept current and pushed after each milestone, finished before 07:00 | met | this file |
+
+Not a brief requirement, reported as findings: the estimator's provisional
+feasibility table misses the plan's "full sweep is none" target (the plan
+says tolerances or capture change, not the bands); nothing ran on a phone
+(human-only).
+
 ## Status at a glance
 
 | Area | State |
