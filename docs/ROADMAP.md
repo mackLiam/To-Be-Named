@@ -714,3 +714,10 @@ Update at each month boundary.
   SQL checks (RLS, grants, RPCs) now run in CI. Re-date Months 4-6 once
   the first real round-trip and print happen; the go-live human checklist
   is in docs/KNOWN-ISSUES.md.
+- **2026-11-10:** First guard printed. Values were set by hand in Onshape and
+  the STL exported by hand; Liam reports it fit well all over. The physical
+  half of the Month 1 gate (printability and fit of the model) is green; the
+  automated half (scan through pipeline through Onshape API to STL) is not
+  yet run. Onshape API access confirmed working (read-only check against the
+  private template copy; its 28 variables match the schema names). No tape
+  data for the printed leg yet. Scan v3 plan written (docs/SCAN-V3-PLAN.md).

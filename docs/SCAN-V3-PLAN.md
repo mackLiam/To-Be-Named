@@ -77,7 +77,7 @@ zero manual CAD per customer.
 | Manual entry derives the 16 inner values as a symmetric split (ISW = ICW = OW/2, ISD = ICD = OD). | apps/app/src/lib/manualMeasurements.ts |
 | The 2D FitPreview draws leg and guard from the 25 values with ellipse sections and template coverage fractions (Club 0.12-0.88 of Leg_Length). | apps/app/src/lib/fitPreview.ts |
 | The meaning of ISW/ISD/ICW/ICD inside the Onshape model is still unconfirmed. | DESIGN.md section 12.2 |
-| The Month 1 exit gate (a real leg scanned, CAD'd and printed) is still red. | ROADMAP.md section 14 |
+| A guard has been printed and fit well (2026-11-10), from values set by hand in Onshape and a hand export. The automated scan-to-STL round trip has not run; Onshape API access is confirmed. | ROADMAP.md section 14, accuracy-log.md |
 
 Read together: the expensive parts work, the solo capture is the weak link,
 and nothing is yet validated on a real leg. This plan fixes the weak link by
@@ -966,16 +966,21 @@ closes it before any estimator code is trusted:
 
 - Fix the "won't save" upload failure from the dev flow logs (blocks every
   real test). Code: Sonnet-tier, apps/app upload path, after the device log.
-- One real leg all the way: scan, measure, Onshape round-trip on the template
-  copy, STL, **a printed guard on that leg**.
+- The printed guard (done by hand, 2026-11-10, fit well): record the exact
+  variable values used and tape-measure that leg at 20/40/60/80%. Comparing
+  the two answers what OW/OD mean in the model, since the template still
+  holds placeholder-scale values (S1_OW 30 mm against a real 60-75 mm).
+- One real leg all the way through the automated path: scan, measure,
+  Onshape API round-trip on the template copy, STL, printed guard.
 - The Zane walkthrough (DESIGN.md 12.2): what ISW/ISD/ICW/ICD mean, and the
   guard sensitivity study that sets the gate tolerances (section 4.6).
 - Run T3 and manual on 5 legs (family), tape-measure, record with
   forms-replay, fill docs/accuracy-log.md. Human-only for the legs.
 - Output: real noise numbers for silhouettes, Vision joints and tape (section
   4.4) and real tolerances (section 4.6).
-- Gate: one printed guard on a real leg, the replay set exists, and the noise
-  numbers and tolerances are written down.
+- Gate: one guard printed through the automated path, the OW/OD semantics
+  settled against the hand-printed guard, the replay set exists, and the
+  noise numbers and tolerances are written down.
 
 ### Phase 0.5: the sweep spike (days, not weeks)
 
@@ -1055,8 +1060,9 @@ bundle.py (MAX_SILHOUETTE_IMAGES) and the fixed stations stand in the way.
   reference only if demand appears.
 
 Relation to ROADMAP.md: the calendar there has the App Store submission this
-week, but its own Month 1 gate (a real leg scanned, CAD'd and printed) is
-still red, and this plan puts that gate inside Phase 0. The calendar from
+week. The physical half of its Month 1 gate is now green (a hand-made guard
+printed and fit), but the automated half is not, and this plan puts it
+inside Phase 0. The calendar from
 Month 4 on is therefore stale now, not at Phase 1. Re-dating it is a
 sequencing decision for Liam (section 15) and lands in ROADMAP.md as soon as
 it is made.

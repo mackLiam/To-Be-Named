@@ -58,4 +58,15 @@ follow-up action.
 
 ## Entries
 
-(none yet: first real captures are ROADMAP.md week 2-3)
+### 2026-11-10 - first printed guard (fit check, not an accuracy entry)
+
+- Capture: none. Values set by hand in Onshape and the STL exported by hand
+  (not through the pipeline).
+- Fit: Liam reports it fit well all over on the leg it was made for.
+- Tape measurements of that leg: none yet.
+- Open: record the exact variable values used for the print. The pipeline's
+  template copy still holds the placeholder values (Leg_Length 200, S1_OW 30,
+  S2_OD 13 mm), far below real leg dimensions. Whether the good fit came from
+  real-sized OW/OD or from placeholder-scale values decides what OW/OD mean in
+  the model (DESIGN.md 12.2). Tape-measuring that leg at 20/40/60/80% turns
+  this print into the first ground-truth entry.
