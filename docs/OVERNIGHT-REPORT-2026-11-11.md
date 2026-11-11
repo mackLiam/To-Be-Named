@@ -32,6 +32,7 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Video harness: Python driver | done (9424e5c) |
 | Iteration on the two test videos | done: both give fixable failures (IMG_3834 bent knee, IMG_3836 knee out of frame); d39e5f1 to b9d9b15 |
 | Bent-knee rule (silhouette v4) | done (b9d9b15); pose decision open |
+| Typed Leg_Length mode (resolves the pose conflict, unwired) | done (e43035b) |
 | Estimator verdict in the harness, prior 0.1.1 | done (5e1ffb3, 89c2e50) |
 | Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
 | Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
@@ -294,7 +295,11 @@ capture is Mac-side only.
   holds there); a knee landmark that does not need the dip; or, my
   recommendation, Leg_Length from one tape number (plain video needs a tape
   value for scale anyway), so the scan only finds the ankle and the four
-  slices stay below where the thigh enters even at 90 degrees. I kept the
+  slices stay below where the thigh enters even at 90 degrees. That option
+  is built and proven on synthetic legs (e43035b: every slice within 0.7%
+  of a straight leg at up to 90 degrees of bend) but not wired; wiring is
+  an optional `leg_length_mm` in capture.json or the manual payload, the
+  handler call, and a Leg_Length override in the measure step. I kept the
   retake (a failed scan is reversible, a short guard is not) and did not
   change the app's capture copy, because the right pose is your call. Until
   then, station and sweep captures in the current pose will fail late with

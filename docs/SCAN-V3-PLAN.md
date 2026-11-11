@@ -369,10 +369,14 @@ of section 4.6 when the verdict asks for one.
    later math change); or **Leg_Length from one tape number**, which a plain
    video needs for scale anyway (section 5.7): the scan then only finds the
    ankle, and the S1 to S4 slices at 20 to 80% of the typed length sit
-   below where the thigh enters (about 84% of leg length at 90 degrees on
-   the synthetic hinge), so a seated pose stays usable. That last option
-   needs a small math change (accept a typed Leg_Length instead of the
-   knee landmark) and the manual-entry diagram for the knee point. Until decided, the app's station copy ("foot flat,
+   below where the thigh enters (87% of leg length at 90 degrees on the
+   synthetic hinge), so a seated pose stays usable. **Built and proven
+   2026-11-11 (e43035b), not wired:** `reconstruct_silhouette(...,
+   leg_length_m=)` measures every S1 to S4 width and depth within 0.7% of
+   a straight leg at up to 90 degrees of bend with the true length typed.
+   Wiring still needed: an optional `leg_length_mm` in capture.json (or the
+   manual payload), the handler call, a Leg_Length override in the measure
+   step, and the manual-entry knee-point diagram. Until decided, the app's station copy ("foot flat,
    shin upright") leads to a bent-knee retake. Untested on a device.
 2. Hold the phone at shin height, about an arm's length away, pointing at the
    shin. The app finds the leg automatically (Vision body pose, as in da1b01b).

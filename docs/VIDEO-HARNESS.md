@@ -218,6 +218,18 @@ generous mask edge at close range widening OW_S3, or a stocky leg) is
 unexplained until tape ground truth exists. The harness therefore has no
 measured real video at v4.
 
+**Typed Leg_Length (e43035b, unwired).** `reconstruct_silhouette` takes an
+optional `leg_length_m` (the user's tape value, converted from mm by the
+caller). The scan then finds only the ankle and cuts at ankle plus the
+typed length. The thigh may enter above S4 (80% of the length) but not
+below it, which stays a bent-knee retake. Above the thigh onset the mesh
+repeats the last section below the thigh. On the hinged synthetic leg the
+thigh onset is at 105%, 100%, 96% and 87% of leg length at 45, 60, 75 and 90
+degrees, and with the true length typed every S1..S4 OW and OD is within
+0.7% of the straight leg at all of them, where the landmark rule retakes
+from 60 degrees. A seated pose is measurable once a tape value is supplied.
+Untested on a real capture.
+
 **IMG_3836.** The upside-down phone made camera image-up point 163 degrees
 away from the leg's up, so "up" must come from the scene (floor) or the leg
 itself, never from how the phone was held. The pointed foot ran its toes off
