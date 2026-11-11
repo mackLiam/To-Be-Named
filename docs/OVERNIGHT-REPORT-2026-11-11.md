@@ -12,7 +12,7 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Video harness: Python driver | done (9424e5c) |
 | Iteration on the two test videos | round 2 in progress |
 | Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
-| Phase 2 3D viewer spike (r3f + expo-gl) | in progress |
+| Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
 | Admin product management | round 1 in progress (catalog depth, photos; migrations 0022, 0023) |
 | UI and UX pass | not started |
 | docs/BUSINESS-GAPS.md | done (5ad999e) |
@@ -75,6 +75,16 @@ every milestone, so the latest commit on the branch holds the latest state.
   need Liam's accounts, money or legal text; it started in parallel with the
   scan agents because it was read-only and took nothing from them.
 
+- Phase 2 viewer spike (d373476), plan risk 6: three 0.187.0,
+  @react-three/fiber 9.8.2 and expo-gl 57.0.3 (all MIT) install with no peer
+  conflicts under Expo 57, typecheck, and bundle for web, iOS and Android.
+  Rendered on web in headless Chrome (yellow leg, Club band at 0.2 to 0.8).
+  three is a 1 MB lazy chunk on web and adds about 2.7 MB of bytecode on
+  native. The spike found that the shared leg-model contract could not load
+  in React Native (it pulled in a module that reads the schema with node:fs);
+  fixed in cfb44c0 with bundle-safe subpath exports. The viewer is on a
+  dev-only route; no production screen uses it yet.
+
 ## Video results (counts and ratios only)
 
 Baseline, production math unchanged (9424e5c):
@@ -120,6 +130,13 @@ outside the frame".
 
 Nothing from this session has run on a phone. Everything below that touches
 capture is Mac-side only.
+
+- 3D viewer on iOS and Android: needs a new EAS dev client build that
+  includes expo-gl. On the current dev client the viewer shows its fallback
+  text. Touch orbit and the plan 7.6 performance budget (iPhone 12, 60 fps,
+  first render under 300 ms) are unmeasured.
+- The forms-video CLI and harness run on the Mac only; the capture lessons
+  they produced (section below) are not yet in the phone build.
 
 ## TODO(liam) defaults taken
 
