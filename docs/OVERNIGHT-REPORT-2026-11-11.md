@@ -263,10 +263,10 @@ capture is Mac-side only.
   range. If its knee really was at the flat stretch, the window rule is too
   strict for profiles that flatten before the thigh, and a flatness test
   could replace it.
-- Estimator: prior 0.1.0's mean OD/OW sits 0.19 to 0.31 above the harness's
-  synthetic leg as extraction measures it (the prior is derived from the
-  silhouette test leg's semi-axes). Check the prior derivation against
-  extraction's OW/OD definitions before Phase 1b.
+- Estimator: prior 0.1.1 (89c2e50) fixed the OW/OD definition, but
+  extraction's OW is the larger section extent, not the anatomical
+  mediolateral width, so the leg model's x and y inherit that until the
+  anatomical frame lands (KNOWN-ISSUES).
 - Estimator: a scale-free capture needs two tape values (Leg_Length plus one
   depth) under the provisional numbers, not one as plan 5.7 first said.
 - Scan: segment.ANKLE_SEARCH_FRACTION (40% of the profile) is shared with the
@@ -345,8 +345,10 @@ None.
   numbers: a full sweep comes out "required" (Leg_Length binds), and a
   scale-free capture needs two tape values, not one.
 - **Prior 0.1.0 used the wrong width definition** (anatomical mediolateral
-  instead of extraction's larger section extent), found by the harness
-  estimator stage; fixed as prior 0.1.1 (see below if it landed).
+  instead of extraction's larger section extent): its OD/OW was 1.10 to
+  1.17 where extraction reads 0.86 to 0.91 on the same synthetic leg. Found
+  by the harness estimator stage and fixed as prior 0.1.1 (89c2e50), now
+  the default; 0.1.0 is kept unchanged.
 - Rule slips by subagents: several ran a read-only `git diff --stat` despite
   the no-git rule (no effect). One test file and two others had literal
   dash characters in assertions; replaced with escapes before commit.
