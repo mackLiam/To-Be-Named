@@ -12,6 +12,21 @@ finishing a task checks this file for anything its change closes.
 
 ## Open
 
+### 2026-11-11: low findings from the overnight security review, not yet fixed
+
+- Admin customer search submits by GET, so customer emails land in the URL,
+  hosting request logs and browser history
+  (`apps/web/src/app/admin/customers/page.tsx`). Close by: POST through a
+  server action that redirects to a URL without the email.
+- A Stripe refund that later fails is never decremented: the ledger keeps
+  its creation status and `stripe_refunded_cents` only rises (0025), so the
+  admin panel under-offers the remaining amount (the safe direction). Close
+  by: handling `charge.refund.updated` to update the ledger status.
+- `STRIPE_ALLOW_PROMOTION_CODES=true` with a 100%-off code completes as
+  `no_payment_required`, which the webhook ignores, leaving the order in
+  `pending_payment` forever. Close by: handling that status explicitly, or
+  never creating full-discount codes (documented in .env.example).
+
 ### 2026-11-11: admin segment loading states stream a 200 before the admin check
 
 - `apps/web/src/app/admin/orders/[id]/loading.tsx` and
