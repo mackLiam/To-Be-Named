@@ -11,12 +11,21 @@ from typing import Any
 import numpy as np
 import pytest
 from scipy.interpolate import PchipInterpolator
-from test_silhouette import ANKLE_H, KNEE_H, PROFILE
+from test_silhouette import ANKLE_H, KNEE_H, PROFILE, truth_values
 
 from forms_pipeline.contract import SCHEMA
 from forms_pipeline.shape.errors import EstimatorError, PriorError
-from forms_pipeline.shape.model import FIT_CRITICAL_KEYS, GRID_T, LEG_LENGTH_KEY, N_STATE, K
+from forms_pipeline.shape.model import (
+    FIT_CRITICAL_KEYS,
+    GRID_T,
+    LEG_LENGTH_KEY,
+    N_STATE,
+    SLICE_K,
+    K,
+    project,
+)
 from forms_pipeline.shape.prior import (
+    DEFAULT_PRIOR_VERSION,
     MAX_PRIOR_BYTES,
     PRIORS_DIR,
     Prior,
@@ -26,7 +35,9 @@ from forms_pipeline.shape.prior import (
     read_prior_file,
 )
 
-SHIPPED = PRIORS_DIR / "prior-0.1.0.json"
+SHIPPED = PRIORS_DIR / "prior-0.1.1.json"
+LEGACY = "0.1.0"  # superseded, kept loadable: versions are never edited in place
+OD_OW_TOL = 0.02
 STATURE_ENTRY = {
     "name": "stature_mm",
     "transform": "log",
@@ -51,8 +62,9 @@ def _no_digits(exc: BaseException) -> bool:
 
 
 def test_shipped_prior_validates() -> None:
+    assert DEFAULT_PRIOR_VERSION == "0.1.1"
     prior = load_prior()
-    assert prior.prior_version == "0.1.0"
+    assert prior.prior_version == "0.1.1"
     assert prior.schema_version == "1.1.0"
     assert prior.provisional is True
     assert prior.covariates == ()
@@ -61,14 +73,53 @@ def test_shipped_prior_validates() -> None:
     assert "TODO(liam)" in shipped_doc()["provenance"]
 
 
-def test_mean_matches_its_provenance() -> None:
+def _semi_axes() -> np.ndarray:
     pchip = PchipInterpolator(PROFILE[:, 0], PROFILE[:, 1:], axis=0)
-    h = ANKLE_H + GRID_T * (KNEE_H - ANKLE_H)
-    a = pchip(h)
+    return pchip(ANKLE_H + GRID_T * (KNEE_H - ANKLE_H))[:, :2]
+
+
+def test_mean_matches_its_provenance() -> None:
+    """ESTIMATOR-V1 3: OW is the larger section extent, OD the smaller, as in extraction."""
+    a, b = _semi_axes().T
     prior = load_prior()
     assert prior.mean[0] == pytest.approx(math.log(380.0), abs=1e-5)
-    np.testing.assert_allclose(prior.mean[1 : 1 + K], np.log(2000.0 * a[:, 0]), atol=1e-5)
-    np.testing.assert_allclose(prior.mean[1 + K :], np.log(2000.0 * a[:, 1]), atol=1e-5)
+    np.testing.assert_allclose(prior.mean[1 : 1 + K], np.log(2000.0 * np.maximum(a, b)), atol=1e-5)
+    np.testing.assert_allclose(prior.mean[1 + K :], np.log(2000.0 * np.minimum(a, b)), atol=1e-5)
+    assert "max(a, b)" in shipped_doc()["provenance"]
+
+
+def test_legacy_mean_matches_its_own_provenance() -> None:
+    """Record of 0.1.0: OW from the mediolateral semi-axis, OD from the forward one."""
+    a, b = _semi_axes().T
+    prior = load_prior(LEGACY)
+    assert prior.prior_version == LEGACY
+    assert prior.mean[0] == pytest.approx(math.log(380.0), abs=1e-5)
+    np.testing.assert_allclose(prior.mean[1 : 1 + K], np.log(2000.0 * a), atol=1e-5)
+    np.testing.assert_allclose(prior.mean[1 + K :], np.log(2000.0 * b), atol=1e-5)
+
+
+def test_only_mean_version_and_provenance_differ_from_legacy() -> None:
+    legacy = json.loads((PRIORS_DIR / f"prior-{LEGACY}.json").read_text(encoding="utf-8"))
+    doc = shipped_doc()
+    for key in set(doc) - {"prior_version", "provenance", "mean"}:
+        assert doc[key] == legacy[key], key
+    assert doc["mean"]["log_L"] == legacy["mean"]["log_L"]
+
+
+def _od_ow_gap(prior_version: str) -> float:
+    """Largest |OD/OW| difference at S1..S4 between a prior mean and extraction on the truth leg."""
+    mean = project(load_prior(prior_version).mean)
+    truth = truth_values()
+    return max(
+        abs(mean[f"{s}_OD"] / mean[f"{s}_OW"] - truth[f"{s}_OD"] / truth[f"{s}_OW"])
+        for s in SLICE_K
+    )
+
+
+def test_mean_od_ow_matches_extraction_on_the_truth_leg() -> None:
+    """The prior and the observations must agree on which extent is OW (ESTIMATOR-V1 3)."""
+    assert _od_ow_gap(DEFAULT_PRIOR_VERSION) <= OD_OW_TOL
+    assert _od_ow_gap(LEGACY) > OD_OW_TOL  # the 0.1.0 definition mismatch this pins
 
 
 def test_level_sigmas_rederive_from_the_schema() -> None:

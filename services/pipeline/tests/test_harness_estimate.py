@@ -4,11 +4,17 @@ Ratio tolerance. The posterior is the raw (extracted) measurement shrunk toward
 the provisional prior's mean shape, so a posterior ratio's distance from the
 truth is bounded by the raw ratio's own harness tolerance (test_harness_run:
 0.008 per slice, 0.025 for Leg_Length/OW_S3) plus the shrink fraction times the
-prior's own distance from the truth. Prior 0.1.0's mean is the test_silhouette
-leg's semi-axes, not its extraction-frame extents, so its OD/OW sits 0.19 to
-0.31 above this truth; that gap is why the bound needs the prior term. Observed
-2026-11-11 on this bundle (12 keyframes, 143 degree span): the largest shrink
-fraction is 0.056 (S1 OW/OW_S3); SHRINK_MAX = 0.1 gives about 1.8x headroom.
+prior's own distance from the truth. The shipped prior 0.1.1's mean is
+extraction on this truth leg (ESTIMATOR-V1 3), so the prior term vanishes and
+the posterior must sit within the raw tolerance alone. Observed 2026-11-11 on
+this bundle (12 keyframes, 143 degree span): largest |post - truth| 0.0037 per
+slice (S1 OW/OW_S3), 0.0149 for Leg_Length/OW_S3.
+
+Shrink. A prior equal to the truth cannot show that the capture's shape
+dominates, so that check runs the same bundle against the superseded prior
+0.1.0, whose OD/OW sits 0.19 to 0.31 above this truth (OW from the semi-axis
+across the leg). Observed 2026-11-11: the largest shrink fraction is 0.056
+(S1 OW/OW_S3); SHRINK_MAX = 0.1 gives about 1.8x headroom.
 """
 
 from __future__ import annotations
@@ -31,6 +37,8 @@ from forms_pipeline.shape.prior import load_prior
 SLICE_RATIO_TOL = 0.008
 LEG_RATIO_TOL = 0.025
 SHRINK_MAX = 0.1
+FAR_PRIOR = "0.1.0"
+PRIOR_TRUTH_TOL = 1e-4  # the shipped mean is frozen to 6 decimals in log
 ROUNDING = 1e-3  # the row's floats are rounded to 4 decimals
 OPTIONS = run.Options(max_keyframes=12)
 VERDICTS = ("none", "optional", "required", "fail")
@@ -46,14 +54,22 @@ def truth_ratios() -> dict[str, float]:
 
 
 @functools.lru_cache
-def prior_ratios() -> dict[str, float]:
-    return est.report_ratios(project(load_prior(est.PRIOR_VERSION).mean))
+def prior_ratios(prior_version: str) -> dict[str, float]:
+    return est.report_ratios(project(load_prior(prior_version).mean))
 
 
 @pytest.fixture(scope="module")
 def row(tmp_path_factory: pytest.TempPathFactory) -> dict:
     root = tmp_path_factory.mktemp("est")
     return run.analyze_bundle(write_bundle(root / "plain", scene()), root / "out", OPTIONS)
+
+
+@pytest.fixture(scope="module")
+def far_prior_row(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    root = tmp_path_factory.mktemp("est_far")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(est, "PRIOR_VERSION", FAR_PRIOR)
+        return run.analyze_bundle(write_bundle(root / "plain", scene()), root / "out", OPTIONS)
 
 
 def _assert_gate_fields(section: dict) -> None:
@@ -71,7 +87,7 @@ def test_estimator_runs_on_a_successful_row(row: dict) -> None:
     e = row["estimator"]
     assert e["status"] == "ok" and e["reason"] is None
     assert e["provisional"] is True and e["prior_provisional"] is True
-    assert (e["prior_version"], e["source"], e["stature"]) == ("0.1.0", "scale_free", None)
+    assert (e["prior_version"], e["source"], e["stature"]) == ("0.1.1", "scale_free", None)
     assert e["azimuth_span_deg"] == row["silhouette"]["azimuth_span_deg"]
     assert 4 <= e["heights_observed"] <= e["heights_observable"] == 19
     _assert_gate_fields(e)
@@ -79,7 +95,7 @@ def test_estimator_runs_on_a_successful_row(row: dict) -> None:
     assert set(e["raw_ratios"]) == set(e["posterior_ratios"]) == RATIO_KEYS
     assert set(e["ratio_change_from_raw"]) == RATIO_KEYS
     assert set(e["relative_sigma"]) == set(FIT_CRITICAL_KEYS)
-    assert set(e["r_after_action"]) == set(FIT_CRITICAL_KEYS)  # no stature in prior 0.1.0
+    assert set(e["r_after_action"]) == set(FIT_CRITICAL_KEYS)  # no stature in prior 0.1.1
     json.dumps(row)
 
 
@@ -93,11 +109,21 @@ def test_raw_ratios_are_the_rows_extracted_ratios(row: dict) -> None:
 
 
 def test_posterior_ratios_stay_near_the_truth(row: dict) -> None:
-    e, truth, prior = row["estimator"], truth_ratios(), prior_ratios()
+    e, truth, prior = row["estimator"], truth_ratios(), prior_ratios(est.PRIOR_VERSION)
     for key in RATIO_KEYS:
         raw, post = e["raw_ratios"][key], e["posterior_ratios"][key]
         assert e["ratio_change_from_raw"][key] == pytest.approx(post - raw, abs=ROUNDING)
-        # The scale-free capture's shape dominates the provisional prior's.
+        assert abs(prior[key] - truth[key]) <= PRIOR_TRUTH_TOL, key
+        raw_tol = LEG_RATIO_TOL if key.startswith("Leg_Length") else SLICE_RATIO_TOL
+        assert abs(post - truth[key]) <= raw_tol, key
+
+
+def test_capture_shape_dominates_a_far_prior(far_prior_row: dict) -> None:
+    e, truth, prior = far_prior_row["estimator"], truth_ratios(), prior_ratios(FAR_PRIOR)
+    assert e["status"] == "ok" and e["prior_version"] == FAR_PRIOR
+    assert max(abs(prior[f"S{i} OD/OW"] - truth[f"S{i} OD/OW"]) for i in range(1, 5)) > 0.15
+    for key in RATIO_KEYS:
+        raw, post = e["raw_ratios"][key], e["posterior_ratios"][key]
         assert abs(post - raw) <= SHRINK_MAX * abs(prior[key] - raw) + ROUNDING, key
         raw_tol = LEG_RATIO_TOL if key.startswith("Leg_Length") else SLICE_RATIO_TOL
         assert abs(post - truth[key]) <= raw_tol + SHRINK_MAX * abs(prior[key] - truth[key]), key
@@ -129,7 +155,7 @@ def test_markdown_labels_everything_provisional_and_nominal(row: dict) -> None:
     md = run.render_markdown([row], [])
     section = md[md.index(est.HEADING) :]
     assert f"### {est.HEADING}" in md
-    for phrase in ("Provisional prior 0.1.0", "provisional noise and tolerances",
+    for phrase in ("Provisional prior 0.1.1", "provisional noise and tolerances",
                    "r (nominal scale)", "nothing here is a real size",
                    "Hypothetical, not a measurement", "(nominal value)",
                    "never changes the row's pass or fail"):  # fmt: skip

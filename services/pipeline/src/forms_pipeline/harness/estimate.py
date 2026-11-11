@@ -29,7 +29,7 @@ from forms_pipeline.shape.observe import (
 )
 from forms_pipeline.shape.prior import load_prior
 
-PRIOR_VERSION = "0.1.0"
+PRIOR_VERSION = "0.1.1"
 SOURCE = "scale_free"
 HEADING = "Estimator (provisional prior, report only)"
 OK = "ok"
