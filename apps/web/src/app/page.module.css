@@ -3,12 +3,6 @@
  * indented from the left, and a narrow spec strip pushed right. Rules, not
  * cards; no shadows; brick only on the headline accent and the guard spine. */
 
-.page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
 /* Hero */
 .hero {
   position: relative;
@@ -164,12 +158,24 @@
 }
 
 .cutNote {
+  display: inline-block;
   font-family: var(--font-body-stack);
   font-weight: 500;
   font-size: 16px;
   letter-spacing: 0;
   color: var(--text-secondary);
-  white-space: nowrap;
+}
+
+/* Display-size link: brown text, brick 600 rule (4.7:1 on yellow). */
+.mail {
+  color: var(--text-primary);
+  text-decoration: none;
+  border-bottom: 3px solid var(--action);
+  overflow-wrap: anywhere;
+}
+
+.mail:hover {
+  color: var(--action);
 }
 
 @media (max-width: 860px) {

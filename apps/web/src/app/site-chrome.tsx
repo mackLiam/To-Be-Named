@@ -3,32 +3,53 @@ import Link from 'next/link';
 import { BRAND_NAME, SUPPORT_EMAIL } from '@forms/shared/brand';
 
 import styles from './site-chrome.module.css';
+import { Wordmark } from './Wordmark';
 
-export function SiteHeader() {
+/**
+ * Every public page: skip link, brown header band, <main id="main">, brown
+ * footer band. Header and footer sit outside <main> so they keep their
+ * banner and contentinfo landmarks.
+ */
+export function SitePage({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={styles.frame}>
+      <a href="#main" className={styles.skip}>
+        Skip to content
+      </a>
+      <SiteHeader />
+      <main id="main" className={`${styles.main} ${className ?? ''}`}>
+        {children}
+      </main>
+      <SiteFooter />
+    </div>
+  );
+}
+
+function SiteHeader() {
   return (
     <header className={styles.topbar}>
       <Link href="/" aria-label={`${BRAND_NAME} home`} className={styles.home}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- static SVG wordmark, nothing to optimize */}
-        <img src="/brand/wordmark-reverse-for-brown.svg" alt="" className={styles.wordmark} />
+        <Wordmark surface="brown" decorative className={styles.wordmark} />
       </Link>
       <span className={styles.status}>Coming soon</span>
     </header>
   );
 }
 
-export function SiteFooter() {
+function SiteFooter() {
   return (
     <footer className={styles.footer}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- static SVG wordmark, nothing to optimize */}
-      <img
-        src="/brand/wordmark-reverse-for-brown.svg"
-        alt={BRAND_NAME}
-        className={styles.footerMark}
-      />
+      <Wordmark surface="brown" className={styles.footerMark} />
       <nav aria-label="Site" className={styles.nav}>
+        <Link href="/support">Support</Link>
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Terms</Link>
-        <Link href="/support">Support</Link>
         <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
       </nav>
     </footer>

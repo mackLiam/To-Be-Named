@@ -2,20 +2,23 @@ import type { Metadata } from 'next';
 
 import { BRAND_NAME, SUPPORT_EMAIL } from '@forms/shared/brand';
 
-import styles from '../prose.module.css';
-import { SiteFooter, SiteHeader } from '../site-chrome';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
+import styles from '../prose.module.css';
+import { SitePage } from '../site-chrome';
+
+export const metadata: Metadata = pageMetadata({
   title: `Support - ${BRAND_NAME}`,
   description: `Help with scanning, orders and fit for ${BRAND_NAME} shin guards.`,
-};
+  path: '/support',
+  siteName: BRAND_NAME,
+});
 
 const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;
 
 export default function SupportPage() {
   return (
-    <main className={styles.main}>
-      <SiteHeader />
+    <SitePage>
       <article className={styles.article}>
         <p className={styles.kicker}>Support</p>
         <h1 className={styles.title}>Get help.</h1>
@@ -54,16 +57,7 @@ export default function SupportPage() {
 
           <section>
             <h2>Device requirements</h2>
-            <ul>
-              <li>
-                <strong>Fastest:</strong> iPhone 12 Pro or a later Pro model with LiDAR, on iOS 17
-                or later.
-              </li>
-              <li>
-                <strong>Other iPhones</strong> use the guided photo capture instead. It works, but
-                it takes longer.
-              </li>
-            </ul>
+            <p>Any iPhone on iOS 17 or later.</p>
           </section>
 
           <section>
@@ -72,7 +66,6 @@ export default function SupportPage() {
           </section>
         </div>
       </article>
-      <SiteFooter />
-    </main>
+    </SitePage>
   );
 }

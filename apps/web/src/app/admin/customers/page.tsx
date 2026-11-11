@@ -5,6 +5,7 @@ import { BRAND_NAME } from '@forms/shared/brand';
 
 import styles from '../admin.module.css';
 import { AdminShell } from '../AdminShell';
+import { Pager } from '../Pager';
 import { requireAdmin } from '@/lib/admin-auth';
 import { accountStateLabel, parseCustomerQuery, scanSummary } from '@/lib/customers';
 import { searchCustomers } from '@/lib/data';
@@ -87,7 +88,7 @@ export default async function CustomersPage({
             <option value="exact">Exact</option>
           </select>
         </label>
-        <button type="submit" className={styles.downloadBtn}>
+        <button type="submit" className={styles.primaryBtn}>
           Search
         </button>
       </form>
@@ -157,23 +158,11 @@ export default async function CustomersPage({
             </table>
           </div>
           {query.kind === 'search' ? (
-            <div className={styles.pager}>
-              <Link
-                href={href(query.email, query.exact, Math.max(1, page - 1))}
-                className={`${styles.pageBtn} ${page <= 1 ? styles.pageBtnDisabled : ''}`}
-                aria-disabled={page <= 1}
-              >
-                Previous
-              </Link>
-              <span>Page {page}</span>
-              <Link
-                href={href(query.email, query.exact, page + 1)}
-                className={`${styles.pageBtn} ${result.hasNext ? '' : styles.pageBtnDisabled}`}
-                aria-disabled={!result.hasNext}
-              >
-                Next
-              </Link>
-            </div>
+            <Pager
+              page={page}
+              prevHref={page <= 1 ? null : href(query.email, query.exact, Math.max(1, page - 1))}
+              nextHref={result.hasNext ? href(query.email, query.exact, page + 1) : null}
+            />
           ) : null}
         </>
       ) : null}

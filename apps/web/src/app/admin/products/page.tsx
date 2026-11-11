@@ -6,6 +6,7 @@ import { BRAND_NAME } from '@forms/shared/brand';
 import { reorderProduct, toggleProduct } from '../actions';
 import styles from '../admin.module.css';
 import { AdminShell } from '../AdminShell';
+import { SubmitButton } from '../SubmitButton';
 import { requireAdmin } from '@/lib/admin-auth';
 import { productStateMeta, resolveShopImage, sizingModesLabel } from '@/lib/catalog';
 import { listMainImages, listProducts } from '@/lib/data';
@@ -50,7 +51,7 @@ export default async function ProductsPage({
             paused and archived are hidden. Archived products stay on past orders.
           </p>
         </div>
-        <Link href="/admin/products/new" className={styles.downloadBtn}>
+        <Link href="/admin/products/new" className={styles.primaryBtn}>
           New product
         </Link>
       </div>
@@ -158,9 +159,12 @@ export default async function ProductsPage({
                       <form action={toggleProduct} className={styles.inlineForm}>
                         <input type="hidden" name="id" value={product.id} />
                         <input type="hidden" name="active" value={String(!product.active)} />
-                        <button type="submit" className={styles.secondaryBtn}>
+                        <SubmitButton
+                          pendingLabel={product.active ? 'Archiving' : 'Restoring'}
+                          variant="secondary"
+                        >
                           {product.active ? 'Archive' : 'Restore'}
-                        </button>
+                        </SubmitButton>
                       </form>
                     </td>
                   </tr>

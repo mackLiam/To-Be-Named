@@ -7,6 +7,7 @@ import { BRAND_NAME } from '@forms/shared/brand';
 import styles from '../../admin.module.css';
 import { AdminShell } from '../../AdminShell';
 import { StatusBadge } from '../../StatusBadge';
+import { SubmitButton } from '../../SubmitButton';
 import { retryJob } from '../actions';
 import { requireAdmin } from '@/lib/admin-auth';
 import { getTriage } from '@/lib/data';
@@ -67,21 +68,23 @@ export default async function JobDetailPage({
         </div>
       </div>
 
-      {error ? <p className={styles.formError}>{error}</p> : null}
+      {error ? (
+        <p className={styles.formError} role="alert">
+          {error}
+        </p>
+      ) : null}
 
       {job.status === 'dead_letter' ? (
         <form action={retryJob} className={styles.actionBar}>
           <input type="hidden" name="id" value={job.id} />
-          <button type="submit" className={styles.downloadBtn}>
-            Retry job
-          </button>
+          <SubmitButton pendingLabel="Retrying">Retry job</SubmitButton>
           <p className={styles.actionNote}>
             Re-queues the job at its failed step with attempts reset.
           </p>
         </form>
       ) : null}
 
-      <p className={styles.sectionLabel}>Job state</p>
+      <h2 className={styles.sectionLabel}>Job state</h2>
       <div className={styles.factGrid}>
         <div className={styles.fact}>
           <div className={styles.factTerm}>Job id</div>
@@ -103,7 +106,7 @@ export default async function JobDetailPage({
 
       {job.error ? (
         <>
-          <p className={styles.sectionLabel}>Error payload</p>
+          <h2 className={styles.sectionLabel}>Error payload</h2>
           <div className={styles.errorPayload}>
             {job.error.message ? (
               <p className={styles.errorMessage}>{job.error.message}</p>
@@ -129,7 +132,7 @@ export default async function JobDetailPage({
         </>
       ) : null}
 
-      <p className={styles.sectionLabel}>Measurements (mm)</p>
+      <h2 className={styles.sectionLabel}>Measurements (mm)</h2>
       {hasValues ? (
         <>
           <div className={styles.legLength}>
@@ -180,9 +183,9 @@ export default async function JobDetailPage({
         </p>
       )}
 
-      <p className={styles.sectionLabel}>Break-glass STL download</p>
+      <h2 className={styles.sectionLabel}>Break-glass STL download</h2>
       <div className={styles.actionBar}>
-        <a className={styles.downloadBtn} href={`/admin/api/stl/${job.id}`}>
+        <a className={styles.primaryBtn} href={`/admin/api/stl/${job.id}`}>
           Download STL
         </a>
         <p className={styles.actionNote}>

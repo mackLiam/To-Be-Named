@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { BRAND_NAME } from '@forms/shared/brand';
 
-import styles from '../../page.module.css';
+import styles from '../../prose.module.css';
+import { SitePage } from '../../site-chrome';
 
 // Static by design: the ?order= id is untrusted and never read or shown.
 export const metadata: Metadata = {
@@ -12,28 +14,23 @@ export const metadata: Metadata = {
 
 export default function CheckoutCancelledPage() {
   return (
-    <main className={styles.page}>
-      <header className={styles.topbar}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- static SVG wordmark, nothing to optimize */}
-        <img
-          src="/brand/wordmark-reverse-for-brown.svg"
-          alt={BRAND_NAME}
-          className={styles.wordmark}
-        />
-      </header>
-
-      <section className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <p className={styles.kicker}>Checkout cancelled</p>
-          <h1 className={styles.headline}>
-            No charge <span className={styles.accent}>was made.</span>
-          </h1>
-          <p className={styles.subhead}>
-            Your payment was not taken. You can start the order again from the Shop in the{' '}
-            {BRAND_NAME} app whenever you are ready.
-          </p>
+    <SitePage>
+      <article className={styles.article}>
+        <p className={styles.kicker}>Checkout cancelled</p>
+        <h1 className={styles.title}>No charge was made.</h1>
+        <p className={styles.lede}>
+          Your payment was not taken. You can start the order again from the Shop in the{' '}
+          {BRAND_NAME} app whenever you are ready.
+        </p>
+        <div className={styles.actions}>
+          <a href="zells://shop" className={styles.action}>
+            Open the app
+          </a>
+          <Link href="/support" className={styles.textAction}>
+            Get help
+          </Link>
         </div>
-      </section>
-    </main>
+      </article>
+    </SitePage>
   );
 }

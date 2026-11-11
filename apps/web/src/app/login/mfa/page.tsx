@@ -4,6 +4,8 @@ import { notFound, redirect } from 'next/navigation';
 import { BRAND_NAME } from '@forms/shared/brand';
 
 import styles from '../../admin/admin.module.css';
+import { SubmitButton } from '../../admin/SubmitButton';
+import { Wordmark } from '../../Wordmark';
 import { isTotpCode, pickTotpFactorId, staleTotpFactorIds } from '@/lib/access';
 import { getAdminDecision } from '@/lib/admin-auth';
 import { createAnonServerClient } from '@/lib/supabase-server';
@@ -91,12 +93,24 @@ export default async function MfaPage({
 
   return (
     <main className={styles.loginWrap}>
+      <Wordmark surface="yellow" className={styles.loginMark} />
       <h1 className={styles.title}>
         {step === 'mfa_enroll' ? 'Set up your authenticator' : 'Enter your code'}
       </h1>
-      {sp.error ? <p className={styles.formError}>That code did not work. Try again.</p> : null}
+      {sp.error ? (
+        <p className={styles.formError} role="alert">
+          That code did not work. Try again.
+        </p>
+      ) : null}
       {step === 'mfa_enroll' && !enrollment ? (
-        <p className={styles.formError}>Could not start setup. Reload the page to try again.</p>
+        <div className={styles.errorState} role="alert">
+          <p className={styles.formError}>Authenticator setup failed to start.</p>
+          {/* A plain anchor, not Link: rendering this page enrolls a factor,
+              so it must never be prefetched. */}
+          <a href="/login/mfa" className={styles.secondaryBtn}>
+            Try again
+          </a>
+        </div>
       ) : (
         <form action={verifyCode} className={styles.form}>
           {enrollment ? (
@@ -106,7 +120,13 @@ export default async function MfaPage({
                 visit to this page makes a new code; remove any older entry from your app.
               </p>
               {/* eslint-disable-next-line @next/next/no-img-element -- SVG data URI from Supabase, nothing to optimize */}
-              <img src={enrollment.qr} alt="Authenticator QR code" width={180} height={180} />
+              <img
+                src={enrollment.qr}
+                alt="Authenticator QR code"
+                width={180}
+                height={180}
+                className={styles.qr}
+              />
               <div className={styles.field}>
                 <span className={styles.fieldLabel}>Or enter this key</span>
                 <code className={styles.mono}>{enrollment.secret}</code>
@@ -129,15 +149,13 @@ export default async function MfaPage({
               required
             />
           </label>
-          <button type="submit" className={styles.downloadBtn}>
-            Verify
-          </button>
+          <SubmitButton pendingLabel="Checking code">Verify</SubmitButton>
         </form>
       )}
       <form action={signOut} className={styles.form}>
-        <button type="submit" className={styles.secondaryBtn}>
+        <SubmitButton pendingLabel="Signing out" variant="secondary">
           Sign out
-        </button>
+        </SubmitButton>
       </form>
     </main>
   );

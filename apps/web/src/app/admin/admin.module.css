@@ -13,26 +13,40 @@
   background: var(--bg);
 }
 
-/* Top bar: solid brown band, like the marketing header, with a panel tag. */
+/* Top bar: solid brown band, like the marketing header, with a panel tag.
+ * Below 900px the section links drop to their own row and scroll sideways
+ * inside it, so the page itself never scrolls horizontally at 360px. */
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-lg);
-  padding: var(--space-sm) var(--space-lg);
+  gap: 0 var(--space-lg);
+  padding: 0 var(--space-lg);
   background: var(--brown-900);
   color: var(--yellow);
+}
+
+/* Brick 600 focus ring is invisible on brown: yellow here. */
+.topbar :focus-visible {
+  outline-color: var(--on-dark);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  min-height: var(--control);
+  text-decoration: none;
 }
 
 .wordmark {
+  display: block;
   height: 18px;
   width: auto;
+}
+
+.signOut {
+  margin-left: auto;
 }
 
 .panelTag {
@@ -50,20 +64,47 @@
 .nav {
   display: flex;
   gap: var(--space-md);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .navLink {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: var(--hit);
   font-family: var(--font-body-stack);
   font-weight: 700;
   font-size: 13px;
   letter-spacing: 0.04em;
   color: var(--on-dark-muted);
   text-decoration: none;
-  padding: 4px 2px;
+  padding: 0 2px;
+  border-bottom: 3px solid transparent;
+  border-top: 3px solid transparent;
+  white-space: nowrap;
 }
 
 .navLink:hover {
   color: var(--on-dark);
+}
+
+/* Current section: yellow text over a bright brick rule (on brown only). */
+.navLink[aria-current='page'] {
+  color: var(--on-dark);
+  border-bottom-color: var(--accent-on-dark);
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    padding: 0 var(--space-md);
+  }
+  .nav {
+    order: 3;
+    flex: 1 0 100%;
+    gap: var(--space-lg);
+  }
 }
 
 /* Fake-data warning: a loud yellow-on-brick strip so it can never be mistaken
@@ -83,6 +124,7 @@
   padding: var(--space-lg);
   width: 100%;
   max-width: 1180px;
+  min-width: 0;
 }
 
 /* Page heading block. */
@@ -117,8 +159,10 @@
   font-size: 13px;
   color: var(--text-secondary);
   text-decoration: none;
-  display: inline-block;
-  margin-bottom: var(--space-md);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit);
+  margin-bottom: var(--space-xs);
 }
 
 .backLink:hover {
@@ -131,6 +175,8 @@
 .filterBar {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-end;
+  max-width: 100%;
   gap: 2px;
   margin-bottom: var(--space-md);
   border: 1px solid var(--border);
@@ -141,13 +187,16 @@
 }
 
 .filter {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit);
   font-family: var(--font-body-stack);
   font-weight: 700;
   font-size: 12px;
   letter-spacing: 0.02em;
   color: var(--text-secondary);
   text-decoration: none;
-  padding: 6px 12px;
+  padding: 0 12px;
   border-radius: var(--radius);
   white-space: nowrap;
 }
@@ -309,22 +358,28 @@
 }
 
 .pageBtn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit);
   font-weight: 700;
   color: var(--brown-900);
   text-decoration: none;
   border: 1px solid var(--brown-300);
   border-radius: var(--radius);
-  padding: 6px 14px;
+  padding: 0 var(--space-md);
 }
 
 .pageBtn:hover {
   border-color: var(--brown-900);
 }
 
-.pageBtnDisabled {
-  color: var(--brown-300);
+/* Unavailable: the flat kraft block every disabled control uses. */
+.pageBtnDisabled,
+.pageBtnDisabled:hover {
+  color: var(--text-tertiary);
+  background: var(--border);
   border-color: var(--border);
-  pointer-events: none;
+  cursor: not-allowed;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -396,7 +451,8 @@
 }
 
 .codeBlock {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-body-stack);
+  font-variant-numeric: tabular-nums;
   font-size: 12px;
   line-height: 1.5;
   color: var(--on-dark-muted);
@@ -515,11 +571,10 @@
   color: var(--disabled);
 }
 
-/* A tripped value: yellow text on action brick, matching the warn badge, so a failed
- * gate is visible at a glance without relying on color alone (the gate range
- * is spelled out too). */
+/* A tripped value is a failure: yellow text on oxblood (6.8:1), never brick,
+ * and never color alone (the gate range is spelled out too). */
 .dimBad {
-  background: var(--action);
+  background: var(--danger);
 }
 
 .dimBad .dimName,
@@ -532,7 +587,7 @@
   display: block;
   font-family: var(--font-body-stack);
   font-weight: 700;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--brown-900);
@@ -572,21 +627,28 @@
   margin-top: var(--space-sm);
 }
 
-.downloadBtn {
+/* Buttons. One shape: --hit tall at minimum, one radius, sentence case. */
+.primaryBtn {
   font-family: var(--font-body-stack);
   font-weight: 700;
   font-size: 14px;
   color: var(--on-action);
   background: var(--action);
-  border: none;
+  border: 1px solid var(--action);
   border-radius: var(--radius);
-  padding: 10px 18px;
+  min-height: var(--hit);
+  padding: 0 var(--space-md);
   text-decoration: none;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  cursor: pointer;
 }
 
-.downloadBtn:hover {
+.primaryBtn:hover {
   background: var(--action-pressed);
+  border-color: var(--action-pressed);
 }
 
 .actionNote {
@@ -616,9 +678,10 @@
   letter-spacing: 0.04em;
   color: var(--on-dark-muted);
   background: none;
-  border: 1px solid var(--brown-500);
+  border: 1px solid var(--on-dark-muted);
   border-radius: var(--radius);
-  padding: 3px 10px;
+  min-height: var(--hit);
+  padding: 0 var(--space-md);
   cursor: pointer;
 }
 
@@ -627,10 +690,44 @@
   border-color: var(--on-dark-muted);
 }
 
+/* Staff sign-in: a narrow column hung off the left gutter, wordmark on top. */
 .loginWrap {
-  max-width: 380px;
-  margin: var(--space-xxl) auto;
-  padding: 0 var(--space-md);
+  max-width: 420px;
+  margin: 0;
+  padding: var(--space-xxl) var(--gutter) var(--space-xl);
+}
+
+.loginMark {
+  display: block;
+  height: 28px;
+  width: auto;
+  margin-bottom: var(--space-xl);
+}
+
+.loginWrap .title {
+  margin-bottom: var(--space-lg);
+}
+
+.loginWrap .input {
+  min-height: var(--control);
+  font-size: 16px;
+}
+
+.loginWrap .primaryBtn,
+.loginWrap .secondaryBtn {
+  width: 100%;
+  min-height: var(--control);
+  font-size: 16px;
+}
+
+.loginWrap .form + .form {
+  margin-top: var(--space-md);
+}
+
+.qr {
+  background: var(--yellow);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .form {
@@ -674,20 +771,17 @@
   background: var(--yellow);
   border: 1px solid var(--brown-300);
   border-radius: var(--radius);
+  min-height: var(--hit);
   padding: 8px 10px;
   width: 100%;
 }
 
-.input:focus-visible,
-.secondaryBtn:focus-visible,
-.downloadBtn:focus-visible,
-.navButton:focus-visible {
-  outline: 2px solid var(--brick-600);
-  outline-offset: 2px;
-}
-
 textarea.input {
   resize: vertical;
+}
+
+input[type='file'].input {
+  padding: 10px;
 }
 
 .mono.input {
@@ -697,6 +791,7 @@ textarea.input {
 .checkboxField {
   display: flex;
   align-items: center;
+  min-height: var(--hit);
   gap: var(--space-sm);
   font-family: var(--font-body-stack);
   font-weight: 700;
@@ -733,12 +828,16 @@ textarea.input {
   font-size: 13px;
   color: var(--text-primary);
   background: transparent;
-  border: 1px solid var(--brown-300);
+  border: 1px solid var(--brown-900);
   border-radius: var(--radius);
-  padding: 6px 12px;
+  min-height: var(--hit);
+  padding: 0 var(--space-md);
   cursor: pointer;
   text-decoration: none;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
 }
 
 .secondaryBtn:hover {
@@ -777,6 +876,10 @@ textarea.input {
 }
 
 .attentionItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  min-height: var(--hit);
   font-weight: 700;
   color: var(--action);
   text-decoration: none;
@@ -811,18 +914,33 @@ textarea.input {
   gap: var(--space-xs);
 }
 
-.secondaryBtn:disabled {
-  color: var(--disabled);
+/* Disabled: a flat kraft block with brown 500 text, never a faded brand
+ * color (matches apps/app Button). Busy is not disabled: it keeps its colors
+ * and shows a spinner, even though the element is disabled to stop a
+ * double submit. */
+.primaryBtn:disabled,
+.primaryBtn:disabled:hover,
+.secondaryBtn:disabled,
+.secondaryBtn:disabled:hover {
+  color: var(--text-tertiary);
+  background: var(--border);
   border-color: var(--border);
   cursor: not-allowed;
 }
 
-.secondaryBtn:disabled:hover {
-  background: transparent;
+.primaryBtn[aria-busy='true'],
+.primaryBtn[aria-busy='true']:hover {
+  color: var(--on-action);
+  background: var(--action);
+  border-color: var(--action);
+  cursor: progress;
 }
 
-.downloadBtn:disabled {
-  background: var(--disabled);
+.secondaryBtn[aria-busy='true'],
+.secondaryBtn[aria-busy='true']:hover {
+  color: var(--text-primary);
+  background: transparent;
+  border-color: var(--brown-900);
   cursor: progress;
 }
 
@@ -927,7 +1045,26 @@ textarea.input {
   color: var(--text-primary);
 }
 
+/* Failure block: oxblood words plus a visible retry. */
+.errorState {
+  margin: 0 0 var(--space-md);
+}
+
+.errorState .formError {
+  margin-bottom: var(--space-sm);
+}
+
 .noteBody {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Loading: spinner plus words, never a blank panel. */
+.loadingNote {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-body-stack);
+  font-size: 14px;
+  color: var(--text-secondary);
 }

@@ -6,12 +6,12 @@ import styles from '../admin.module.css';
 export default function CustomersError({ reset }: { error: Error; reset: () => void }) {
   return (
     <main className={styles.main}>
-      <p className={styles.formError} role="alert">
-        The customer search failed. Nothing was changed.
-      </p>
-      <button type="button" className={styles.secondaryBtn} onClick={reset}>
-        Try again
-      </button>
+      <div className={styles.errorState} role="alert">
+        <p className={styles.formError}>The customer search failed. Nothing was changed.</p>
+        <button type="button" className={styles.secondaryBtn} onClick={reset}>
+          Try again
+        </button>
+      </div>
     </main>
   );
 }

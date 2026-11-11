@@ -67,6 +67,11 @@
   /* Page side gutter for public pages: 20px at phone width, 56px wide. */
   --gutter: clamp(20px, 5vw, 56px);
 
+  /* One sizing set (matches tokens.ts sizing): nothing tappable is smaller
+   * than --hit; full-size buttons and fields are --control tall. */
+  --hit: 44px;
+  --control: 56px;
+
   --font-display-stack: var(--font-display), system-ui, sans-serif;
   --font-body-stack: var(--font-body), system-ui, sans-serif;
 }
@@ -113,10 +118,23 @@ img {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
+/* Browsers default code and pre to a monospace face; the brand has two
+ * families, so ids, keys and payloads use Manrope with tabular figures. */
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-body-stack);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one focus ring. Surfaces that are dark override only the color (see
+ * site-chrome and admin top bar); nothing removes it without a replacement. */
 :focus-visible {
   outline: 3px solid var(--action);
   outline-offset: 2px;

@@ -9,6 +9,7 @@ import { BRAND_NAME } from '@forms/shared/brand';
 import { addOrderNote, saveTracking, setOrderStatus } from '../../actions';
 import styles from '../../admin.module.css';
 import { AdminShell } from '../../AdminShell';
+import { Pager } from '../../Pager';
 import { StatusBadge } from '../../StatusBadge';
 import { SubmitButton } from '../../SubmitButton';
 import { RefundPanel } from './RefundPanel';
@@ -169,12 +170,12 @@ export default async function OrderDetailPage({
             <form key={to} action={setOrderStatus} className={styles.inlineForm}>
               <input type="hidden" name="id" value={order.id} />
               <input type="hidden" name="to" value={to} />
-              <button
-                type="submit"
-                className={to === 'cancelled' ? styles.secondaryBtn : styles.downloadBtn}
+              <SubmitButton
+                pendingLabel="Saving"
+                variant={to === 'cancelled' ? 'secondary' : 'primary'}
               >
                 {ORDER_ACTION_LABEL[to]}
-              </button>
+              </SubmitButton>
             </form>
           ))}
           {moves.includes('cancelled') && order.status !== 'pending_payment' ? (
@@ -317,9 +318,9 @@ export default async function OrderDetailPage({
           </label>
         </div>
         <div className={styles.actionBar}>
-          <button type="submit" className={styles.secondaryBtn}>
+          <SubmitButton pendingLabel="Saving tracking" variant="secondary">
             Save tracking
-          </button>
+          </SubmitButton>
           <span className={styles.actionNote}>
             The customer sees this in the app. Required before marking shipped.
           </span>
@@ -396,9 +397,14 @@ export default async function OrderDetailPage({
         Timeline
       </h2>
       {entries === null ? (
-        <p className={styles.formError} role="alert">
-          The timeline could not be loaded. Reload to try again; the audit log has the same rows.
-        </p>
+        <div className={styles.errorState} role="alert">
+          <p className={styles.formError}>
+            The timeline failed to load. The audit log has the same rows.
+          </p>
+          <Link href={timelineHref(timelinePage)} className={styles.secondaryBtn}>
+            Try again
+          </Link>
+        </div>
       ) : entries.length === 0 ? (
         <p className={styles.actionNote}>
           {timelinePage > 1 ? 'No older entries.' : 'No recorded changes or notes yet.'}
@@ -446,23 +452,14 @@ export default async function OrderDetailPage({
         </div>
       )}
       {entries !== null && (timelinePage > 1 || timeline.hasNext) ? (
-        <div className={styles.pager}>
-          <Link
-            href={timelineHref(Math.max(1, timelinePage - 1))}
-            className={`${styles.pageBtn} ${timelinePage <= 1 ? styles.pageBtnDisabled : ''}`}
-            aria-disabled={timelinePage <= 1}
-          >
-            Newer
-          </Link>
-          <span>Page {timelinePage}</span>
-          <Link
-            href={timelineHref(timelinePage + 1)}
-            className={`${styles.pageBtn} ${timeline.hasNext ? '' : styles.pageBtnDisabled}`}
-            aria-disabled={!timeline.hasNext}
-          >
-            Older
-          </Link>
-        </div>
+        <Pager
+          page={timelinePage}
+          prevHref={timelinePage <= 1 ? null : timelineHref(Math.max(1, timelinePage - 1))}
+          nextHref={timeline.hasNext ? timelineHref(timelinePage + 1) : null}
+          prevLabel="Newer"
+          nextLabel="Older"
+          label="Timeline pages"
+        />
       ) : null}
     </AdminShell>
   );

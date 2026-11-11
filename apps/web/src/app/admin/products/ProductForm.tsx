@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react';
 
 import { saveProduct, type ProductFormState } from '../actions';
+import { Spinner } from '../../Spinner';
 import styles from '../admin.module.css';
 import { AVAILABILITIES, AVAILABILITY_META, SIZING_MODES, SIZING_MODE_LABEL } from '@/lib/catalog';
 import { formatMoney, parseCents } from '@/lib/money';
@@ -205,8 +206,15 @@ export function ProductForm({ initial }: { initial: ProductFormValues }) {
       </label>
 
       <div className={styles.actionBar}>
-        <button type="submit" className={styles.downloadBtn} disabled={pending}>
-          {pending ? 'Saving' : 'Save product'}
+        <button type="submit" className={styles.primaryBtn} disabled={pending} aria-busy={pending}>
+          {pending ? (
+            <>
+              <Spinner />
+              Saving
+            </>
+          ) : (
+            'Save product'
+          )}
         </button>
       </div>
     </form>

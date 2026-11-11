@@ -1,15 +1,9 @@
-/* Long-form pages (privacy, terms, support, 404). The display title hangs at
+/* Long-form pages (privacy, terms, support, checkout results, 404). The display title hangs at
  * the gutter; the reading column (about 64ch) is indented under it on wide
  * screens so the page has a deliberate offset, not a centered column. */
 
-.main {
-  --indent: clamp(0px, 14vw, 240px);
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
 .article {
+  --indent: clamp(0px, 14vw, 240px);
   padding: var(--space-xxl) var(--gutter) var(--space-xxxl);
 }
 
@@ -24,6 +18,7 @@
 }
 
 .title {
+  font-family: var(--font-display-stack);
   font-weight: 800;
   font-size: clamp(48px, 9vw, 128px);
   line-height: 0.9;
@@ -37,6 +32,11 @@
   color: var(--text-secondary);
   max-width: 52ch;
   margin: var(--space-lg) 0 0 var(--indent);
+}
+
+/* Failure wording: oxblood, never brick, so an error never reads as brand. */
+.failed {
+  color: var(--danger);
 }
 
 /* Draft notice: a flat brown block so nobody misses it. */
@@ -117,23 +117,69 @@
   margin: 0 0 var(--space-lg);
 }
 
-.action {
-  display: inline-block;
+/* Primary action: a full control, brick 600 fill with yellow text (4.7:1). */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md) var(--space-lg);
+  align-items: center;
   margin: var(--space-xl) 0 0 var(--indent);
-  padding: 12px 22px;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control);
+  padding: 0 var(--space-lg);
+  font-family: var(--font-body-stack);
   font-weight: 700;
+  font-size: 17px;
   color: var(--on-action);
   background: var(--action);
   border-radius: var(--radius);
   text-decoration: none;
 }
 
-.action:hover {
+.action {
+  border: none;
+  cursor: pointer;
+}
+
+.action:hover,
+.action:active {
   background: var(--action-pressed);
 }
 
+/* Quiet second action: brown text link at full hit height. */
+.textAction {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit);
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.textAction:hover {
+  color: var(--action);
+}
+
+.actions .action {
+  margin: 0;
+}
+
 @media (max-width: 860px) {
-  .main {
+  .article {
     --indent: 0px;
+  }
+}
+
+@media (max-width: 520px) {
+  .action {
+    width: 100%;
   }
 }

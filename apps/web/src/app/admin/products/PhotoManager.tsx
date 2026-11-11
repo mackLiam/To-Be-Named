@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent } from 'react';
 
+import { Spinner } from '../../Spinner';
 import styles from '../admin.module.css';
 import { deletePhoto, movePhoto, savePhotoAlt, setMainPhoto } from './photo-actions';
 import { MAX_ALT_TEXT, UPLOAD_HEADER } from '@/lib/product-images';
@@ -52,7 +53,7 @@ export function PhotoManager({ productId, photos }: { productId: string; photos:
       );
       const body = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        setUploadError(body.error ?? `Upload failed (${response.status}).`);
+        setUploadError(body.error ?? `Upload failed (error ${response.status}). Try again.`);
         return;
       }
       setAlt('');
@@ -202,8 +203,20 @@ export function PhotoManager({ productId, photos }: { productId: string; photos:
           </label>
         </div>
         <div className={styles.actionBar}>
-          <button type="submit" className={styles.downloadBtn} disabled={uploading}>
-            {uploading ? 'Uploading' : 'Upload photo'}
+          <button
+            type="submit"
+            className={styles.primaryBtn}
+            disabled={uploading}
+            aria-busy={uploading}
+          >
+            {uploading ? (
+              <>
+                <Spinner />
+                Uploading
+              </>
+            ) : (
+              'Upload photo'
+            )}
           </button>
           {uploading ? (
             <span className={styles.actionNote} role="status">

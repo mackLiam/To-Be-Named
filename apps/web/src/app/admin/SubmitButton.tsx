@@ -2,11 +2,13 @@
 
 import { useFormStatus } from 'react-dom';
 
+import { Spinner } from '../Spinner';
 import styles from './admin.module.css';
 
 /**
  * Submit button that shows the pending state of its form's server action and
- * blocks a second submit while it runs.
+ * blocks a second submit while it runs. Busy keeps full color and adds a
+ * spinner; only a truly unavailable button gets the flat disabled block.
  */
 export function SubmitButton({
   children,
@@ -21,11 +23,18 @@ export function SubmitButton({
   return (
     <button
       type="submit"
-      className={variant === 'primary' ? styles.downloadBtn : styles.secondaryBtn}
+      className={variant === 'primary' ? styles.primaryBtn : styles.secondaryBtn}
       disabled={pending}
-      aria-disabled={pending}
+      aria-busy={pending}
     >
-      {pending ? pendingLabel : children}
+      {pending ? (
+        <>
+          <Spinner />
+          {pendingLabel}
+        </>
+      ) : (
+        children
+      )}
     </button>
   );
 }

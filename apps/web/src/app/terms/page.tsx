@@ -3,21 +3,26 @@ import Link from 'next/link';
 
 import { BRAND_NAME, SUPPORT_EMAIL } from '@forms/shared/brand';
 
-import styles from '../prose.module.css';
-import { SiteFooter, SiteHeader } from '../site-chrome';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
+import styles from '../prose.module.css';
+import { SitePage } from '../site-chrome';
+
+export const metadata: Metadata = pageMetadata({
   title: `Terms of sale - ${BRAND_NAME}`,
   description: `The terms for buying a custom-made ${BRAND_NAME} shin guard.`,
-};
+  path: '/terms',
+  siteName: BRAND_NAME,
+});
 
 const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;
+// TODO(liam): draft pending legal review. Limitation of liability and
+// governing law are placeholders; nothing here may be filled in without it.
 const legalTodo = <span className={styles.placeholder}>[to be completed with legal review]</span>;
 
 export default function TermsPage() {
   return (
-    <main className={styles.main}>
-      <SiteHeader />
+    <SitePage>
       <article className={styles.article}>
         <p className={styles.kicker}>Terms of sale</p>
         <h1 className={styles.title}>Made to your scan.</h1>
@@ -102,7 +107,6 @@ export default function TermsPage() {
           </section>
         </div>
       </article>
-      <SiteFooter />
-    </main>
+    </SitePage>
   );
 }

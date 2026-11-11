@@ -1,16 +1,20 @@
 import type { Metadata } from 'next';
 
-import { BRAND_NAME } from '@forms/shared/brand';
+import { BRAND_NAME, SUPPORT_EMAIL } from '@forms/shared/brand';
+
+import { pageMetadata } from '@/lib/seo';
 
 import styles from './page.module.css';
-import { SiteFooter, SiteHeader } from './site-chrome';
+import { SitePage } from './site-chrome';
 import { WaitlistForm } from './WaitlistForm';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: `${BRAND_NAME} - shin guards molded to your leg`,
   description:
     'Custom-fit, 3D-printed soccer shin guards. Scan your leg with your iPhone, we generate the fit, we print and ship it.',
-};
+  path: '/',
+  siteName: BRAND_NAME,
+});
 
 const steps = [
   { n: '01', title: 'Scan your leg.', line: 'About a minute per leg, on your iPhone.' },
@@ -47,9 +51,7 @@ function Guard() {
 
 export default function HomePage() {
   return (
-    <main className={styles.page}>
-      <SiteHeader />
-
+    <SitePage>
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
           <h1 className={styles.headline}>
@@ -80,10 +82,7 @@ export default function HomePage() {
       <dl className={styles.specs}>
         <div className={styles.specRow}>
           <dt className={styles.specTerm}>Needs</dt>
-          <dd className={styles.specDetail}>
-            An iPhone on iOS 17. Pro models with LiDAR (12 Pro and later) scan fastest; other
-            iPhones use guided photo capture.
-          </dd>
+          <dd className={styles.specDetail}>Any iPhone on iOS 17 or later.</dd>
         </div>
         <div className={styles.specRow}>
           <dt className={styles.specTerm}>After launch</dt>
@@ -97,9 +96,15 @@ export default function HomePage() {
             </span>
           </dd>
         </div>
+        <div className={styles.specRow}>
+          <dt className={styles.specTerm}>Questions</dt>
+          <dd className={styles.specDetail}>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className={styles.mail}>
+              {SUPPORT_EMAIL}
+            </a>
+          </dd>
+        </div>
       </dl>
-
-      <SiteFooter />
-    </main>
+    </SitePage>
   );
 }

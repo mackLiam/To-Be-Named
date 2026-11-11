@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { BRAND_NAME } from '@forms/shared/brand';
 
 import styles from '../admin/admin.module.css';
+import { SubmitButton } from '../admin/SubmitButton';
+import { Wordmark } from '../Wordmark';
 import { isFakeMode } from '@/lib/env';
 import { createAnonServerClient } from '@/lib/supabase-server';
 
@@ -49,6 +51,7 @@ export default async function LoginPage({
 
   return (
     <main className={styles.loginWrap}>
+      <Wordmark surface="yellow" className={styles.loginMark} />
       <h1 className={styles.title}>Sign in</h1>
       {fake ? (
         <p className={styles.subtitle}>
@@ -57,7 +60,11 @@ export default async function LoginPage({
         </p>
       ) : (
         <form action={signIn} className={styles.form}>
-          {sp.error ? <p className={styles.formError}>Email or password is incorrect.</p> : null}
+          {sp.error ? (
+            <p className={styles.formError} role="alert">
+              Sign-in failed: email or password is incorrect.
+            </p>
+          ) : null}
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Email</span>
             <input
@@ -80,9 +87,7 @@ export default async function LoginPage({
               required
             />
           </label>
-          <button type="submit" className={styles.downloadBtn}>
-            Sign in
-          </button>
+          <SubmitButton pendingLabel="Signing in">Sign in</SubmitButton>
         </form>
       )}
     </main>

@@ -5,6 +5,7 @@ import { BRAND_NAME } from '@forms/shared/brand';
 
 import styles from '../admin.module.css';
 import { AdminShell } from '../AdminShell';
+import { Pager } from '../Pager';
 import { requireAdmin } from '@/lib/admin-auth';
 import { DEFAULT_PAGE_SIZE, firstValue, parsePageParam } from '@/lib/pagination';
 import { formatDateTime } from '@/lib/view';
@@ -110,23 +111,11 @@ export default async function WaitlistPage({
         </table>
       </div>
 
-      <div className={styles.pager}>
-        <Link
-          href={href(active, Math.max(1, page - 1))}
-          className={`${styles.pageBtn} ${page <= 1 ? styles.pageBtnDisabled : ''}`}
-          aria-disabled={page <= 1}
-        >
-          Previous
-        </Link>
-        <span>Page {page}</span>
-        <Link
-          href={href(active, page + 1)}
-          className={`${styles.pageBtn} ${hasNext ? '' : styles.pageBtnDisabled}`}
-          aria-disabled={!hasNext}
-        >
-          Next
-        </Link>
-      </div>
+      <Pager
+        page={page}
+        prevHref={page <= 1 ? null : href(active, Math.max(1, page - 1))}
+        nextHref={hasNext ? href(active, page + 1) : null}
+      />
     </AdminShell>
   );
 }

@@ -7,6 +7,7 @@ import { BRAND_NAME } from '@forms/shared/brand';
 
 import styles from '../admin.module.css';
 import { AdminShell } from '../AdminShell';
+import { Pager } from '../Pager';
 import { StatusBadge } from '../StatusBadge';
 import { requireAdmin } from '@/lib/admin-auth';
 import { listOrders } from '@/lib/data';
@@ -110,7 +111,7 @@ export default async function OrdersPage({
             autoComplete="off"
           />
         </label>
-        <button type="submit" className={styles.downloadBtn}>
+        <button type="submit" className={styles.primaryBtn}>
           Find
         </button>
         {rawRef && !ref ? (
@@ -206,23 +207,11 @@ export default async function OrdersPage({
         </table>
       </div>
 
-      <div className={styles.pager}>
-        <Link
-          href={href(activeStatus, Math.max(1, page - 1), customer)}
-          className={`${styles.pageBtn} ${page <= 1 ? styles.pageBtnDisabled : ''}`}
-          aria-disabled={page <= 1}
-        >
-          Previous
-        </Link>
-        <span>Page {page}</span>
-        <Link
-          href={href(activeStatus, page + 1, customer)}
-          className={`${styles.pageBtn} ${hasNext ? '' : styles.pageBtnDisabled}`}
-          aria-disabled={!hasNext}
-        >
-          Next
-        </Link>
-      </div>
+      <Pager
+        page={page}
+        prevHref={page <= 1 ? null : href(activeStatus, Math.max(1, page - 1), customer)}
+        nextHref={hasNext ? href(activeStatus, page + 1, customer) : null}
+      />
     </AdminShell>
   );
 }

@@ -4,6 +4,7 @@ import { useActionState, useId } from 'react';
 
 import type { WaitlistInterest, WaitlistState } from '@/lib/waitlist';
 
+import { Spinner } from './Spinner';
 import styles from './waitlist.module.css';
 import { joinWaitlist } from './waitlist-action';
 
@@ -31,7 +32,7 @@ export function WaitlistForm({
   }
 
   return (
-    <form action={action} className={styles.form} noValidate>
+    <form action={action} className={styles.form} noValidate aria-busy={pending}>
       <input type="hidden" name="interest" value={interest} />
       {/* Honeypot: hidden from people and assistive tech, bots fill it. */}
       <div className={styles.trap} aria-hidden="true">
@@ -55,8 +56,17 @@ export function WaitlistForm({
           aria-describedby={`${id}-msg`}
           className={styles.input}
         />
-        <button type="submit" className={styles.button} disabled={pending}>
-          {pending ? 'Sending...' : button}
+        {/* Busy, not unavailable: full color plus a spinner. `disabled` only
+            blocks a second submit; the CSS keeps the busy look. */}
+        <button type="submit" className={styles.button} disabled={pending} aria-busy={pending}>
+          {pending ? (
+            <>
+              <Spinner />
+              Sending
+            </>
+          ) : (
+            button
+          )}
         </button>
       </div>
       <p

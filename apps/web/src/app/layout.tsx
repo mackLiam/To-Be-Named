@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Manrope, Outfit } from 'next/font/google';
 
 import { BRAND_NAME } from '@forms/shared/brand';
@@ -32,7 +32,8 @@ export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl() ?? 'https://zells.com'),
   title,
   description,
-  openGraph: { title, description, siteName: BRAND_NAME, type: 'website' },
+  openGraph: { title, description, siteName: BRAND_NAME, type: 'website', locale: 'en_US' },
+  twitter: { card: 'summary_large_image', title, description },
   icons: {
     icon: [
       { url: '/brand/icon-brick.svg', type: 'image/svg+xml' },
@@ -41,6 +42,9 @@ export const metadata: Metadata = {
     apple: '/brand/icon-brick-180.png',
   },
 };
+
+// Stud brown: browser chrome matches the header band.
+export const viewport: Viewport = { themeColor: '#3a2e26' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

@@ -21,7 +21,8 @@
 .input {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 12px 14px;
+  min-height: var(--control);
+  padding: 0 14px;
   font-size: 17px;
   color: var(--text-primary);
   background: var(--bg);
@@ -39,9 +40,15 @@
 
 .button {
   flex: 0 0 auto;
-  padding: 12px 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: var(--control);
+  padding: 0 var(--space-lg);
+  font-family: var(--font-body-stack);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 17px;
   color: var(--on-action);
   background: var(--action);
   border: 2px solid var(--action);
@@ -56,11 +63,21 @@
   border-color: var(--action-pressed);
 }
 
+/* Disabled: a flat kraft block, never a faded brick (faded brick reads as
+ * orange, a color the brand does not have). Matches apps/app Button. */
 .button:disabled {
+  cursor: not-allowed;
+  background: var(--border);
+  border-color: var(--border);
+  color: var(--text-tertiary);
+}
+
+/* Busy: working, not unavailable, so it keeps the action colors. */
+.button[aria-busy='true'] {
   cursor: progress;
-  background: var(--disabled);
-  border-color: var(--disabled);
-  color: var(--text-primary);
+  background: var(--action);
+  border-color: var(--action);
+  color: var(--on-action);
 }
 
 .message,
@@ -100,5 +117,8 @@
 @media (max-width: 520px) {
   .row {
     flex-direction: column;
+  }
+  .button {
+    width: 100%;
   }
 }

@@ -2,20 +2,28 @@ import type { Metadata } from 'next';
 
 import { BRAND_NAME, SUPPORT_EMAIL } from '@forms/shared/brand';
 
-import styles from '../prose.module.css';
-import { SiteFooter, SiteHeader } from '../site-chrome';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
+import styles from '../prose.module.css';
+import { SitePage } from '../site-chrome';
+
+export const metadata: Metadata = pageMetadata({
   title: `Privacy policy - ${BRAND_NAME}`,
   description: `What ${BRAND_NAME} collects when you scan your leg and order a guard, why, and how long we keep it.`,
-};
+  path: '/privacy',
+  siteName: BRAND_NAME,
+});
 
 const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;
 
+// TODO(liam): draft pending legal review. Fill the bracketed placeholders
+// (legal entity and address, waitlist retention, change notification) and
+// confirm the scan description (LiDAR mesh vs photos) still matches capture.
+// Restyle only here; the substance is for the lawyer.
+
 export default function PrivacyPage() {
   return (
-    <main className={styles.main}>
-      <SiteHeader />
+    <SitePage>
       <article className={styles.article}>
         <p className={styles.kicker}>Privacy</p>
         <h1 className={styles.title}>Your scan, your data.</h1>
@@ -178,7 +186,6 @@ export default function PrivacyPage() {
           </section>
         </div>
       </article>
-      <SiteFooter />
-    </main>
+    </SitePage>
   );
 }
