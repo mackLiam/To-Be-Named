@@ -70,3 +70,10 @@ follow-up action.
   real-sized OW/OD or from placeholder-scale values decides what OW/OD mean in
   the model (DESIGN.md 12.2). Tape-measuring that leg at 20/40/60/80% turns
   this print into the first ground-truth entry.
+- Evidence (read-only Onshape API, 2026-11-10): the template copy holds the
+  printed STL as an imported part, extents 95.6 x 23.7 x 149.0 mm. The
+  parametric "MVP 1" part studio at its current placeholder values measures
+  103.0 x 121.5 x 31.0 mm (a different orientation; sorted, 31 / 103 / 121.5
+  against 23.7 / 95.6 / 149). So the print was not generated from the
+  template's current values: it came from other values or another document,
+  and those values are still unrecorded.
