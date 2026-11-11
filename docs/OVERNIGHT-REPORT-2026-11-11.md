@@ -1,8 +1,9 @@
 # Overnight report, 2026-11-11
 
-Unattended session, 22:26 to 07:00 EST, branch `feat/overnight-2026-11-11`
-(not merged to develop). Brief: docs/OVERNIGHT-2026-11-11.md. Updated after
-every milestone, so the latest commit on the branch holds the latest state.
+Unattended session, 22:26 on 2026-11-10 to about 02:00 on 2026-11-11 EST
+(finished early; the brief allowed until 07:00), branch
+`feat/overnight-2026-11-11` (not merged to develop). Brief:
+docs/OVERNIGHT-2026-11-11.md. This is the final state.
 
 ## Read this first
 
