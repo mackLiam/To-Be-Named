@@ -391,9 +391,15 @@ scans          id, user_id (null after account deletion), storage_user_id
                (device model, iOS version, capture duration), created_at
 measurements   id, scan_id, schema_version, values(jsonb: 25 vars),
                extraction_version, validated(bool), created_at
-products       id, name, base_price, active,
+products       id, name, base_price, active (archived or not),
+               availability (available | coming_soon | paused), display_order,
+               sizing_modes (custom, preset_s/m/l; §7a.3),
                cad_model(jsonb: provider, ref, variable_map, schema_version)
-               -- guard models/styles; descriptor contract in §7a.2
+               -- one row per guard model tier (§7a.2); descriptor contract in §7a.2;
+               -- 'available' requires cad_model (0022)
+product_images id, product_id, storage_path (<product_id>/<uuid>.<ext>), alt_text,
+               sort_order, is_main (one per product)
+               -- public bucket product-images, no listing policy (0023)
 orders         id, user_id (null after account deletion), product_id, scan_id_left, scan_id_right,
                status, stripe_payment_intent, stripe_checkout_session_id,
                amount, address(json), paid_at, refunded_at, created_at
@@ -430,6 +436,9 @@ retrofitting features.
 
 1. **Transport & storage:** TLS everywhere; Supabase Storage private buckets;
    all mesh/STL access via short-lived signed URLs; encryption at rest (managed).
+   Exception: catalog photos live in the public bucket product-images (they
+   are not personal data). Uploads are admin-only and validated server-side,
+   and the bucket has no listing policy (0023).
 2. **Least privilege:** clients get scoped, RLS-constrained tokens only. Worker
    uses the service role from server-side env/secrets manager. No secrets in the
    mobile bundle - anything in the app binary is public. Admin access is an

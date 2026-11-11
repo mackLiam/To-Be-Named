@@ -6,6 +6,19 @@ made-to-order product needs. Nothing here is legal, tax or vendor advice, and no
 price, rate, policy wording or vendor setting is invented: where a fact is
 unknown it is recorded as TODO(liam).
 
+
+**Update 2026-11-11 (9ccd578):** catalog (rank 7), photos (rank 8), and the
+code side of availability (rank 13) and tiers (rank 10) shipped in migrations
+0022 and 0023. Products have a display order, an availability state
+(available, coming soon, paused; archive stays separate) and the sizing modes
+each sells, with checkout selling custom fit only. A product cannot be made
+available without a CAD model and a price above zero, and checkout refuses
+anything not purchasable server-side. Admins upload ordered photos with
+required alt text to a public catalog bucket that cannot be listed. The admin
+order page no longer crashes for deleted accounts. Still open: the app Shop
+tab must read availability, order and the main image (until then coming-soon
+items look buyable in the app, though checkout refuses them), preset value
+sets, lead time, EXIF stripping, and the photos themselves.
 ## 1. Summary
 
 The software spine of a shop exists and is well tested: a pending-then-paid order
