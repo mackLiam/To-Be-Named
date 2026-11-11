@@ -10,7 +10,7 @@ every milestone, so the latest commit on the branch holds the latest state.
 |---|---|
 | Video harness: Swift forms-video | done (bf48577) |
 | Video harness: Python driver | done (9424e5c) |
-| Iteration on the two test videos | round 2 in progress |
+| Iteration on the two test videos | done: IMG_3834 measures, IMG_3836 fails on the knee (da80ef4, 8ebbd81, a957033) |
 | Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
 | Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
 | Admin product management | round 1 in progress (catalog depth, photos; migrations 0022, 0023) |
@@ -121,10 +121,28 @@ Round 1 (d39e5f1 silhouette, 83e1efb harness):
 
 Denser sampling (forms-video --max-frames 120): registration goes from 44/60
 to 119/120 (IMG_3834) and 38/60 to 103/103 (IMG_3836); spans 214 and 173
-deg. The unregistered stretches were the knee close-ups. New failures, under
-investigation in round 2: IMG_3834 "Keep your shin upright" (axis 43 deg
-from a floor plane that is probably the wrong plane), IMG_3836 "The ankle was
-outside the frame".
+deg. The unregistered stretches were the knee close-ups.
+
+Round 2 (da80ef4 silhouette v3, 8ebbd81 harness): the denser cloud let a
+compact clump beside the foot beat the floor on point count; planes are now
+ranked by covered area and must support the leg. IMG_3836's "ankle" failure
+was really the truncated knee end shrinking the ankle search window; the
+reason now names the knee. 120 frames is the harness default.
+
+Final (120 sampled frames):
+
+| | IMG_3834 | IMG_3836 |
+|---|---|---|
+| Result | **measured** | fail: "The knee was outside the frame in most of the photos" |
+| Registered / submitted | 119 / 120 | 103 / 103 |
+| Keyframes / span | 22 / 200 deg | 19 / 173 deg |
+| Up source | floor plane, shin 18 deg | leg axis (no floor) |
+
+IMG_3834 ratios: OD/OW 0.88, 0.91, 0.93, 0.96 (S1 to S4); OW/OW_S3 0.69,
+0.87, 1.00, 0.96; Leg_Length/OW_S3 2.62. OD/OW and the profile shape are
+human. Leg_Length/OW_S3 reads short (adults are usually above 3); the likely
+cause is the bent knee putting thigh into the knee slices. No agreement table:
+only one video measured. Full write-up in docs/VIDEO-HARNESS.md.
 
 ## Untested on a device
 
@@ -152,6 +170,18 @@ capture is Mac-side only.
 - Estimator noise levels, the bootstrap prior and the gate tolerances (15 mm
   Leg_Length, 6 mm fit-critical OW and OD) are provisional placeholders,
   flagged `provisional` in the files, until the Phase 0 calibration.
+- Scan: MAX_TILT_DEG stays 30. The math holds at 40 on synthetic shins
+  (tests/test_silhouette_tilt.py); opening the gate is a product call.
+- Scan: Leg_Length under a bent knee (IMG_3834 ratio 2.62) needs tape ground
+  truth; if confirmed short, the knee landmark rule needs a bent-knee case.
+- Scan: segment.ANKLE_SEARCH_FRACTION (40% of the profile) is shared with the
+  photogrammetry path and was not changed; only the failure wording was.
+- Scan: new failure copy says "photos" to match the station capture; the
+  sweep will need "video" wording. Only one failure reason is shown at a
+  time.
+- Harness: floor-rule constants (leg-below 2%, floor gap 0.5 of leg height,
+  cell size 3 tolerances, floor tilt 50 deg) are principled guesses. With no
+  floor, up comes from the leg itself and the tilt gate is not exercised.
 - Estimator conservative defaults: manual input accepts any non-empty subset
   of the 9 typed keys; a missing or invalid tolerance makes the gate fail,
   never pass; keys already typed are not offered as tape actions.
