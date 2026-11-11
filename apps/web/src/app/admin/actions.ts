@@ -4,10 +4,16 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { requireAdmin } from '@/lib/admin-auth';
-import { emailDepsFromEnv, notifyOrderShipped } from '@/lib/email';
+import { emailDepsFromEnv } from '@/lib/email';
 import { shouldUseFake } from '@/lib/data';
 import { getStripeSecretKey, isFakeMode } from '@/lib/env';
-import { refundOrder as refundOrderPayment } from '@/lib/refund';
+import {
+  addOrderNoteAction,
+  afterStatusChange,
+  refundOrderAction,
+  remakeOrderAction,
+  type ActionOutcome,
+} from '@/lib/order-actions';
 import { isMoveDirection } from '@/lib/catalog';
 import { isUuid, parseProductForm, parseTrackingForm } from '@/lib/shop';
 import {
@@ -51,6 +57,17 @@ function fields(formData: FormData): Record<string, string> {
 
 function back(path: string, error: string | null): never {
   redirect(error ? `${path}?error=${encodeURIComponent(error)}` : path);
+}
+
+/** Redirect for the lib/order-actions outcomes: error or notice, never both. */
+function finish(outcome: ActionOutcome): never {
+  revalidatePath(outcome.path);
+  if (outcome.error) {
+    redirect(`${outcome.path}?error=${encodeURIComponent(outcome.error)}`);
+  }
+  redirect(
+    outcome.notice ? `${outcome.path}?notice=${encodeURIComponent(outcome.notice)}` : outcome.path,
+  );
 }
 
 export interface ProductFormState {
@@ -117,33 +134,33 @@ export async function reorderProduct(formData: FormData): Promise<void> {
 }
 
 export async function setOrderStatus(formData: FormData): Promise<void> {
+  // Admin gate before reading any input.
+  const w = await writer();
   const { id = '', to = '' } = fields(formData);
   if (!isUuid(id)) {
     back('/admin/orders', 'Unknown order.');
   }
   const path = `/admin/orders/${id}`;
-  const w = await writer();
   if (!w) {
     back(path, READ_ONLY);
   }
   const result = await transitionOrder(w.client, w.actor, id, to);
-  if (!result.error && to === 'shipped') {
-    // Best effort: notifyOrderShipped never throws, and a missed email must
-    // not undo or block the status change.
-    await notifyOrderShipped(w.client, id, emailDepsFromEnv());
+  if (!result.error) {
+    await afterStatusChange(w, id, to, emailDepsFromEnv());
   }
   revalidatePath(path);
   back(path, result.error);
 }
 
 export async function saveTracking(formData: FormData): Promise<void> {
+  // Admin gate before reading any input.
+  const w = await writer();
   const form = fields(formData);
   const id = form.id ?? '';
   if (!isUuid(id)) {
     back('/admin/orders', 'Unknown order.');
   }
   const path = `/admin/orders/${id}`;
-  const w = await writer();
   if (!w) {
     back(path, READ_ONLY);
   }
@@ -157,22 +174,29 @@ export async function saveTracking(formData: FormData): Promise<void> {
 }
 
 export async function refundOrder(formData: FormData): Promise<void> {
-  // Admin gate before anything else, including input parsing: this moves money.
-  const w = await writer();
-  const { id = '' } = fields(formData);
-  if (!isUuid(id)) {
-    back('/admin/orders', 'Unknown order.');
-  }
-  const path = `/admin/orders/${id}`;
-  if (!w) {
-    back(path, READ_ONLY);
-  }
-  if (!getStripeSecretKey()) {
-    back(path, 'Refunds are unavailable: STRIPE_SECRET_KEY is not configured.');
-  }
-  const result = await refundOrderPayment(w.client, createStripeClient(), w.actor, id);
-  revalidatePath(path);
-  back(path, result.error);
+  // The admin gate runs first inside refundOrderAction: this moves money.
+  finish(
+    await refundOrderAction(
+      {
+        authorize: writer,
+        email: emailDepsFromEnv(),
+        stripe: () => (getStripeSecretKey() ? createStripeClient() : null),
+      },
+      fields(formData),
+    ),
+  );
+}
+
+export async function remakeOrder(formData: FormData): Promise<void> {
+  finish(
+    await remakeOrderAction({ authorize: writer, email: emailDepsFromEnv() }, fields(formData)),
+  );
+}
+
+export async function addOrderNote(formData: FormData): Promise<void> {
+  finish(
+    await addOrderNoteAction({ authorize: writer, email: emailDepsFromEnv() }, fields(formData)),
+  );
 }
 
 export async function signOut(): Promise<void> {

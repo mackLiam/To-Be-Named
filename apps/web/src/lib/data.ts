@@ -2,19 +2,23 @@ import type { OrderStatus } from '@forms/shared';
 
 import { PRODUCT_LIST_LIMIT, compareShopOrder } from './catalog';
 import { isFakeMode, hasServiceRoleConfig } from './env';
+import { normalizeCustomerRow } from './customers';
 import {
+  fakeCustomers,
   fakeJobs,
   fakeOrderDetail,
   fakeOrders,
   fakeProductImages,
   fakeProducts,
+  fakeTimeline,
   fakeTriage,
 } from './fake';
 import { MAX_IMAGES_PER_PRODUCT } from './product-images';
+import { MAX_REFUNDS_PER_ORDER } from './refund';
 import { lookaheadRange, splitLookahead } from './pagination';
 import { isOrderStatus, isUuid, orderReferenceRange } from './shop';
 import type {
-  AuditRow,
+  CustomerRow,
   GateResult,
   JobError,
   JobRow,
@@ -22,6 +26,10 @@ import type {
   OrderRow,
   ProductImageRow,
   ProductRow,
+  RefundRow,
+  RemakeChild,
+  TimelinePage,
+  TimelineRow,
   TriageData,
 } from './types';
 
@@ -91,7 +99,8 @@ export async function listPipelineJobs(opts: {
 // orders carries no name or currency; both come from the product join.
 const ORDER_COLUMNS =
   'id, user_id, status, amount_cents, product_id, scan_id_left, scan_id_right, ' +
-  'tracking_carrier, tracking_number, created_at, updated_at, products(name, currency)';
+  'tracking_carrier, tracking_number, remake_of, remake_reason, created_at, updated_at, ' +
+  'products(name, currency)';
 
 type OrderQueryRow = Omit<OrderRow, 'product_name' | 'currency'> & {
   products: { name: string; currency: string } | null;
@@ -124,17 +133,21 @@ export async function listOrders(opts: {
   needsRefund?: boolean;
   /** Customer-facing order reference (8 hex chars); ignored when malformed. */
   ref?: string;
+  /** One customer's orders (auth user id); ignored when not a uuid. */
+  userId?: string;
   page: number;
   pageSize: number;
 }): Promise<ListResult<OrderRow>> {
   const range = orderReferenceRange(opts.ref);
+  const userId = opts.userId && isUuid(opts.userId) ? opts.userId.toLowerCase() : undefined;
   if (shouldUseFake()) {
     // Fake rows carry no payment columns, so "needs refund" approximates to cancelled.
     const status = opts.needsRefund ? 'cancelled' : opts.status;
     const filtered = fakeOrders.filter(
       (row) =>
         (!isOrderStatus(status) || row.status === status) &&
-        (!range || (row.id >= range.from && row.id <= range.to)),
+        (!range || (row.id >= range.from && row.id <= range.to)) &&
+        (!userId || row.user_id === userId),
     );
     const start = (opts.page - 1) * opts.pageSize;
     return splitLookahead(filtered.slice(start, start + opts.pageSize + 1), opts.pageSize);
@@ -151,6 +164,9 @@ export async function listOrders(opts: {
   if (range) {
     query = query.gte('id', range.from).lte('id', range.to);
   }
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
   const { data, error } = await query.order('created_at', { ascending: false }).range(from, to);
   if (error) {
     throw error;
@@ -159,8 +175,7 @@ export async function listOrders(opts: {
   return splitLookahead(rows, opts.pageSize);
 }
 
-/** Order history shown on the detail page; bounded, newest first. */
-const HISTORY_LIMIT = 50;
+const REMAKE_LIST_LIMIT = 20;
 
 export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   if (!isUuid(id)) {
@@ -173,7 +188,9 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   const client = await serviceClient();
   const { data, error } = await client
     .from('orders')
-    .select(`${ORDER_COLUMNS}, address, stripe_payment_intent, paid_at, refunded_at`)
+    .select(
+      `${ORDER_COLUMNS}, address, stripe_payment_intent, paid_at, refunded_at, stripe_refunded_cents`,
+    )
     .eq('id', id)
     .maybeSingle();
   if (error) {
@@ -182,12 +199,15 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   if (!data) {
     return null;
   }
-  const { address, stripe_payment_intent, paid_at, refunded_at, ...rest } =
+  const { address, stripe_payment_intent, paid_at, refunded_at, stripe_refunded_cents, ...rest } =
     data as unknown as OrderQueryRow &
-      Pick<OrderDetail, 'address' | 'stripe_payment_intent' | 'paid_at' | 'refunded_at'>;
+      Pick<
+        OrderDetail,
+        'address' | 'stripe_payment_intent' | 'paid_at' | 'refunded_at' | 'stripe_refunded_cents'
+      >;
   const order = flattenOrder(rest);
 
-  const [jobs, history, customerEmail] = await Promise.all([
+  const [jobs, refunds, remakes, customerEmail] = await Promise.all([
     client
       .from('pipeline_jobs')
       .select('id, scan_id, step, status')
@@ -195,19 +215,23 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
       .order('created_at', { ascending: false })
       .limit(10),
     client
-      .from('audit_log')
-      .select('id, actor, action, detail, created_at')
-      .eq('subject_table', 'orders')
-      .eq('subject_id', id)
+      .from('order_refunds')
+      .select('id, seq, kind, amount_cents, stripe_refund_id, stripe_status, actor, created_at')
+      .eq('order_id', id)
+      .order('seq')
+      .limit(MAX_REFUNDS_PER_ORDER),
+    client
+      .from('orders')
+      .select('id, status, remake_reason, created_at')
+      .eq('remake_of', id)
       .order('created_at', { ascending: false })
-      .limit(HISTORY_LIMIT),
+      .limit(REMAKE_LIST_LIMIT),
     lookupCustomerEmail(client.auth.admin, order.user_id),
   ]);
-  if (jobs.error) {
-    throw jobs.error;
-  }
-  if (history.error) {
-    throw history.error;
+  for (const result of [jobs, refunds, remakes]) {
+    if (result.error) {
+      throw result.error;
+    }
   }
 
   return {
@@ -216,10 +240,83 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     stripe_payment_intent,
     paid_at,
     refunded_at,
+    stripe_refunded_cents,
     customer_email: customerEmail,
     jobs: (jobs.data ?? []) as OrderDetail['jobs'],
-    history: (history.data ?? []) as AuditRow[],
+    refunds: (refunds.data ?? []) as RefundRow[],
+    remakes: (remakes.data ?? []) as RemakeChild[],
   };
+}
+
+/**
+ * One page of the order timeline (admin_order_timeline, 0026). A failed read
+ * comes back as rows: null so the page shows an error state for this section
+ * instead of failing the whole order page.
+ */
+export async function getOrderTimeline(
+  id: string,
+  page: number,
+  pageSize: number,
+): Promise<TimelinePage> {
+  if (!isUuid(id)) {
+    return { rows: [], page, hasNext: false };
+  }
+  if (shouldUseFake()) {
+    const start = (page - 1) * pageSize;
+    const { rows, hasNext } = splitLookahead(
+      fakeTimeline(id).slice(start, start + pageSize + 1),
+      pageSize,
+    );
+    return { rows, page, hasNext };
+  }
+  try {
+    const client = await serviceClient();
+    const { from } = lookaheadRange(page, pageSize);
+    const { data, error } = await client.rpc('admin_order_timeline', {
+      p_order_id: id,
+      p_limit: pageSize + 1,
+      p_offset: from,
+    });
+    if (error) {
+      console.error(`order timeline failed: ${error.message}`);
+      return { rows: null, page, hasNext: false };
+    }
+    const { rows, hasNext } = splitLookahead((data ?? []) as TimelineRow[], pageSize);
+    return { rows, page, hasNext };
+  } catch (err) {
+    console.error(`order timeline failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    return { rows: null, page, hasNext: false };
+  }
+}
+
+/** Customer search by email (admin_find_customers, 0026). Bounded and paginated. */
+export async function searchCustomers(opts: {
+  email: string;
+  exact: boolean;
+  page: number;
+  pageSize: number;
+}): Promise<ListResult<CustomerRow>> {
+  const email = opts.email.trim().toLowerCase();
+  if (shouldUseFake()) {
+    const filtered = fakeCustomers.filter((row) =>
+      opts.exact ? row.email === email : row.email.startsWith(email),
+    );
+    const start = (opts.page - 1) * opts.pageSize;
+    return splitLookahead(filtered.slice(start, start + opts.pageSize + 1), opts.pageSize);
+  }
+  const client = await serviceClient();
+  const { from } = lookaheadRange(opts.page, opts.pageSize);
+  const { data, error } = await client.rpc('admin_find_customers', {
+    p_email: email,
+    p_exact: opts.exact,
+    p_limit: opts.pageSize + 1,
+    p_offset: from,
+  });
+  if (error) {
+    throw error;
+  }
+  const rows = ((data ?? []) as Record<string, unknown>[]).map(normalizeCustomerRow);
+  return splitLookahead(rows, opts.pageSize);
 }
 
 /**

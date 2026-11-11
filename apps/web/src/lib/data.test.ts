@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   getOrderDetail,
+  getOrderTimeline,
   getTriage,
   isValidJobState,
   listMainImages,
@@ -10,8 +11,9 @@ import {
   listProductImages,
   listProducts,
   lookupCustomerEmail,
+  searchCustomers,
 } from './data';
-import { FAKE_TRIAGE_JOB_ID, fakeJobs } from './fake';
+import { FAKE_CUSTOMER_ID, FAKE_TRIAGE_JOB_ID, fakeJobs, fakeOrders } from './fake';
 
 // No Supabase env is set, so every call runs in the fake-data fallback. This
 // verifies the fallback selection (no network, deterministic fixtures) and the
@@ -78,6 +80,20 @@ describe('listOrders (fake fallback)', () => {
     const { rows } = await listOrders({ page: 1, pageSize: 100 });
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0]).toHaveProperty('status');
+  });
+
+  it('filters by customer and ignores a malformed customer id', async () => {
+    const mine = await listOrders({ userId: FAKE_CUSTOMER_ID, page: 1, pageSize: 100 });
+    expect(mine.rows.length).toBe(fakeOrders.filter((o) => o.user_id === FAKE_CUSTOMER_ID).length);
+    expect(mine.rows.every((o) => o.user_id === FAKE_CUSTOMER_ID)).toBe(true);
+    const all = await listOrders({ userId: 'not-a-uuid', page: 1, pageSize: 100 });
+    expect(all.rows.length).toBe(fakeOrders.length);
+  });
+
+  it('carries the remake link', async () => {
+    const { rows } = await listOrders({ page: 1, pageSize: 100 });
+    const remake = rows.find((o) => o.remake_of);
+    expect(remake).toMatchObject({ amount_cents: 0, remake_reason: 'fit_too_tight' });
   });
 });
 
@@ -160,5 +176,44 @@ describe('catalog reads (fake fallback)', () => {
     expect(mains.get(C1)?.is_main).toBe(true);
     expect(mains.size).toBe(1);
     expect((await listMainImages([])).size).toBe(0);
+  });
+});
+
+describe('order support reads (fake fallback)', () => {
+  const ORIGINAL = '00000000-0000-4000-8000-0000000000a1';
+
+  it('lists the remakes of an order and its refund ledger', async () => {
+    const original = await getOrderDetail(ORIGINAL);
+    expect(original!.remakes.map((r) => r.id)).toEqual(['00000000-0000-4000-8000-0000000000a8']);
+    const withRefund = await getOrderDetail('00000000-0000-4000-8000-0000000000a3');
+    expect(withRefund!.refunds).toHaveLength(1);
+    expect(withRefund!.stripe_refunded_cents).toBe(2000);
+    const remake = await getOrderDetail('00000000-0000-4000-8000-0000000000a8');
+    expect(remake!.stripe_payment_intent).toBeNull();
+  });
+
+  it('pages the timeline with a lookahead', async () => {
+    const first = await getOrderTimeline(ORIGINAL, 1, 1);
+    expect(first.rows).toHaveLength(1);
+    expect(first.hasNext).toBe(true);
+    const second = await getOrderTimeline(ORIGINAL, 2, 1);
+    expect(second.hasNext).toBe(false);
+    expect(await getOrderTimeline('bad', 1, 25)).toEqual({ rows: [], page: 1, hasNext: false });
+  });
+
+  it('searches customers by prefix or exactly, paginated', async () => {
+    const prefix = await searchCustomers({ email: 'FAKE.', exact: false, page: 1, pageSize: 1 });
+    expect(prefix.rows).toHaveLength(1);
+    expect(prefix.hasNext).toBe(true);
+    const exact = await searchCustomers({
+      email: 'fake.leaving@example.com',
+      exact: true,
+      page: 1,
+      pageSize: 25,
+    });
+    expect(exact.rows.map((r) => r.deletion_reason)).toEqual(['user_request']);
+    expect(
+      (await searchCustomers({ email: 'fake.', exact: true, page: 1, pageSize: 25 })).rows,
+    ).toEqual([]);
   });
 });

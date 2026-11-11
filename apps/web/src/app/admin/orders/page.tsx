@@ -11,7 +11,14 @@ import { StatusBadge } from '../StatusBadge';
 import { requireAdmin } from '@/lib/admin-auth';
 import { listOrders } from '@/lib/data';
 import { DEFAULT_PAGE_SIZE, firstValue, parsePageParam } from '@/lib/pagination';
-import { ORDER_STATUS_META, formatMoney, isOrderStatus, orderReferenceRange } from '@/lib/shop';
+import { remakeReasonLabel } from '@/lib/remake';
+import {
+  ORDER_STATUS_META,
+  formatMoney,
+  isOrderStatus,
+  isUuid,
+  orderReferenceRange,
+} from '@/lib/shop';
 import { formatDateTime, shortId } from '@/lib/view';
 
 export const metadata: Metadata = {
@@ -23,8 +30,11 @@ export const dynamic = 'force-dynamic';
 
 const REFUND = 'needs_refund';
 
-function href(status: string, page = 1): string {
+function href(status: string, page = 1, customer?: string): string {
   const params = new URLSearchParams();
+  if (customer) {
+    params.set('customer', customer);
+  }
   if (status === REFUND) {
     params.set('needs_refund', '1');
   } else if (status !== 'all') {
@@ -55,11 +65,14 @@ export default async function OrdersPage({
   const page = parsePageParam(sp.page);
   const rawRef = firstValue(sp.ref)?.trim() ?? '';
   const ref = orderReferenceRange(rawRef) ? rawRef : undefined;
+  const rawCustomer = firstValue(sp.customer) ?? '';
+  const customer = isUuid(rawCustomer) ? rawCustomer.toLowerCase() : undefined;
 
   const { rows, hasNext } = await listOrders({
     status: needsRefund || activeStatus === 'all' ? undefined : activeStatus,
     needsRefund,
     ref,
+    userId: customer,
     page,
     pageSize: DEFAULT_PAGE_SIZE,
   });
@@ -105,13 +118,22 @@ export default async function OrdersPage({
         ) : null}
       </form>
 
+      {customer ? (
+        <p className={styles.notice} role="status">
+          Showing one customer&apos;s orders ({shortId(customer)}).{' '}
+          <Link href={href(activeStatus)} className={styles.idLink}>
+            Show all orders
+          </Link>
+        </p>
+      ) : null}
+
       <nav className={styles.filterBar} aria-label="Filter by status">
         {filters.map((filter) => {
           const isActive = filter.value === activeStatus;
           return (
             <Link
               key={filter.value}
-              href={href(filter.value)}
+              href={href(filter.value, 1, customer)}
               className={`${styles.filter} ${isActive ? styles.filterActive : ''}`}
               aria-current={isActive ? 'page' : undefined}
             >
@@ -158,7 +180,13 @@ export default async function OrdersPage({
                   </td>
                   <td>{order.product_name ?? <span className={styles.muted}>unknown</span>}</td>
                   <td className={styles.mono}>{legs(order.scan_id_left, order.scan_id_right)}</td>
-                  <td className={styles.mono}>{formatMoney(order.amount_cents, order.currency)}</td>
+                  <td className={styles.mono}>
+                    {order.remake_of ? (
+                      <span title={remakeReasonLabel(order.remake_reason)}>Remake</span>
+                    ) : (
+                      formatMoney(order.amount_cents, order.currency)
+                    )}
+                  </td>
                   <td>
                     <StatusBadge status={order.status} kind="order" />
                   </td>
@@ -180,7 +208,7 @@ export default async function OrdersPage({
 
       <div className={styles.pager}>
         <Link
-          href={href(activeStatus, Math.max(1, page - 1))}
+          href={href(activeStatus, Math.max(1, page - 1), customer)}
           className={`${styles.pageBtn} ${page <= 1 ? styles.pageBtnDisabled : ''}`}
           aria-disabled={page <= 1}
         >
@@ -188,7 +216,7 @@ export default async function OrdersPage({
         </Link>
         <span>Page {page}</span>
         <Link
-          href={href(activeStatus, page + 1)}
+          href={href(activeStatus, page + 1, customer)}
           className={`${styles.pageBtn} ${hasNext ? '' : styles.pageBtnDisabled}`}
           aria-disabled={!hasNext}
         >

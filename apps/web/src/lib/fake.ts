@@ -1,11 +1,14 @@
 import { MEASUREMENT_KEYS, type MeasurementKey } from '@forms/shared';
 
 import type {
+  CustomerRow,
   JobRow,
   OrderDetail,
   OrderRow,
   ProductImageRow,
   ProductRow,
+  RefundRow,
+  TimelineRow,
   TriageData,
 } from './types';
 
@@ -174,6 +177,8 @@ export const fakeProductImages: ProductImageRow[] = [
   },
 ];
 
+export const FAKE_CUSTOMER_ID = '00000000-0000-4000-8000-0000000000d1';
+
 function fakeOrder(
   id: string,
   status: string,
@@ -183,7 +188,8 @@ function fakeOrder(
   right: string | null,
   created: string,
   tracking: string | null = null,
-  userId: string | null = '00000000-0000-4000-8000-0000000000d1',
+  userId: string | null = FAKE_CUSTOMER_ID,
+  remake: { of: string; reason: string } | null = null,
 ): OrderRow {
   const product = fakeProducts.find((p) => p.id === productId)!;
   return {
@@ -198,6 +204,8 @@ function fakeOrder(
     scan_id_right: right,
     tracking_carrier: tracking ? 'UPS' : null,
     tracking_number: tracking,
+    remake_of: remake?.of ?? null,
+    remake_reason: remake?.reason ?? null,
     created_at: t(created),
     updated_at: t(created),
   };
@@ -206,6 +214,19 @@ function fakeOrder(
 const B = (n: number) => `00000000-0000-4000-8000-0000000000b${n}`;
 
 export const fakeOrders: OrderRow[] = [
+  // A remake of the delivered order a1 (0024: zero cost, created paid).
+  fakeOrder(
+    '00000000-0000-4000-8000-0000000000a8',
+    'paid',
+    C1,
+    0,
+    B(1),
+    null,
+    '2026-07-03T09:00:00Z',
+    null,
+    FAKE_CUSTOMER_ID,
+    { of: '00000000-0000-4000-8000-0000000000a1', reason: 'fit_too_tight' },
+  ),
   fakeOrder(
     '00000000-0000-4000-8000-0000000000a6',
     'pending_payment',
@@ -257,17 +278,36 @@ export const fakeOrders: OrderRow[] = [
   ),
 ];
 
+const FAKE_REFUNDS: Record<string, RefundRow[]> = {
+  '00000000-0000-4000-8000-0000000000a3': [
+    {
+      id: 1,
+      seq: 1,
+      kind: 'partial',
+      amount_cents: 2000,
+      stripe_refund_id: 're_FAKE_1',
+      stripe_status: 'succeeded',
+      actor: 'admin@example.test',
+      created_at: t('2026-07-02T09:00:00Z'),
+    },
+  ],
+};
+
 export function fakeOrderDetail(id: string): OrderDetail | null {
   const order = fakeOrders.find((row) => row.id === id);
   if (!order) {
     return null;
   }
-  const paid = order.status !== 'pending_payment';
+  const paid = order.status !== 'pending_payment' && !order.remake_of;
+  const refunds = FAKE_REFUNDS[id] ?? [];
   return {
     ...order,
     stripe_payment_intent: paid ? `pi_FAKE_${order.id.slice(-2)}` : null,
-    paid_at: paid ? order.created_at : null,
+    paid_at: order.status !== 'pending_payment' ? order.created_at : null,
     refunded_at: null,
+    stripe_refunded_cents: refunds.length
+      ? refunds.reduce((sum, r) => sum + r.amount_cents, 0)
+      : null,
     address: {
       name: 'FAKE Customer',
       line1: '1 Example St',
@@ -279,17 +319,84 @@ export function fakeOrderDetail(id: string): OrderDetail | null {
     jobs: fakeJobs
       .filter((job) => job.order_id === id)
       .map(({ id: jobId, scan_id, step, status }) => ({ id: jobId, scan_id, step, status })),
-    history: [
-      {
-        id: 1,
-        actor: 'stripe-webhook',
-        action: 'order.status',
-        detail: { from: 'pending_payment', to: 'paid' },
-        created_at: order.created_at,
-      },
-    ],
+    refunds,
+    remakes: fakeOrders
+      .filter((row) => row.remake_of === id)
+      .map(({ id: remakeId, status, remake_reason, created_at }) => ({
+        id: remakeId,
+        status,
+        remake_reason,
+        created_at,
+      })),
   };
 }
+
+/** Newest first, like admin_order_timeline. */
+export function fakeTimeline(id: string): TimelineRow[] {
+  const order = fakeOrders.find((row) => row.id === id);
+  if (!order) {
+    return [];
+  }
+  const rows: TimelineRow[] = [
+    {
+      source: 'note',
+      entry_id: 2,
+      actor: 'admin@example.test',
+      action: 'order.note',
+      detail: null,
+      body: 'FAKE note: customer asked about delivery by email.',
+      created_at: t('2026-07-03T10:00:00Z'),
+    },
+    {
+      source: 'audit',
+      entry_id: 1,
+      actor: 'stripe-webhook',
+      action: 'order.status',
+      detail: { from: 'pending_payment', to: 'paid' },
+      body: null,
+      created_at: order.created_at,
+    },
+  ];
+  if (order.remake_of) {
+    rows.splice(1, 0, {
+      source: 'audit',
+      entry_id: 3,
+      actor: 'admin@example.test',
+      action: 'order.remake_created',
+      detail: { remake_of: order.remake_of, reason: order.remake_reason, legs: 'both' },
+      body: null,
+      created_at: order.created_at,
+    });
+  }
+  return rows;
+}
+
+export const fakeCustomers: CustomerRow[] = [
+  {
+    user_id: FAKE_CUSTOMER_ID,
+    email: 'fake.customer@example.com',
+    is_anonymous: false,
+    created_at: t('2026-06-01T09:00:00Z'),
+    deletion_requested_at: null,
+    deletion_reason: null,
+    order_count: 5,
+    open_order_count: 2,
+    scan_count: 3,
+    scan_statuses: { ready: 2, failed: 1 },
+  },
+  {
+    user_id: '00000000-0000-4000-8000-0000000000d2',
+    email: 'fake.leaving@example.com',
+    is_anonymous: false,
+    created_at: t('2026-06-05T09:00:00Z'),
+    deletion_requested_at: t('2026-07-01T09:00:00Z'),
+    deletion_reason: 'user_request',
+    order_count: 0,
+    open_order_count: 0,
+    scan_count: 0,
+    scan_statuses: {},
+  },
+];
 
 // A plausible-looking 25-variable payload (millimeters), with the two values
 // that tripped the gates in FAKE_TRIAGE_JOB_ID set to their out-of-range values.

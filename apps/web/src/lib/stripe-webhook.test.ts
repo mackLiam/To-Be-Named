@@ -196,16 +196,52 @@ describe('handleStripeWebhook', () => {
     });
   });
 
-  it('maps charge.refunded, full and partial', async () => {
-    for (const refunded of [true, false]) {
-      const { deps, rpc } = setup(evt('charge.refunded', { payment_intent: 'pi_123', refunded }));
+  it("maps charge.refunded, full and partial, with Stripe's cumulative total", async () => {
+    for (const [refunded, total] of [
+      [true, 17800],
+      [false, 500],
+    ] as const) {
+      const { deps, rpc } = setup(
+        evt('charge.refunded', { payment_intent: 'pi_123', refunded, amount_refunded: total }),
+      );
       expect((await handleStripeWebhook(deps())).status).toBe(200);
-      expect(rpc).toHaveBeenCalledWith('stripe_charge_refunded', {
+      expect(rpc).toHaveBeenCalledWith('stripe_charge_refunded_amount', {
         p_event_id: 'evt_1',
         p_payment_intent: 'pi_123',
         p_fully_refunded: refunded,
+        p_amount_refunded_cents: total,
       });
     }
+  });
+
+  it.each([undefined, -5, 12.5, '500'])(
+    'passes a null total when amount_refunded is %o',
+    async (total) => {
+      const { deps, rpc } = setup(
+        evt('charge.refunded', {
+          payment_intent: 'pi_123',
+          refunded: false,
+          amount_refunded: total,
+        }),
+      );
+      expect((await handleStripeWebhook(deps())).status).toBe(200);
+      expect(rpc).toHaveBeenCalledWith(
+        'stripe_charge_refunded_amount',
+        expect.objectContaining({ p_amount_refunded_cents: null }),
+      );
+    },
+  );
+
+  it('500s when the refund RPC fails so Stripe retries', async () => {
+    const { deps } = setup(evt('charge.refunded', { payment_intent: 'pi_123', refunded: true }), {
+      data: null,
+      error: { message: 'function missing' },
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await handleStripeWebhook(deps())).toEqual({
+      status: 500,
+      body: { error: 'processing_failed' },
+    });
   });
 
   it('answers 200 to a duplicate (replayed) event', async () => {

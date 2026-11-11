@@ -21,3 +21,16 @@ export function formatMoney(cents: number | null, currency: string | null): stri
     currency: (currency ?? 'usd').toUpperCase(),
   });
 }
+
+/**
+ * "12", "12.5" or "12.50" (major units, at most two decimals) -> 1250.
+ * Matches formatMoney, which treats every currency as two-decimal.
+ */
+export function parseMoneyAmount(raw: string | undefined): number | null {
+  const value = (raw ?? '').trim();
+  const match = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(value);
+  if (!match) {
+    return null;
+  }
+  return Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));
+}

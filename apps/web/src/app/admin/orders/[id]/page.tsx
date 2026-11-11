@@ -1,25 +1,32 @@
+import { randomUUID } from 'node:crypto';
+
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { BRAND_NAME } from '@forms/shared/brand';
 
-import { refundOrder, saveTracking, setOrderStatus } from '../../actions';
+import { addOrderNote, saveTracking, setOrderStatus } from '../../actions';
 import styles from '../../admin.module.css';
 import { AdminShell } from '../../AdminShell';
 import { StatusBadge } from '../../StatusBadge';
+import { SubmitButton } from '../../SubmitButton';
+import { RefundPanel } from './RefundPanel';
+import { RemakePanel } from './RemakePanel';
 import { requireAdmin } from '@/lib/admin-auth';
-import { getOrderDetail } from '@/lib/data';
-import { firstValue } from '@/lib/pagination';
-import { canRefund } from '@/lib/refund';
+import { getOrderDetail, getOrderTimeline } from '@/lib/data';
+import { MAX_NOTE_LENGTH } from '@/lib/order-notes';
+import { DEFAULT_PAGE_SIZE, firstValue, parsePageParam } from '@/lib/pagination';
+import { refundPanelState } from '@/lib/refund';
+import { remakeLegOptions, remakeReasonLabel, remakeState } from '@/lib/remake';
 import {
   ORDER_ACTION_LABEL,
   customerLabel,
-  describeAudit,
   formatAddress,
   formatMoney,
   nextOrderStatuses,
 } from '@/lib/shop';
+import { TIMELINE_KIND_LABEL, toTimeline } from '@/lib/timeline';
 import { formatDateTime, shortId } from '@/lib/view';
 
 export const metadata: Metadata = {
@@ -38,15 +45,28 @@ export default async function OrderDetailPage({
 }) {
   const ctx = await requireAdmin();
   const { id } = await params;
-  const error = firstValue((await searchParams).error);
+  const sp = await searchParams;
+  const error = firstValue(sp.error);
+  const notice = error ? undefined : firstValue(sp.notice);
+  const timelinePage = parsePageParam(sp.tl);
 
   const order = await getOrderDetail(id);
   if (!order) {
     notFound();
   }
+  const timeline = await getOrderTimeline(order.id, timelinePage, DEFAULT_PAGE_SIZE);
+  const entries = timeline.rows ? toTimeline(timeline.rows, order.currency) : null;
 
   const moves = nextOrderStatuses(order.status);
   const address = formatAddress(order.address);
+  const refundState = refundPanelState(order, order.refunds);
+  const remake = remakeState(order);
+  const currency = order.currency ?? 'usd';
+  const reference = shortId(order.id).toUpperCase();
+  const timelineHref = (page: number) =>
+    page > 1
+      ? `/admin/orders/${order.id}?tl=${page}#timeline`
+      : `/admin/orders/${order.id}#timeline`;
 
   return (
     <AdminShell fake={ctx.fake}>
@@ -61,7 +81,16 @@ export default async function OrderDetailPage({
         </div>
       </div>
 
-      {error ? <p className={styles.formError}>{error}</p> : null}
+      {error ? (
+        <p className={styles.formError} role="alert">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className={styles.notice} role="status">
+          {notice}
+        </p>
+      ) : null}
 
       <div className={styles.factGrid}>
         <div className={styles.fact}>
@@ -96,6 +125,25 @@ export default async function OrderDetailPage({
           <div className={styles.fact}>
             <div className={styles.factTerm}>Refunded</div>
             <div className={styles.factValue}>{formatDateTime(order.refunded_at)}</div>
+          </div>
+        ) : null}
+        {refundState.refundedCents > 0 ? (
+          <div className={styles.fact}>
+            <div className={styles.factTerm}>Refunded so far</div>
+            <div className={styles.factValue}>
+              {formatMoney(refundState.refundedCents, order.currency)}
+            </div>
+          </div>
+        ) : null}
+        {order.remake_of ? (
+          <div className={styles.fact}>
+            <div className={styles.factTerm}>Remake of</div>
+            <div className={`${styles.factValue} ${styles.mono}`}>
+              <Link href={`/admin/orders/${order.remake_of}`} className={styles.idLink}>
+                {shortId(order.remake_of)}
+              </Link>{' '}
+              <span className={styles.muted}>({remakeReasonLabel(order.remake_reason)})</span>
+            </div>
           </div>
         ) : null}
         <div className={styles.fact}>
@@ -138,20 +186,111 @@ export default async function OrderDetailPage({
         </div>
       )}
 
-      {canRefund(order) ? (
-        <>
-          <h2 className={styles.sectionLabel}>Payment</h2>
-          <form action={refundOrder} className={styles.actionBar}>
-            <input type="hidden" name="id" value={order.id} />
-            <button type="submit" className={styles.secondaryBtn}>
-              Refund payment
-            </button>
-            <span className={styles.actionNote}>
-              Full refund through Stripe. Paid or in-production orders are also cancelled.
-            </span>
-          </form>
-        </>
+      <h2 className={styles.sectionLabel}>Payment</h2>
+      {refundState.offer ? (
+        <RefundPanel
+          orderId={order.id}
+          currency={currency}
+          remainingCents={refundState.remainingCents}
+          fullCancels={refundState.fullCancels}
+        />
+      ) : (
+        <p className={styles.actionNote}>
+          {order.stripe_payment_intent
+            ? 'Nothing to refund from the panel. Delivered or fully refunded orders are handled in the Stripe dashboard.'
+            : 'No Stripe payment on this order.'}
+        </p>
+      )}
+      {order.refunds.length > 0 ? (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <caption className={styles.srOnly}>Refunds issued from the panel</caption>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Kind</th>
+                <th>Amount</th>
+                <th>Stripe</th>
+                <th>When</th>
+                <th>By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {order.refunds.map((refund) => (
+                <tr key={refund.id}>
+                  <td className={styles.mono}>{refund.seq}</td>
+                  <td>{refund.kind}</td>
+                  <td className={styles.mono}>
+                    {formatMoney(refund.amount_cents, order.currency)}
+                  </td>
+                  <td className={styles.mono}>
+                    {refund.stripe_refund_id}
+                    {refund.stripe_status ? (
+                      <span className={styles.muted}> ({refund.stripe_status})</span>
+                    ) : null}
+                  </td>
+                  <td className={`${styles.mono} ${styles.muted}`}>
+                    {formatDateTime(refund.created_at)}
+                  </td>
+                  <td className={styles.muted}>{refund.actor}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
+
+      <h2 className={styles.sectionLabel}>Remake</h2>
+      {order.remakes.length > 0 ? (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <caption className={styles.srOnly}>Remakes of this order</caption>
+            <thead>
+              <tr>
+                <th>Remake</th>
+                <th>Reason</th>
+                <th>Status</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {order.remakes.map((child) => (
+                <tr key={child.id}>
+                  <td className={`${styles.idCell} ${styles.mono}`}>
+                    <Link href={`/admin/orders/${child.id}`} className={styles.idLink}>
+                      {shortId(child.id)}
+                    </Link>
+                  </td>
+                  <td>{remakeReasonLabel(child.remake_reason)}</td>
+                  <td>
+                    <StatusBadge status={child.status} kind="order" />
+                  </td>
+                  <td className={`${styles.mono} ${styles.muted}`}>
+                    {formatDateTime(child.created_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {remake.kind === 'offer' ? (
+        <RemakePanel
+          orderId={order.id}
+          reference={reference}
+          legOptions={remakeLegOptions(order)}
+        />
+      ) : remake.kind === 'open' ? (
+        <p className={styles.actionNote}>
+          An open remake exists:{' '}
+          <Link href={`/admin/orders/${remake.remakeId}`} className={styles.idLink}>
+            {shortId(remake.remakeId)}
+          </Link>
+          . Cancel it first to start another.
+        </p>
+      ) : (
+        <p className={styles.actionNote}>{remake.reason}</p>
+      )}
 
       <h2 className={styles.sectionLabel}>Shipping</h2>
       <form action={saveTracking} className={styles.form}>
@@ -227,33 +366,104 @@ export default async function OrderDetailPage({
         </div>
       )}
 
-      <h2 className={styles.sectionLabel}>History</h2>
-      {order.history.length === 0 ? (
-        <p className={styles.actionNote}>No recorded changes.</p>
+      <h2 className={styles.sectionLabel}>Notes</h2>
+      <form action={addOrderNote} className={styles.form}>
+        <input type="hidden" name="id" value={order.id} />
+        <input type="hidden" name="request_id" value={randomUUID()} />
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Add a note</span>
+          <textarea
+            className={styles.input}
+            name="body"
+            rows={3}
+            required
+            maxLength={MAX_NOTE_LENGTH}
+            aria-describedby="note-hint"
+          />
+          <span className={styles.fieldHint} id="note-hint">
+            Internal, never shown to the customer. Notes cannot be edited or deleted. At most{' '}
+            {MAX_NOTE_LENGTH} characters.
+          </span>
+        </label>
+        <div className={styles.actionBar}>
+          <SubmitButton pendingLabel="Saving note" variant="secondary">
+            Add note
+          </SubmitButton>
+        </div>
+      </form>
+
+      <h2 className={styles.sectionLabel} id="timeline">
+        Timeline
+      </h2>
+      {entries === null ? (
+        <p className={styles.formError} role="alert">
+          The timeline could not be loaded. Reload to try again; the audit log has the same rows.
+        </p>
+      ) : entries.length === 0 ? (
+        <p className={styles.actionNote}>
+          {timelinePage > 1 ? 'No older entries.' : 'No recorded changes or notes yet.'}
+        </p>
       ) : (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
+            <caption className={styles.srOnly}>Order timeline, newest first</caption>
             <thead>
               <tr>
                 <th>When</th>
-                <th>Change</th>
+                <th>Kind</th>
+                <th>What</th>
                 <th>By</th>
               </tr>
             </thead>
             <tbody>
-              {order.history.map((row) => (
-                <tr key={row.id}>
-                  <td className={`${styles.mono} ${styles.muted}`}>
-                    {formatDateTime(row.created_at)}
+              {entries.map((entry) => (
+                <tr key={entry.key}>
+                  <td className={`${styles.mono} ${styles.muted}`}>{formatDateTime(entry.at)}</td>
+                  <td>{TIMELINE_KIND_LABEL[entry.kind]}</td>
+                  <td>
+                    {entry.body !== null ? (
+                      <span className={styles.noteBody}>{entry.body}</span>
+                    ) : (
+                      entry.text
+                    )}
+                    {entry.orderLink ? (
+                      <>
+                        {' '}
+                        <Link
+                          href={`/admin/orders/${entry.orderLink}`}
+                          className={`${styles.idLink} ${styles.mono}`}
+                        >
+                          {shortId(entry.orderLink)}
+                        </Link>
+                      </>
+                    ) : null}
                   </td>
-                  <td>{describeAudit(row)}</td>
-                  <td className={styles.muted}>{row.actor}</td>
+                  <td className={styles.muted}>{entry.actor}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      {entries !== null && (timelinePage > 1 || timeline.hasNext) ? (
+        <div className={styles.pager}>
+          <Link
+            href={timelineHref(Math.max(1, timelinePage - 1))}
+            className={`${styles.pageBtn} ${timelinePage <= 1 ? styles.pageBtnDisabled : ''}`}
+            aria-disabled={timelinePage <= 1}
+          >
+            Newer
+          </Link>
+          <span>Page {timelinePage}</span>
+          <Link
+            href={timelineHref(timelinePage + 1)}
+            className={`${styles.pageBtn} ${timeline.hasNext ? '' : styles.pageBtnDisabled}`}
+            aria-disabled={!timeline.hasNext}
+          >
+            Older
+          </Link>
+        </div>
+      ) : null}
     </AdminShell>
   );
 }

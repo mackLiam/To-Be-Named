@@ -30,8 +30,42 @@ export interface OrderRow {
   scan_id_right: string | null;
   tracking_carrier: string | null;
   tracking_number: string | null;
+  // Migration 0024: set on a remake, pointing at the order it replaces.
+  remake_of: string | null;
+  remake_reason: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** order_refunds (migration 0025). */
+export interface RefundRow {
+  id: number;
+  seq: number;
+  kind: string;
+  amount_cents: number;
+  stripe_refund_id: string;
+  stripe_status: string | null;
+  actor: string;
+  created_at: string;
+}
+
+/** A remake of the order on the page (orders.remake_of = that order). */
+export interface RemakeChild {
+  id: string;
+  status: string;
+  remake_reason: string | null;
+  created_at: string;
+}
+
+/** One admin_order_timeline row (migration 0026). */
+export interface TimelineRow {
+  source: 'audit' | 'note';
+  entry_id: number;
+  actor: string;
+  action: string;
+  detail: Record<string, unknown> | null;
+  body: string | null;
+  created_at: string;
 }
 
 export interface OrderDetail extends OrderRow {
@@ -40,9 +74,33 @@ export interface OrderDetail extends OrderRow {
   stripe_payment_intent: string | null;
   paid_at: string | null;
   refunded_at: string | null;
+  // Migration 0025: Stripe's cumulative refunded total, from the webhook.
+  stripe_refunded_cents: number | null;
   customer_email: string | null;
   jobs: Pick<JobRow, 'id' | 'scan_id' | 'step' | 'status'>[];
-  history: AuditRow[];
+  refunds: RefundRow[];
+  remakes: RemakeChild[];
+}
+
+/** One page of an order's timeline; rows null when it could not be read. */
+export interface TimelinePage {
+  rows: TimelineRow[] | null;
+  page: number;
+  hasNext: boolean;
+}
+
+/** admin_find_customers row (migration 0026). */
+export interface CustomerRow {
+  user_id: string;
+  email: string;
+  is_anonymous: boolean;
+  created_at: string;
+  deletion_requested_at: string | null;
+  deletion_reason: string | null;
+  order_count: number;
+  open_order_count: number;
+  scan_count: number;
+  scan_statuses: Record<string, number>;
 }
 
 export interface ProductRow {

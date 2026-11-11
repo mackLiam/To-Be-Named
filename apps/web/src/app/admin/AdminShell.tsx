@@ -28,6 +28,9 @@ export function AdminShell({ fake, children }: { fake: boolean; children: React.
           <Link href="/admin/orders" className={styles.navLink}>
             Orders
           </Link>
+          <Link href="/admin/customers" className={styles.navLink}>
+            Customers
+          </Link>
           <Link href="/admin/products" className={styles.navLink}>
             Products
           </Link>

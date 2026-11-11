@@ -911,3 +911,23 @@ textarea.input {
   white-space: nowrap;
   border: 0;
 }
+
+/* ------------------------------------------------------------------------- */
+/* Order support: action notices and note bodies in the timeline.           */
+/* ------------------------------------------------------------------------- */
+.notice {
+  border-left: 3px solid var(--action);
+  background: var(--surface-muted);
+  border-radius: var(--radius);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-md);
+  font-family: var(--font-body-stack);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.noteBody {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

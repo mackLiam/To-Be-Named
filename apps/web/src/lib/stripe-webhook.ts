@@ -73,6 +73,7 @@ interface LooseSession {
 interface LooseCharge {
   payment_intent?: unknown;
   refunded?: unknown;
+  amount_refunded?: unknown;
 }
 
 const str = (value: unknown): string | null =>
@@ -174,10 +175,16 @@ export async function handleStripeWebhook(deps: WebhookDeps): Promise<WebhookRes
     }
     case 'charge.refunded': {
       const charge = event.data.object as LooseCharge;
-      return call(deps, 'stripe_charge_refunded', {
+      // amount_refunded is Stripe's cumulative total for the charge. The RPC
+      // keeps it as a high-water mark next to the admin refund ledger (0025),
+      // never added to it, so the two paths cannot double count.
+      const total = charge.amount_refunded;
+      return call(deps, 'stripe_charge_refunded_amount', {
         p_event_id: event.id,
         p_payment_intent: idOf(charge.payment_intent),
         p_fully_refunded: charge.refunded === true,
+        p_amount_refunded_cents:
+          typeof total === 'number' && Number.isInteger(total) && total >= 0 ? total : null,
       });
     }
     default:
