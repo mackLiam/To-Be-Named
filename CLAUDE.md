@@ -5,7 +5,7 @@ parametric CAD → print-ready STL, fully automated (no manual CAD per customer)
 Full architecture, rationale, and roadmap: **`docs/DESIGN.md`** - read it before
 architectural decisions; update it when decisions change.
 
-## Repo structure (monorepo - pnpm workspaces + Turborepo, planned)
+## Repo structure (monorepo - pnpm workspaces + Turborepo)
 
 ```
 apps/app/          Expo Router universal product app - ships iOS + Android + web (app.zells.com)
@@ -91,35 +91,24 @@ or refactor. Not optional, not deferred to "later".
 
 ## Git rules (strict)
 
-- **Git is pre-approved in this repo (explicit exception to the global rule).** This
-  is a personal repo: run non-destructive git commands (status, add, commit, push,
-  pull, fetch, rebase, branch, merge, checkout, stash) without asking first, in chat
-  or otherwise. When a task naturally ends in a commit, commit and push without
-  prompting. Destructive operations still require explicit approval every time:
-  force push, reset --hard, clean, filter-branch/filter-repo, deleting remote branches.
-- Committing directly to `develop` is allowed (the remote's PR-only rule on `develop`
-  is bypassed intentionally). `main` is release-only and changes ONLY via PR from
-  `develop` - never commit or push to `main` directly.
-- Feature branches are optional, for larger or riskier work; name them
-  `type/short-description` (e.g. `feat/scan-upload`, `fix/onshape-units`) and merge
-  back into `develop`.
-- **Commit messages - Conventional Commits, always:**
-  - Format: `type(scope): short summary` on line 1, blank line, then a longer body
-    explaining what changed and why.
-  - `type`: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `perf`.
-  - `scope`: one or two words for the part touched (`app`, `web`, `pipeline`, `shared`,
-    `repo`, `docs`, `scan`, `onshape`, etc.).
-  - Example:
-    ```
-    feat(pipeline): add measurement plausibility gates
-
-    Reject extracted values outside human-plausible ranges before CAD
-    generation so a bad scan fails with a rescan prompt instead of
-    producing wrong geometry.
-    ```
+- **Pre-approved here (personal repo):** status, add, commit, push, pull, fetch,
+  rebase, branch, merge, checkout, switch. When a task ends in a commit, commit and
+  push without asking. Always ask first: force push, reset --hard, clean,
+  filter-branch/filter-repo, deleting branches. Enforced by the global hook
+  `~/.claude/hooks/git-gate.sh` (this repo is its only entry in
+  `~/.claude/git-allowed-repos`); it also asks when a git command is chained with a
+  non-git one, so run git commands on their own.
+- **Parallel sessions share this checkout and its index.** Stage and commit in one
+  step with explicit paths; never `git add -A` or `git add .`; never stash.
+- Commit straight to `develop` (its PR-only rule is bypassed on purpose). `main` is
+  release-only and changes only via PR from `develop`. Optional feature branches:
+  `type/short-description`, merged back into `develop`.
+- **Conventional Commits, always:** `type(scope): short summary`, blank line, then a
+  body saying what changed and why. Types: `feat`, `fix`, `chore`, `docs`,
+  `refactor`, `test`, `ci`, `perf`. Scope: one or two words (`app`, `web`,
+  `pipeline`, `shared`, `scan`, `onshape`, ...).
 - **Never add a Co-Authored-By line, "Generated with Claude" footer, or any AI
   attribution to commits, PRs, or code.** No exceptions.
-- Never force-push shared branches.
 
 ## Reasoning playbook (read this; it is how the codebase was built)
 
@@ -283,7 +272,10 @@ ROADMAP.md changes ride the same commit series.
 ## Current phase
 
 Phase 0 - prove the pipeline (see DESIGN.md §11): real scan → extraction → Onshape →
-printed guard with zero manual CAD. Auth/payments deliberately deferred until this works.
-Variable names confirmed and schema frozen at 1.0.0 (2026-07-02). Open blockers:
-EAS dev build with the capture module on a LiDAR iPhone, dimension-semantics
-walkthrough with the CAD collaborator, Onshape API access/keys.
+printed guard with zero manual CAD. As of 2026-11-10: Onshape API access works; a
+guard printed from hand-set Onshape values fit well; the slice variables' meaning
+was read from the model (crest-relative points, DESIGN.md 12.2), which the current
+extraction and schema ranges do not match. Next, per docs/SCAN-V3-PLAN.md: schema
+1.1.0 plus crest-relative extraction (blocks automated CAD), tape ground truth,
+the automated round trip, then the sweep capture. Still open: on-device capture
+runs, a LiDAR iPhone trial.
