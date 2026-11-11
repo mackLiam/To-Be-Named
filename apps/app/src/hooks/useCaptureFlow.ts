@@ -87,6 +87,7 @@ import {
 } from '../lib/captureSession';
 import type { CaptureSession } from '../lib/captureSession';
 import { getCaptureAvailability } from '../lib/nativeCapture';
+import { SWEEP_CAPTURE } from '../lib/sweepFlag';
 import type {
   CaptureAvailability,
   CaptureMode,
@@ -500,7 +501,10 @@ export class CaptureFlowController {
     let photoCapture: PhotoCaptureResult | SilhouetteCaptureResult;
     try {
       photoCapture = solo
-        ? await this.deps.startSilhouetteCapture({ leg: this.leg })
+        ? await this.deps.startSilhouetteCapture(
+            // mode is sent only for the sweep, so the station call is unchanged.
+            SWEEP_CAPTURE ? { leg: this.leg, mode: 'sweep' } : { leg: this.leg },
+          )
         : await this.deps.startPhotoCapture({ mode: 'helper' });
     } catch (error) {
       stopStats();
@@ -622,7 +626,7 @@ export class CaptureFlowController {
       captureKind: 'photos',
     };
     if (silhouette) {
-      meta.captureMethod = 'silhouette';
+      meta.captureMethod = SWEEP_CAPTURE ? 'sweep' : 'silhouette';
       meta.floorFound = photoCapture.floorFound;
     }
     await this.uploadWith((scanId) =>
@@ -632,6 +636,7 @@ export class CaptureFlowController {
         captureMeta: this.buildCaptureMeta(meta),
         scanId,
         pairId: this.session?.pairId ?? null,
+        allowSweep: SWEEP_CAPTURE,
       }),
     );
   }
