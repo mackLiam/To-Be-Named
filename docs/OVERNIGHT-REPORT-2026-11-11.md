@@ -54,7 +54,11 @@ docs/OVERNIGHT-2026-11-11.md. This is the final state.
   catalog_checks.sql and order_ops_checks.sql).
 - Swift: `swift build -c release && swift test` in services/reconstruct (23
   tests) and `swift test` in apps/app/modules/forms-capture/logic-tests (34
-  tests): green. A full Xcode app build needs `pod install` first.
+  tests): green.
+- Full iOS app build: `pod install` (in the gitignored, generated
+  apps/app/ios) then `xcodebuild -workspace FORMS.xcworkspace -scheme FORMS
+  -sdk iphonesimulator ... CODE_SIGNING_ALLOWED=NO`: BUILD SUCCEEDED,
+  including the sweep capture Swift and the expo-gl module.
 - Nothing ran on a phone.
 
 ## Done (with commits)
@@ -151,8 +155,8 @@ docs/OVERNIGHT-2026-11-11.md. This is the final state.
   Swift tests in apps/app/modules/forms-capture/logic-tests. Controller sweep
   mode reuses the station writer. Python and the app validator accept sweep
   bundles only with SWEEP_CAPTURE_ENABLED. The module compiles against the
-  simulator SDK. To try it on a phone: `pod install` (the new Swift file is
-  not in the Pods file list yet), a dev client build,
+  simulator SDK, and the full app builds for the simulator after `pod
+  install`. To try it on a phone: a dev client build (EAS runs pod install),
   EXPO_PUBLIC_SWEEP_CAPTURE=true in the app env and SWEEP_CAPTURE_ENABLED=true
   on the worker.
 
@@ -419,9 +423,10 @@ yourself; it may still hold a few frame-derived images
 - **The 3D viewer could not use the shared leg-model contract in React
   Native** at first (it pulled in a module that reads the schema with
   node:fs). Fixed in cfb44c0 with bundle-safe subpath exports.
-- **A full Xcode simulator build of the app fails** until `pod install` is
-  run: the new SweepCaptureLogic.swift is not in the generated Pods file
-  list. The module itself compiles against the simulator SDK.
+- **A full Xcode simulator build of the app failed** at first because
+  `pod install` had not run since the new SweepCaptureLogic.swift was added.
+  After `pod install` (generated, gitignored files only) the full simulator
+  build succeeds.
 - **The estimator's feasibility targets are not met** under provisional
   numbers: a full sweep comes out "required" (Leg_Length binds), and a
   scale-free capture needs two tape values, not one.
@@ -449,7 +454,8 @@ In order, for Liam:
    front half-circle, floor visible around the foot), drop them in services/pipeline/recordings/videos/,
    and run `.venv/bin/python -m forms_pipeline.harness run`. That gives the
    first agreement table between two videos of the same leg.
-3. **Try the sweep on a phone:** `pod install`, a dev client build,
+3. **Try the sweep on a phone:** a new dev client build (it must include
+   expo-gl and the new Swift file; `pod install` already ran locally),
    EXPO_PUBLIC_SWEEP_CAPTURE=true and SWEEP_CAPTURE_ENABLED=true, then
    tune the values listed under TODO(liam).
 4. **Decide the product calls** listed under TODO(liam), the most urgent
