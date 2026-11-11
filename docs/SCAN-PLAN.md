@@ -4,6 +4,11 @@ Written 2026-09-30 after the first real-device tests. This document is the
 working plan for capture quality; architecture truth stays in DESIGN.md, and
 the decisions here move into DESIGN.md as each one ships.
 
+Next generation (2026-11-10): docs/SCAN-V3-PLAN.md replaces the 5-station T3
+capture with a single video sweep, adds a leg estimator that fills gaps from
+a prior, and adds the 3D leg-and-guard preview. This file stays the record of
+the device evidence and the T1-T4 tiers.
+
 ---
 
 ## 1. What "done" means (Liam's words are the acceptance criteria)
