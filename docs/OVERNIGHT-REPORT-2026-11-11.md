@@ -9,9 +9,9 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Area | State |
 |---|---|
 | Video harness: Swift forms-video | done (bf48577) |
-| Video harness: Python driver | in progress |
-| Iteration on the two test videos | not started |
-| Phase 1 estimator | not started |
+| Video harness: Python driver | done (9424e5c) |
+| Iteration on the two test videos | in progress |
+| Phase 1 estimator | brief under forms-architect review |
 | Admin product management | not started |
 | UI and UX pass | not started |
 | docs/BUSINESS-GAPS.md | not started |
@@ -38,9 +38,33 @@ every milestone, so the latest commit on the branch holds the latest state.
   - The foreground-instance mask isolates the leg better than person
     segmentation (median area 0.46 / 0.39 of the frame vs 0.61 / 0.45).
 
+- Python harness (9424e5c): `python -m forms_pipeline.harness run`.
+  Resolves the pose convention from the data, finds up from the floor
+  plane, picks keyframes by azimuth, runs the production silhouette math
+  unchanged, and reports ratios only. 94 tests on synthetic legs under random
+  similarity transforms. It found a production bug: the silhouette loft can
+  join neighbouring rings half a turn apart (eigenvector sign flip), which
+  corrupts any slice that lands in that band. Fix in progress.
+
 ## Video results (counts and ratios only)
 
-Not run yet.
+Baseline, production math unchanged (9424e5c):
+
+| | IMG_3834 | IMG_3836 |
+|---|---|---|
+| Result | fail: silhouette pass 1 | fail: silhouette pass 1 |
+| Reason | leg cut off at the edge of a keyframe | leg cut off at the edge of a keyframe |
+| Registered / submitted frames | 44 / 60 | 38 / 60 |
+| Keyframes used / candidates | 16 / 44 | 10 / 38 |
+| Azimuth span | 159 deg | 95 deg (gate is 120) |
+| Up source | floor plane | camera fallback (phone upside down) |
+| Leg axis vs up | 18 deg | 34 deg (gate is 30) |
+| Foreground masks touching a border | 100% | 98% |
+| Body-pose joints found | 0 frames | 0 frames |
+
+Both fail at the first gate because close-up footage runs the thigh or foot
+off the frame in almost every frame, and today any cut-off view fails the
+whole scan.
 
 ## Untested on a device
 
