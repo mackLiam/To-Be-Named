@@ -41,6 +41,11 @@ Algorithm:
    the extremum window below the thigh onset (segment.thigh_onset): with the knee bent
    the thigh crosses the slices before the dip below the kneecap and hides it, and
    the capture fails asking for a straighter leg instead of measuring a short one.
+6. Typed Leg_Length (optional, user-attested, docs/SCAN-V3-PLAN.md 5.1): only the ankle
+   comes from the profile; the knee cut is the ankle plus the typed length, so a knee
+   bent far enough to hide the dip below the kneecap still measures. The thigh may
+   enter the slices above the highest measurement slice (S4) but not below it, and the
+   loft repeats the last section below the thigh up to the knee (typed_cut).
 """
 
 from __future__ import annotations
@@ -53,6 +58,7 @@ import numpy as np
 import trimesh
 from scipy import ndimage
 
+from forms_pipeline.extraction.measure import SLICE_FRACTIONS
 from forms_pipeline.reconstruct import ReconstructionQualityError
 from forms_pipeline.reconstruct.segment import (
     BIN_M,
@@ -120,6 +126,13 @@ JOINT_WINDOW_M = 0.04
 JOINT_OUTLIER_M = 0.02
 _FIT_SCALE_M = 0.05  # conditions the dual-conic system (lines in ~unit coordinates)
 _SCAN_CHUNK = 32
+# Typed Leg_Length: the profile must reach this far above the highest slice, so that
+# slice's section and the smoothing around it see reconstructed leg, not extrapolation.
+TYPED_COVER_MARGIN_M = 0.02
+TOP_SLICE_FRACTION = max(SLICE_FRACTIONS.values())
+
+LEG_LENGTH_TYPED = "typed"
+LEG_LENGTH_LANDMARK = "landmark"
 
 _RETAKE = "Please retake the photos."
 _DISAGREE = "The leg outlines in the photos do not agree; hold the phone steady."
@@ -139,6 +152,11 @@ _KNEE_OUT = (
 _KNEE_BENT = (
     "The knee was bent too far to measure; sit with your foot further forward so the "
     "leg is straighter."
+)
+# Not a photo problem, so no retake suffix: the same value fails with any photos.
+TYPED_LENGTH_OUT_OF_RANGE = (
+    "The leg length entered is not a length we can make a guard for. Measure again from "
+    "the bottom of the ankle to the knee."
 )
 
 
@@ -673,6 +691,57 @@ def _landmark_reason(
     return _ANKLE_MISSING
 
 
+def check_typed_length(leg_length_m: float) -> None:
+    """Raise unless leg_length_m (meters) lies in the schema's Leg_Length range."""
+    length_mm = meters_to_mm(float(leg_length_m))
+    if not LEG_LENGTH_MIN_MM <= length_mm <= LEG_LENGTH_MAX_MM:  # NaN fails too
+        raise ReconstructionQualityError(TYPED_LENGTH_OUT_OF_RANGE)
+
+
+@dataclass(frozen=True)
+class TypedCut:
+    s_ankle: float
+    s_knee: float  # s_ankle plus the typed length
+    s_hold: float  # rings above this repeat its section: beyond it is thigh or no profile
+    onset_fraction: float | None  # thigh onset height over the typed length
+
+
+def typed_cut(
+    widths: np.ndarray,
+    grid: np.ndarray,
+    ankle: int,
+    calf: int | None,
+    profile_top: float,
+    leg_length_m: float,
+) -> TypedCut:
+    """Where a typed length puts the knee, raising a retake reason when the profile
+    cannot carry every measured slice clear of the thigh.
+
+    A thigh onset below the top slice means the thigh crosses a measured section: the
+    bend is too far even with the length known. The onset bin (smoothed rise past
+    segment.MAX_LIMB_SLOPE) sits at or below where the thigh enters, so the top slice
+    may come right up to it (tests/test_silhouette_typed_length.py). A profile ending
+    within TYPED_COVER_MARGIN_M of the top slice means the knee end is out of the
+    reconstruction. Above s_hold the sections are thigh (a bent knee puts sections up
+    to SEARCH_RADIUS_M wide there, which swing extraction's axis) or extrapolation, so
+    the loft repeats the s_hold section up to the knee.
+    """
+    s_ankle = float(grid[ankle])
+    s_top_slice = s_ankle + TOP_SLICE_FRACTION * leg_length_m
+    onset = thigh_onset(widths, ankle if calf is None else calf)
+    s_onset = None if onset is None else float(grid[onset])
+    if s_onset is not None and s_onset < s_top_slice:
+        raise _retake(_KNEE_BENT)
+    if profile_top < s_top_slice + TYPED_COVER_MARGIN_M:
+        raise _retake(_KNEE_OUT)
+    return TypedCut(
+        s_ankle=s_ankle,
+        s_knee=s_ankle + leg_length_m,
+        s_hold=profile_top if s_onset is None else min(profile_top, s_onset),
+        onset_fraction=None if s_onset is None else (s_onset - s_ankle) / leg_length_m,
+    )
+
+
 def _longest_run(valid: np.ndarray) -> slice:
     idx = np.flatnonzero(valid)
     groups = np.split(idx, np.flatnonzero(np.diff(idx) > MAX_GAP_STEPS) + 1)
@@ -721,11 +790,21 @@ def _loft(
     return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
 
 
-def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> SilhouetteResult:
+def reconstruct_silhouette(
+    views: Sequence[View], floor_y: float | None, *, leg_length_m: float | None = None
+) -> SilhouetteResult:
     """Masked station photos -> ankle-to-knee mesh (ARKit world meters) plus artifacts.
+
+    leg_length_m: optional user-attested Leg_Length in METERS (this module's world
+    unit; the caller converts from the typed mm at its own boundary). When given, it
+    must lie in the schema's Leg_Length range, only the ankle is found from the profile,
+    and the mesh runs from the ankle to the ankle plus this length (step 6 above).
+    None keeps the landmark rule unchanged.
 
     Raises ReconstructionQualityError with a user-facing retake reason.
     """
+    if leg_length_m is not None:
+        check_typed_length(leg_length_m)
     # Views whose centerline is traced feed the axis; a view the frame cuts off still
     # gives tangent lines from the edges inside the frame (SCAN-V3-PLAN.md 4.5).
     usable: list[tuple[View, np.ndarray]] = []
@@ -805,31 +884,45 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
         raise _retake(not_traced)
     diameter = 2.0 * np.sqrt(np.sqrt(det))
     widths, (ankle, calf, knee) = profile_landmarks(np.interp(grid, s_run, diameter))
-    onset = None if calf is None else thigh_onset(widths, calf)
     seeds, joints_used = _joint_seeds(usable, origin, axis)
     seeded_ankle = _seeded_minimum(widths, grid, seeds["ankle"]) if "ankle" in seeds else None
-    seeded_knee = _seeded_minimum(widths, grid, seeds["knee"]) if "knee" in seeds else None
-    if seeded_knee is not None and onset is not None:
-        seeded_knee = seeded_knee if seeded_knee < onset - EXTREMUM_WINDOW_BINS else None
-    seeded_ankle = ankle if seeded_ankle is None else seeded_ankle
-    seeded_knee = knee if seeded_knee is None else seeded_knee
-    if seeded_ankle is not None and seeded_knee is not None:
-        length_mm = meters_to_mm(float(grid[seeded_knee] - grid[seeded_ankle]))
-        if LEG_LENGTH_MIN_MM <= length_mm <= LEG_LENGTH_MAX_MM:
-            ankle, knee = seeded_ankle, seeded_knee
-    if ankle is None or knee is None:
-        raise _retake(
-            _landmark_reason(widths, ankle is None, cut_below, cut_above, onset is not None)
-        )
-    s_ankle, s_knee = float(grid[ankle]), float(grid[knee])
+    onset_fraction: float | None = None
+    if leg_length_m is None:
+        onset = None if calf is None else thigh_onset(widths, calf)
+        seeded_knee = _seeded_minimum(widths, grid, seeds["knee"]) if "knee" in seeds else None
+        if seeded_knee is not None and onset is not None:
+            seeded_knee = seeded_knee if seeded_knee < onset - EXTREMUM_WINDOW_BINS else None
+        seeded_ankle = ankle if seeded_ankle is None else seeded_ankle
+        seeded_knee = knee if seeded_knee is None else seeded_knee
+        if seeded_ankle is not None and seeded_knee is not None:
+            length_mm = meters_to_mm(float(grid[seeded_knee] - grid[seeded_ankle]))
+            if LEG_LENGTH_MIN_MM <= length_mm <= LEG_LENGTH_MAX_MM:
+                ankle, knee = seeded_ankle, seeded_knee
+        if ankle is None or knee is None:
+            raise _retake(
+                _landmark_reason(widths, ankle is None, cut_below, cut_above, onset is not None)
+            )
+        s_ankle, s_knee = float(grid[ankle]), float(grid[knee])
+        s_hold = s_knee
+        leg_length_out = s_knee - s_ankle
+    else:
+        # The length is known, so a seeded ankle needs no knee to pair with.
+        ankle = ankle if seeded_ankle is None else seeded_ankle
+        if ankle is None:
+            raise _retake(_landmark_reason(widths, True, cut_below, cut_above))
+        cut = typed_cut(widths, grid, ankle, calf, float(s_run[-1]), leg_length_m)
+        s_ankle, s_knee, s_hold = cut.s_ankle, cut.s_knee, cut.s_hold
+        onset_fraction = cut.onset_fraction
+        leg_length_out = float(leg_length_m)
 
-    in_leg = (s_run >= s_ankle) & (s_run <= s_knee) & np.isfinite(rms_run)
+    in_leg = (s_run >= s_ankle) & (s_run <= min(s_knee, s_hold)) & np.isfinite(rms_run)
     residual_median = float(np.median(rms_run[in_leg])) if in_leg.any() else float("inf")
     if residual_median > MAX_MEDIAN_RESIDUAL_M:
         raise _retake(_DISAGREE)
 
     ring_s = np.append(np.arange(s_ankle, s_knee, STEP_M), s_knee)
-    ring_params = np.column_stack([np.interp(ring_s, s_run, p_run[:, c]) for c in range(5)])
+    ring_at = np.minimum(ring_s, s_hold)
+    ring_params = np.column_stack([np.interp(ring_at, s_run, p_run[:, c]) for c in range(5)])
     mesh = _loft(ring_s, ring_params, origin, frame)
 
     artifacts = {
@@ -848,7 +941,9 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
         "view_shift_max_m": shift_max,
         "residual_p90_m": float(np.percentile(rms_run[in_leg], 90)),
         "slices": len(ring_s),
-        "leg_length_m": s_knee - s_ankle,
+        "leg_length_m": leg_length_out,
+        "leg_length_source": LEG_LENGTH_LANDMARK if leg_length_m is None else LEG_LENGTH_TYPED,
+        "thigh_onset_fraction": onset_fraction,
         "floor_used": floor_y is not None,
         "joints_used": joints_used,
         "ankle_found": True,
