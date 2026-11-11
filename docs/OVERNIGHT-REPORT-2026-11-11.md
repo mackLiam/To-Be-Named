@@ -392,7 +392,19 @@ capture is Mac-side only.
 
 ## Onshape copies created
 
-None.
+None. No Onshape call was made tonight.
+
+## Body data handling
+
+The two videos and everything derived from them stayed on this Mac: bundles
+and results under services/pipeline/recordings/ (gitignored), plus a session
+scratchpad. Nothing was committed or uploaded; docs carry counts and ratios
+only. The mask contact sheets and logs in the scratchpad were deleted; a
+blanket clear of the rest was refused by a safety check, so delete the
+session scratchpad folder
+(/private/tmp/claude-501/-Users-liam-Documents-personal-To-Be-Named/e034ddb4-604f-421a-9c30-9e1d1b685b93/scratchpad)
+yourself; it may still hold a few frame-derived images
+(3836_120.png, out/, probe/, b/).
 
 ## What failed and why
 
