@@ -354,13 +354,20 @@ of section 4.6 when the verdict asks for one.
 
 ### 5.1 What the user does
 
-1. Sit, shorts above the knee, foot forward so the knee is only slightly
-   bent, other leg moved aside. **Changed 2026-11-11:** the earlier "foot
-   flat" seated pose bends the knee near 90 degrees, which hides the dip
-   below the kneecap from slices along the shin and shortened Leg_Length
-   by up to 15% on synthetic legs; silhouette v4 now makes a knee bent past
-   about 60 degrees a retake (docs/VIDEO-HARNESS.md). Comfort of the new
-   pose is untested on a device.
+1. Sit, shorts above the knee, other leg moved aside. **Open decision
+   (2026-11-11, Liam):** the earlier "foot flat, shin upright" pose bends
+   the knee near 90 degrees, which hides the dip below the kneecap from
+   slices along the shin and shortened Leg_Length by up to 15% on synthetic
+   legs, so silhouette v4 makes a knee bent past about 60 degrees a retake.
+   But with the thigh horizontal on a chair, knee bend is about 90 degrees
+   minus the shin's lean from vertical, and the posture gate refuses a lean
+   past 30 degrees (MAX_TILT_DEG; the math holds to 40,
+   tests/test_silhouette_tilt.py). So no ordinary seated pose passes both.
+   Candidates: standing with a helper (knee straight, shin upright); a high
+   seat or bed edge with the leg reaching forward plus the tilt gate opened
+   to 40 degrees; or a knee landmark that does not depend on the dip (a
+   later math change). Until decided, the app's station copy ("foot flat,
+   shin upright") leads to a bent-knee retake. Untested on a device.
 2. Hold the phone at shin height, about an arm's length away, pointing at the
    shin. The app finds the leg automatically (Vision body pose, as in da1b01b).
 3. **Press record, keep the phone at shin height, and move it slowly round

@@ -250,11 +250,19 @@ capture is Mac-side only.
   flagged `provisional` in the files, until the Phase 0 calibration.
 - Scan: MAX_TILT_DEG stays 30. The math holds at 40 on synthetic shins
   (tests/test_silhouette_tilt.py); opening the gate is a product call.
-- **Scan, product decision: the seated "foot flat" pose is now a retake.**
-  It bends the knee near 90 degrees, which measured Leg_Length up to 15%
-  short on synthetic legs; silhouette v4 refuses knees bent past about 60
-  degrees. SCAN-V3-PLAN.md 5.1 now says "foot forward". Confirm the pose is
-  comfortable on a device, and that the app's Get set screen asks for it.
+- **Scan, the most urgent product decision: the capture pose.** The seated
+  "foot flat, shin upright" pose bends the knee near 90 degrees, which
+  measured Leg_Length up to 15% short on synthetic legs, so silhouette v4
+  refuses knees bent past about 60 degrees. With the thigh horizontal, knee
+  bend is about 90 degrees minus the shin's lean, and the posture gate
+  refuses a lean past 30 degrees, so **no ordinary seated pose passes both
+  gates today**. Options are in SCAN-V3-PLAN.md 5.1: standing with a helper;
+  a high seat with the leg forward and MAX_TILT_DEG opened to 40 (the math
+  holds there); or a knee landmark that does not need the dip. I kept the
+  retake (a failed scan is reversible, a short guard is not) and did not
+  change the app's capture copy, because the right pose is your call. Until
+  then, station and sweep captures in the current pose will fail late with
+  the bent-knee reason.
 - Scan: segment.py's bent-knee rule also changes the photogrammetry path for
   bent-knee inputs only (short leg becomes a rescan). No version constant
   covers segment.py; decide whether that needs one.
