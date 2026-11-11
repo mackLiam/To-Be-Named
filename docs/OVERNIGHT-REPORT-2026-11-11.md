@@ -80,7 +80,15 @@ says tolerances or capture change, not the bands); nothing ran on a phone
 | App Shop tab follows the catalog | done (dfac25b) |
 | Security review of tonight's web and SQL | done, fixes in c7978b2 |
 
-## Verification (run by the orchestrator, 2026-11-11 about 01:15)
+## Verification (run by the orchestrator)
+
+Final run on the finished branch (2026-11-11 about 02:15): `make lint
+typecheck test` exit 0 (pipeline 1066 passed; shared 142, app 510, web 593
+tests; ruff, tsc and ESLint clean), `pnpm turbo run build` exit 0, `pnpm
+format:check` green, `bash supabase/tests/run_sql_checks.sh` all passed
+(including estimator_data_checks.sql for 0018, 0019, 0021).
+
+Earlier run (about 01:15):
 
 - `make lint typecheck test`: exit 0. Pipeline 1051 passed; shared 142,
   app 510, web 534 tests (593 after the security fixes, re-run); ruff, tsc and ESLint clean.
