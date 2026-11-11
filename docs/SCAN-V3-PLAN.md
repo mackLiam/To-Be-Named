@@ -365,8 +365,14 @@ of section 4.6 when the verdict asks for one.
    tests/test_silhouette_tilt.py). So no ordinary seated pose passes both.
    Candidates: standing with a helper (knee straight, shin upright); a high
    seat or bed edge with the leg reaching forward plus the tilt gate opened
-   to 40 degrees; or a knee landmark that does not depend on the dip (a
-   later math change). Until decided, the app's station copy ("foot flat,
+   to 40 degrees; a knee landmark that does not depend on the dip (a
+   later math change); or **Leg_Length from one tape number**, which a plain
+   video needs for scale anyway (section 5.7): the scan then only finds the
+   ankle, and the S1 to S4 slices at 20 to 80% of the typed length sit
+   below where the thigh enters (about 84% of leg length at 90 degrees on
+   the synthetic hinge), so a seated pose stays usable. That last option
+   needs a small math change (accept a typed Leg_Length instead of the
+   knee landmark) and the manual-entry diagram for the knee point. Until decided, the app's station copy ("foot flat,
    shin upright") leads to a bent-knee retake. Untested on a device.
 2. Hold the phone at shin height, about an arm's length away, pointing at the
    shin. The app finds the leg automatically (Vision body pose, as in da1b01b).

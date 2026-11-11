@@ -291,7 +291,10 @@ capture is Mac-side only.
   refuses a lean past 30 degrees, so **no ordinary seated pose passes both
   gates today**. Options are in SCAN-V3-PLAN.md 5.1: standing with a helper;
   a high seat with the leg forward and MAX_TILT_DEG opened to 40 (the math
-  holds there); or a knee landmark that does not need the dip. I kept the
+  holds there); a knee landmark that does not need the dip; or, my
+  recommendation, Leg_Length from one tape number (plain video needs a tape
+  value for scale anyway), so the scan only finds the ankle and the four
+  slices stay below where the thigh enters even at 90 degrees. I kept the
   retake (a failed scan is reversible, a short guard is not) and did not
   change the app's capture copy, because the right pose is your call. Until
   then, station and sweep captures in the current pose will fail late with
