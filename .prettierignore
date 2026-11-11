@@ -19,3 +19,5 @@ apps/app/ios/
 apps/app/android/
 # SwiftPM build output (gitignored).
 services/reconstruct/.build/
+apps/app/modules/forms-capture/logic-tests/.build/
+apps/app/modules/forms-capture/logic-tests/.swiftpm/

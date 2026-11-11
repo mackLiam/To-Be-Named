@@ -84,3 +84,7 @@ services/reconstruct/.build/
 
 # Replay recordings: body scan data, never committed (forms-replay)
 services/pipeline/recordings/
+
+# Swift logic-test package build output (apps/app/modules/forms-capture/logic-tests)
+apps/app/modules/forms-capture/logic-tests/.build/
+apps/app/modules/forms-capture/logic-tests/.swiftpm/
