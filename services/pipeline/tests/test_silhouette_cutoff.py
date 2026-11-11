@@ -173,7 +173,14 @@ def test_reasons_are_leg_relative_and_plain() -> None:
     """SCAN-V3-PLAN.md 5.3: no left or right; repo rule: no em or en dashes."""
     from forms_pipeline.reconstruct import silhouette
 
-    for name in ("_TOO_CLOSE", "_ANKLE_OUT", "_KNEE_OUT", "_NOT_TRACED"):
+    for name in (
+        "_TOO_CLOSE",
+        "_ANKLE_OUT",
+        "_KNEE_OUT",
+        "_NOT_TRACED",
+        "_ANKLE_MISSING",
+        "_KNEE_MISSING",
+    ):
         text = getattr(silhouette, name).lower()
         assert "left" not in text and "right" not in text, name
         assert "\u2014" not in text and "\u2013" not in text, name
@@ -185,3 +192,45 @@ def test_artifacts_carry_the_version_and_framing() -> None:
     assert art["edges_at_border_fraction"] == 0.0
     assert art["views_cut_off_above"] == art["views_cut_off_below"] == 0
     assert art["views_axis"] == 5
+
+
+# --- which end to blame when a landmark is missing (pure) -----------------------------
+
+# Widths (mm, per 5 mm bin from the foot end) shaped like IMG_3836 (2026-11-11): a foot
+# pointed along the shin with its toes off the frame, a heel bump, the ankle minimum at
+# 42% of the profile, the calf, then the thigh widening into the frame edge.
+_POINTED_FOOT_KNEE_CUT = np.interp(
+    np.arange(107), [0, 16, 26, 31, 45, 82, 92, 106], [85, 64, 86, 86, 58, 99, 100, 160]
+)
+# The same leg had the frame run on above the knee: dip below the kneecap, then thigh.
+_POINTED_FOOT_WHOLE = np.interp(
+    np.arange(140),
+    [0, 16, 26, 31, 45, 82, 92, 110, 122, 139],
+    [85, 64, 86, 86, 58, 99, 100, 88, 88, 120],
+)
+
+
+def test_a_cut_knee_end_hides_an_ankle_that_is_in_view() -> None:
+    from forms_pipeline.reconstruct import silhouette
+    from forms_pipeline.reconstruct.segment import profile_landmarks
+
+    widths, (ankle, _, _) = profile_landmarks(_POINTED_FOOT_KNEE_CUT / 1000.0)
+    assert ankle is None
+    _, (ankle_whole, _, knee_whole) = profile_landmarks(_POINTED_FOOT_WHOLE / 1000.0)
+    assert ankle_whole is not None and abs(ankle_whole - 45) <= 2 and knee_whole is not None
+    # Toes off the frame (cut below) do not make the ankle the missing part.
+    reason = silhouette._landmark_reason(widths, True, cut_below=True, cut_above=True)
+    assert reason == silhouette._KNEE_OUT
+
+
+def test_landmark_reason_blames_the_end_the_frame_removed() -> None:
+    from forms_pipeline.reconstruct import silhouette as sil
+
+    still_narrowing = np.linspace(0.060, 0.100, 60)  # ankle minimum beyond the cut
+    assert sil._landmark_reason(still_narrowing, True, True, False) == sil._ANKLE_OUT
+    assert sil._landmark_reason(still_narrowing, True, True, True) == sil._ANKLE_OUT
+    assert sil._landmark_reason(still_narrowing, True, False, False) == sil._ANKLE_MISSING
+    pointed = _POINTED_FOOT_KNEE_CUT / 1000.0
+    assert sil._landmark_reason(pointed, True, True, False) == sil._ANKLE_MISSING
+    assert sil._landmark_reason(pointed, False, False, True) == sil._KNEE_OUT
+    assert sil._landmark_reason(pointed, False, True, False) == sil._KNEE_MISSING

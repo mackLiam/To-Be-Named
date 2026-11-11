@@ -53,6 +53,7 @@ from scipy import ndimage
 from forms_pipeline.reconstruct import ReconstructionQualityError
 from forms_pipeline.reconstruct.segment import (
     BIN_M,
+    EXTREMUM_WINDOW_BINS,
     LEG_LENGTH_MAX_MM,
     LEG_LENGTH_MIN_MM,
     angular_span_deg,
@@ -64,7 +65,7 @@ METHOD = "silhouette"
 # Versions the algorithm, not the capture contract (reconstruct/bundle.py versions
 # that). Bump whenever the mesh or the failure verdict can change for the same
 # capture. Unversioned artifacts are the algorithm before "2".
-SILHOUETTE_VERSION = "2"
+SILHOUETTE_VERSION = "3"
 TRUSTED_TRACKING = "normal"  # a pose ARKit flags as limited is not metric enough
 
 # Tuning values, not physical constants: revisit against real captures.
@@ -630,6 +631,33 @@ def _seeded_minimum(widths: np.ndarray, grid: np.ndarray, seed: float) -> int | 
     return best if window[0] < best < window[-1] else None
 
 
+_ANKLE_MISSING = "The ankle could not be found; include the foot and ankle in every photo."
+_KNEE_MISSING = "The knee could not be found; include the knee in every photo."
+
+
+def _landmark_reason(
+    widths: np.ndarray, ankle_missing: bool, cut_below: bool, cut_above: bool
+) -> str:
+    """Why profile_landmarks found no ankle (or, with an ankle, no knee), given the
+    smoothed profile and which ends most views' frames cut off.
+
+    The ankle is blamed on framing only when the lower half of the profile is still
+    narrowing at its cut end, so the ankle minimum lies beyond the frame; toes running
+    off the frame do not hide an ankle above them. With an ankle minimum in view the
+    rule still misses it when the knee end is cut: its search window is a share of the
+    profile's length (segment.ANKLE_SEARCH_FRACTION), which assumes the profile runs on
+    above the knee, so the missing knee end is the part to fix (IMG_3836, 2026-11-11).
+    """
+    if not ankle_missing:
+        return _KNEE_OUT if cut_above else _KNEE_MISSING
+    lower = widths[: max(len(widths) // 2, 1)]
+    if cut_below and int(np.argmin(lower)) <= EXTREMUM_WINDOW_BINS:
+        return _ANKLE_OUT
+    if cut_above:
+        return _KNEE_OUT
+    return _ANKLE_MISSING
+
+
 def _longest_run(valid: np.ndarray) -> slice:
     idx = np.flatnonzero(valid)
     groups = np.split(idx, np.flatnonzero(np.diff(idx) > MAX_GAP_STEPS) + 1)
@@ -771,18 +799,8 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
         length_mm = meters_to_mm(float(grid[seeded_knee] - grid[seeded_ankle]))
         if LEG_LENGTH_MIN_MM <= length_mm <= LEG_LENGTH_MAX_MM:
             ankle, knee = seeded_ankle, seeded_knee
-    if ankle is None:
-        raise _retake(
-            _ANKLE_OUT
-            if cut_below
-            else "The ankle could not be found; include the foot and ankle in every photo."
-        )
-    if knee is None:
-        raise _retake(
-            _KNEE_OUT
-            if cut_above
-            else "The knee could not be found; include the knee in every photo."
-        )
+    if ankle is None or knee is None:
+        raise _retake(_landmark_reason(widths, ankle is None, cut_below, cut_above))
     s_ankle, s_knee = float(grid[ankle]), float(grid[knee])
 
     in_leg = (s_run >= s_ankle) & (s_run <= s_knee) & np.isfinite(rms_run)
