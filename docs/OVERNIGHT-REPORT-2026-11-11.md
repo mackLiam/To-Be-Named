@@ -15,7 +15,7 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
 | Admin product management | round 1 done (9ccd578, 0a1a2e6); round 2 (orders: remakes, partial refunds, customer lookup, emails; 0024-0026) in progress |
 | Phase 0.5 sweep capture spike (Swift, behind a flag) | in progress |
-| UI and UX pass | apps/app in progress with forms-designer; apps/web after admin |
+| UI and UX pass | apps/app done (e4b8960); apps/web after admin round 2 |
 | docs/BUSINESS-GAPS.md | done (5ad999e) |
 
 ## Done (with commits)
@@ -96,6 +96,13 @@ every milestone, so the latest commit on the branch holds the latest state.
   bucket: public URLs work without it and it let anyone list photo names for
   paused products. SQL checks pass.
 
+- App UI pass (e4b8960), led by forms-designer: wordmark on sign-in,
+  shared error and loading states with a real retry (web had none), correct
+  device copy (any iPhone on iOS 17), plain measurement labels, brand fonts
+  in native headers, honest disabled and busy buttons, tab bar from the
+  safe-area inset, helper-mode capture copy. Visual and copy only. Tests 458
+  to 487.
+
 ## Video results (counts and ratios only)
 
 Baseline, production math unchanged (9424e5c):
@@ -164,6 +171,8 @@ capture is Mac-side only.
   includes expo-gl. On the current dev client the viewer shows its fallback
   text. Touch orbit and the plan 7.6 performance budget (iPhone 12, 60 fps,
   first render under 300 ms) are unmeasured.
+- App UI pass: tab bar height with a real home indicator and Android gesture
+  nav, brand fonts in native headers, largest accessibility text sizes.
 - The forms-video CLI and harness run on the Mac only; the capture lessons
   they produced (section below) are not yet in the phone build.
 
@@ -203,6 +212,14 @@ capture is Mac-side only.
 - The app Shop tab still lists by price and ignores availability; until it
   is updated a coming-soon product looks buyable in the app (checkout
   refuses it server-side).
+- App: Android and web users with no scans have no entry point to hand
+  measuring (needs a navigation decision).
+- App: capture failure screens show "Code: ERR_..." to users; added on
+  purpose earlier, so left for Liam.
+- App: delivery time and the remake or returns policy should appear before
+  payment (order/[key].tsx); neither is decided, so nothing is shown.
+- App: the guard-pair product render has a soft glow and drop shadow that
+  brushes against the no-glow rule; judge it or swap in a real photo.
 - Estimator conservative defaults: manual input accepts any non-empty subset
   of the 9 typed keys; a missing or invalid tolerance makes the gate fail,
   never pass; keys already typed are not offered as tape actions.
