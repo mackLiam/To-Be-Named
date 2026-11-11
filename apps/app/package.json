@@ -9,12 +9,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@expo-google-fonts/manrope": "^0.4.2",
+    "@expo-google-fonts/manrope": "^0.4.3",
     "@expo-google-fonts/outfit": "^0.4.3",
     "@expo/vector-icons": "^15.0.2",
     "@forms/shared": "workspace:*",
     "@react-three/fiber": "9.8.2",
-    "@supabase/supabase-js": "^2.110.0",
+    "@supabase/supabase-js": "^2.119.0",
     "expo": "~57.0.1",
     "expo-build-properties": "~57.0.2",
     "expo-constants": "~57.0.2",
