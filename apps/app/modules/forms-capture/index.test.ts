@@ -259,6 +259,13 @@ describe('when the native module is present', () => {
     expect(native.startSilhouetteCapture).toHaveBeenCalledWith({ leg: 'R' });
   });
 
+  it('startSilhouetteCapture forwards the sweep mode untouched', async () => {
+    const native = makeNative();
+    mocks.native = native;
+    await capture.startSilhouetteCapture({ leg: 'L', mode: 'sweep' });
+    expect(native.startSilhouetteCapture).toHaveBeenCalledWith({ leg: 'L', mode: 'sweep' });
+  });
+
   it('startSilhouetteCapture maps the switch-to-manual rejection to its code', async () => {
     mocks.native = makeNative({
       startSilhouetteCapture: vi.fn(async () => {

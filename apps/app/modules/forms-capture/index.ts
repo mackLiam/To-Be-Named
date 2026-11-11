@@ -49,6 +49,7 @@ export type {
   ReconstructResult,
   ReconstructionProgressEvent,
   FormsCaptureNativeModule,
+  SilhouetteCaptureMode,
   SilhouetteCaptureOptions,
   SilhouetteCaptureResult,
   SilhouetteCondition,

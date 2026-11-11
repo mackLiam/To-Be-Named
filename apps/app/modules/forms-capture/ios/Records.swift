@@ -27,6 +27,9 @@ internal struct SilhouetteCaptureOptions: Record {
 
   /// 'L' or 'R' (SilhouetteLeg).
   @Field var leg: String = "L"
+
+  /// 'stations' (default) or 'sweep' (dev flag, SCAN-V3-PLAN.md Phase 0.5).
+  @Field var mode: String = "stations"
 }
 
 /// Mirrors the TS `PhotoCaptureOptions`.

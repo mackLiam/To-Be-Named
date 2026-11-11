@@ -7,6 +7,11 @@ from capture.json.
 
 Version 1 is the 3D photo capture (photogrammetry). Version 2, method
 "silhouette", is 4..12 station photos, each with an 8-bit grayscale leg mask.
+
+Sweep spike (docs/SCAN-V3-PLAN.md Phase 0.5): the same v2 bundle with stations
+named sweep_NN instead of the five fixed ones, up to 24 photos. Accepted only
+when the caller passes sweep_enabled (Settings.sweep_capture_enabled, default
+off); a bundle never mixes the two kinds.
 """
 
 from __future__ import annotations
@@ -38,8 +43,10 @@ METHOD_SILHOUETTE = "silhouette"
 # silhouette quality gates (views, azimuth span) are the real coverage check.
 MIN_SILHOUETTE_IMAGES = 4
 MAX_SILHOUETTE_IMAGES = 12
+MAX_SWEEP_IMAGES = 24
 MAX_PNG_BYTES = 1024 * 1024
 STATIONS = frozenset({"front", "front_inner", "inner", "front_outer", "outer"})
+SWEEP_STATION_RE = re.compile(r"^sweep_\d{2}$")
 JOINT_NAMES = frozenset({"knee", "ankle"})
 
 Joint = tuple[float, float, float]  # u, v (written-image pixels), confidence 0..1
@@ -103,7 +110,7 @@ def matrix_from_column_major(values: list[float]) -> np.ndarray:
     return np.asarray(values, dtype=np.float64).reshape(4, 4).T
 
 
-def _parse_image(i: int, raw: Any, silhouette: bool) -> CaptureImage:
+def _parse_image(i: int, raw: Any, silhouette: bool, sweep: bool = False) -> CaptureImage:
     if not isinstance(raw, dict):
         raise _fail(f"image entry {i} is not an object")
     name = raw.get("file")
@@ -140,7 +147,8 @@ def _parse_image(i: int, raw: Any, silhouette: bool) -> CaptureImage:
         mask, station = raw.get("mask"), raw.get("station")
         if not isinstance(mask, str) or not MASK_NAME_RE.fullmatch(mask) or mask[:3] != name[:3]:
             raise _fail(f"{name} has an invalid mask file name")
-        if not isinstance(station, str) or station not in STATIONS:
+        valid = SWEEP_STATION_RE.fullmatch if sweep else STATIONS.__contains__
+        if not isinstance(station, str) or not valid(station):
             raise _fail(f"{name} has an invalid station")
         joints = _parse_joints(name, raw.get("joints"), width, height)
 
@@ -203,8 +211,31 @@ def _parse_capture_info(raw: Any) -> CaptureInfo:
     )
 
 
-def parse_capture(data: bytes) -> CaptureBundle:
-    """Validate capture.json bytes against the forms.photo-capture v1 or v2 contract."""
+def _is_sweep(raw_images: list[Any], sweep_enabled: bool) -> bool:
+    """Whether a v2 image list is a sweep. Mixed kinds and a sweep with the flag off
+    are rejected; malformed entries are left to _parse_image."""
+    stations = [
+        raw.get("station")
+        for raw in raw_images
+        if isinstance(raw, dict) and isinstance(raw.get("station"), str)
+    ]
+    sweep = [s for s in stations if SWEEP_STATION_RE.fullmatch(s)]
+    if not sweep:
+        return False
+    if not sweep_enabled:
+        raise _fail("sweep capture is not enabled")
+    if len(sweep) != len(stations):
+        raise _fail("capture mixes sweep and station photos")
+    if len(set(sweep)) != len(sweep):
+        raise _fail("duplicate sweep stations")
+    return True
+
+
+def parse_capture(data: bytes, *, sweep_enabled: bool = False) -> CaptureBundle:
+    """Validate capture.json bytes against the forms.photo-capture v1 or v2 contract.
+
+    sweep_enabled (Settings.sweep_capture_enabled) admits v2 sweep bundles.
+    """
     if len(data) > MAX_CAPTURE_JSON_BYTES:
         raise _fail("capture.json is too large")
     try:
@@ -230,13 +261,17 @@ def parse_capture(data: bytes) -> CaptureBundle:
     raw_images = doc.get("images")
     if not isinstance(raw_images, list):
         raise _fail("missing image list")
-    lo, hi = (
-        (MIN_SILHOUETTE_IMAGES, MAX_SILHOUETTE_IMAGES) if silhouette else (MIN_IMAGES, MAX_IMAGES)
-    )
+    sweep = silhouette and _is_sweep(raw_images, sweep_enabled)
+    if sweep:
+        lo, hi = MIN_SILHOUETTE_IMAGES, MAX_SWEEP_IMAGES
+    elif silhouette:
+        lo, hi = MIN_SILHOUETTE_IMAGES, MAX_SILHOUETTE_IMAGES
+    else:
+        lo, hi = MIN_IMAGES, MAX_IMAGES
     if not lo <= len(raw_images) <= hi:
         raise _fail(f"expected {lo} to {hi} photos, got {len(raw_images)}")
 
-    images = tuple(_parse_image(i, raw, silhouette) for i, raw in enumerate(raw_images))
+    images = tuple(_parse_image(i, raw, silhouette, sweep) for i, raw in enumerate(raw_images))
     if len({img.file for img in images}) != len(images):
         raise _fail("duplicate image file names")
     if not silhouette:

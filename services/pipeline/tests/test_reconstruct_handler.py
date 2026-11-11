@@ -341,3 +341,31 @@ def test_malformed_capture_info_fails_before_download_of_photos(
     with pytest.raises(BundleValidationError, match="capture info"):
         handle_reconstructing(Job(), ctx, settings)
     assert ctx.storage.downloads == [("meshes", f"{PREFIX}capture.json")]
+
+
+def _sweep_capture_storage() -> FakeStorage:
+    doc = capture_doc(camera_ring(12), capture=capture_info())
+    doc.update(version=2, method="silhouette", floor_y=-1.05)
+    for i, image in enumerate(doc["images"]):
+        image["mask"] = image["file"].replace(".jpg", ".png")
+        image["station"] = f"sweep_{i:02d}"
+    storage = FakeStorage()
+    storage.files[("meshes", f"{PREFIX}capture.json")] = capture_bytes(doc)
+    return storage
+
+
+def test_sweep_bundle_is_rescan_while_the_flag_is_off() -> None:
+    storage = _sweep_capture_storage()
+    with pytest.raises(BundleValidationError, match="sweep capture is not enabled"):
+        handle_reconstructing(Job(), Ctx(FakeStore(), storage), Settings(_env_file=None))
+    assert storage.downloads == [("meshes", f"{PREFIX}capture.json")]
+
+
+def test_sweep_flag_reaches_the_bundle_parser() -> None:
+    storage = _sweep_capture_storage()
+    settings = Settings(_env_file=None, sweep_capture_enabled=True)
+    # No photos stored: getting as far as downloading the first one proves the
+    # bundle was accepted.
+    with pytest.raises(KeyError):
+        handle_reconstructing(Job(), Ctx(FakeStore(), storage), settings)
+    assert ("meshes", f"{PREFIX}images/000.jpg") in storage.downloads

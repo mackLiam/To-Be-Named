@@ -121,9 +121,20 @@ export interface PhotoCaptureStatsEvent {
  */
 export type SilhouetteStation = 'front' | 'front_inner' | 'inner' | 'front_outer' | 'outer';
 
+/**
+ * 'stations': the five fixed stations (default). 'sweep': dev flag only
+ * (docs/SCAN-V3-PLAN.md Phase 0.5): keyframes kept by azimuth spacing, up to
+ * 24, written with station `sweep_NN` in the same v2 bundle. A sweep bundle
+ * must be uploaded with `sweep: true` and needs SWEEP_CAPTURE_ENABLED on the
+ * pipeline.
+ */
+export type SilhouetteCaptureMode = 'stations' | 'sweep';
+
 export interface SilhouetteCaptureOptions {
   /** Which leg; decides which side of the front is inner. */
   leg: 'L' | 'R';
+  /** Defaults to 'stations' on the Swift side. */
+  mode?: SilhouetteCaptureMode;
 }
 
 /**
@@ -137,12 +148,12 @@ export interface SilhouetteCaptureResult {
   sessionId: string;
   bundleDir: string;
   manifestPath: string;
-  /** Stations captured (4 or 5). */
+  /** Stations captured (4 or 5); sweep: keyframes kept (8 to 24). */
   imageCount: number;
-  /** Stations captured / 5. */
+  /** Stations captured / 5; sweep: height bands credited over the auto-stop target, 0..1. */
   coverage: number;
   mode: 'solo';
-  /** True when finished with 4 stations. */
+  /** True when finished with 4 stations; sweep: Done tapped before the auto-stop. */
   finishedEarly: boolean;
   /** Whether a floor plane was found (capture.json floor_y is not null). */
   floorFound: boolean;
@@ -170,6 +181,12 @@ export interface SilhouetteStatsEvent {
   failures: Partial<Record<SilhouetteCondition, number>>;
   torchOn: boolean;
   ambientIntensity: number | null;
+  /** Sweep mode only (azimuthOffsetDeg is then relative to the front). */
+  sweepKeyframes?: number;
+  sweepSpanDeg?: number;
+  sweepKneeKeyframes?: number;
+  sweepSideView?: boolean;
+  sweepCoverage?: number;
 }
 
 /** Result of a completed reconstruction. All paths are inside the app sandbox. */

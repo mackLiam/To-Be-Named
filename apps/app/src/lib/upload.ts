@@ -537,6 +537,43 @@ export const SILHOUETTE_STATIONS = [
 ] as const;
 export type SilhouetteStationName = (typeof SILHOUETTE_STATIONS)[number];
 
+/** Sweep spike (docs/SCAN-V3-PLAN.md Phase 0.5, dev flag): the same v2 bundle
+ * with stations sweep_NN instead of the fixed five, up to 24 images. Mirrors
+ * SWEEP_STATION_RE and MAX_SWEEP_IMAGES in the pipeline's reconstruct/bundle.py,
+ * which accepts these only with SWEEP_CAPTURE_ENABLED. */
+export const SWEEP_STATION_PATTERN = /^sweep_\d{2}$/;
+export const SWEEP_MAX_IMAGES = 24;
+export type SweepStationName = `sweep_${string}`;
+
+export interface SilhouetteValidationOptions {
+  /** Admit sweep bundles (stations sweep_NN). Off by default, like the server. */
+  allowSweep?: boolean;
+}
+
+/** Whether a v2 image list is a sweep. Mixed kinds, duplicates, and a sweep
+ * without allowSweep are rejected; malformed entries are left to the per-image
+ * checks. Same rules as _is_sweep in reconstruct/bundle.py. */
+function isSweepBundle(images: unknown[], allowSweep: boolean): boolean {
+  const stations = images
+    .map((raw) =>
+      typeof raw === 'object' && raw !== null
+        ? (raw as Record<string, unknown>).station
+        : undefined,
+    )
+    .filter((station): station is string => typeof station === 'string');
+  const sweep = stations.filter((station) => SWEEP_STATION_PATTERN.test(station));
+  if (sweep.length === 0) {
+    return false;
+  }
+  if (!allowSweep) {
+    throw invalidBundle('sweep capture is not enabled');
+  }
+  if (sweep.length !== stations.length) {
+    throw invalidBundle('capture mixes sweep and station photos');
+  }
+  return true;
+}
+
 /** [u, v, confidence]: pixels of the written image (u right, v down, origin
  * top-left, the mask's convention), confidence 0..1. */
 export type SilhouetteJoint = [number, number, number];
@@ -544,7 +581,7 @@ export type SilhouetteJoint = [number, number, number];
 export interface SilhouetteManifestImage extends PhotoManifestImage {
   /** NNN.png with the same NNN as file: 8-bit grayscale, same size, 255 = leg. */
   mask: string;
-  station: SilhouetteStationName;
+  station: SilhouetteStationName | SweepStationName;
   /** Optional: Vision body pose for the captured leg; null when not seen. */
   joints?: { knee: SilhouetteJoint | null; ankle: SilhouetteJoint | null };
 }
@@ -590,7 +627,10 @@ function validateJoints(value: unknown, where: string, width: number, height: nu
 
 /** Validate a parsed capture.json against the v2 silhouette contract and caps.
  * Throws ERR_UPLOAD_INVALID_BUNDLE naming the first violation. */
-export function validateSilhouetteManifest(value: unknown): SilhouetteManifest {
+export function validateSilhouetteManifest(
+  value: unknown,
+  options: SilhouetteValidationOptions = {},
+): SilhouetteManifest {
   if (typeof value !== 'object' || value === null) {
     throw invalidBundle('capture.json is not an object');
   }
@@ -614,7 +654,9 @@ export function validateSilhouetteManifest(value: unknown): SilhouetteManifest {
   if (!Array.isArray(images)) {
     throw invalidBundle('images must be an array');
   }
-  const { minImages, maxImages } = SILHOUETTE_BUNDLE_LIMITS;
+  const sweep = isSweepBundle(images, options.allowSweep === true);
+  const { minImages } = SILHOUETTE_BUNDLE_LIMITS;
+  const maxImages = sweep ? SWEEP_MAX_IMAGES : SILHOUETTE_BUNDLE_LIMITS.maxImages;
   if (images.length < minImages || images.length > maxImages) {
     throw invalidBundle(`expected ${minImages} to ${maxImages} images, got ${images.length}`);
   }
@@ -633,10 +675,10 @@ export function validateSilhouetteManifest(value: unknown): SilhouetteManifest {
       throw invalidBundle(`${where}.mask must be ${stem}.png`);
     }
     const station = image.station;
-    if (
-      typeof station !== 'string' ||
-      !(SILHOUETTE_STATIONS as readonly string[]).includes(station)
-    ) {
+    const known = sweep
+      ? typeof station === 'string' && SWEEP_STATION_PATTERN.test(station)
+      : typeof station === 'string' && (SILHOUETTE_STATIONS as readonly string[]).includes(station);
+    if (typeof station !== 'string' || !known) {
       throw invalidBundle(`${where}.station is not a known station`);
     }
     if (seenStations.has(station)) {
@@ -701,6 +743,8 @@ export interface UploadPhotoBundleParams {
   scanId?: string;
   /** Same as UploadScanParams.pairId. */
   pairId?: string | null;
+  /** Silhouette bundles only: admit a sweep bundle (dev flag, mode 'sweep'). */
+  allowSweep?: boolean;
 }
 
 export interface UploadPhotoBundleResult {
@@ -755,7 +799,9 @@ export async function uploadSilhouetteBundleWith(
     params,
     SILHOUETTE_BUNDLE_LIMITS.maxManifestBytes,
   );
-  const manifest = validateSilhouetteManifest(parseManifest(manifestText));
+  const manifest = validateSilhouetteManifest(parseManifest(manifestText), {
+    allowSweep: params.allowSweep === true,
+  });
   const files: BundleFile[] = manifest.images.flatMap((image): BundleFile[] => [
     {
       relative: `images/${image.file}`,

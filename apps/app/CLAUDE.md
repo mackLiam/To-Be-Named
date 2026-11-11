@@ -23,6 +23,9 @@ pipeline instead: the app never interprets geometry.
   (src/types.ts, src/native.ts, src/errors.ts) is typed and unit-tested even
   though the Swift side needs a physical device: keep the boundary such that
   everything except the actual ObjectCaptureSession calls is testable on CI.
+- The pure Swift capture logic (ios/*CaptureLogic.swift, symlinked into a
+  macOS SwiftPM package) has XCTest coverage: run
+  `cd apps/app/modules/forms-capture/logic-tests && swift test`.
 - Errors from the native layer are mapped to typed, user-actionable errors in
   src/errors.ts. When adding native surface, extend the error mapping in the
   same change; a raw NSError code reaching the UI is a bug.

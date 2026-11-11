@@ -18,6 +18,8 @@ import {
   uploadScanWith,
   validatePhotoManifest,
   SILHOUETTE_BUNDLE_LIMITS,
+  SWEEP_MAX_IMAGES,
+  SWEEP_STATION_PATTERN,
   uploadSilhouetteBundle,
   uploadSilhouetteBundleWith,
   validateSilhouetteManifest,
@@ -848,6 +850,109 @@ describe('validateSilhouetteManifest', () => {
     const bad = silhouetteManifest();
     bad.images[1] = { ...silhouetteImage(1), station: 'front' };
     expect(() => validateSilhouetteManifest(bad)).toThrow(/station is duplicated/);
+  });
+});
+
+function sweepManifest(imageCount = 12) {
+  const base = silhouetteManifest();
+  return {
+    ...base,
+    images: Array.from({ length: imageCount }, (_, i) => ({
+      ...manifestImage(i),
+      mask: `${String(i).padStart(3, '0')}.png`,
+      station: `sweep_${String(i).padStart(2, '0')}`,
+    })),
+  };
+}
+
+describe('validateSilhouetteManifest, sweep (dev flag)', () => {
+  it('mirrors the server pattern and cap', () => {
+    expect(SWEEP_MAX_IMAGES).toBe(24);
+    expect(SWEEP_STATION_PATTERN.test('sweep_07')).toBe(true);
+    expect(SWEEP_STATION_PATTERN.test('sweep_7')).toBe(false);
+  });
+
+  it('rejects a sweep bundle unless allowSweep is set', () => {
+    expect(() => validateSilhouetteManifest(sweepManifest())).toThrow(
+      /sweep capture is not enabled/,
+    );
+    expect(() => validateSilhouetteManifest(sweepManifest(), { allowSweep: false })).toThrow(
+      /sweep capture is not enabled/,
+    );
+    const ok = validateSilhouetteManifest(sweepManifest(), { allowSweep: true });
+    expect(ok.images.map((image) => image.station)).toEqual(
+      Array.from({ length: 12 }, (_, i) => `sweep_${String(i).padStart(2, '0')}`),
+    );
+  });
+
+  it('raises the cap to 24 for sweeps only', () => {
+    expect(validateSilhouetteManifest(sweepManifest(24), { allowSweep: true }).images).toHaveLength(
+      24,
+    );
+    expect(validateSilhouetteManifest(sweepManifest(4), { allowSweep: true }).images).toHaveLength(
+      4,
+    );
+    expect(() => validateSilhouetteManifest(sweepManifest(25), { allowSweep: true })).toThrow(
+      /4 to 24/,
+    );
+    expect(() => validateSilhouetteManifest(sweepManifest(3), { allowSweep: true })).toThrow(
+      /4 to 24/,
+    );
+    const many = sweepManifest(13);
+    many.images = many.images.map((image, i) => ({ ...image, station: STATIONS[i % 5] as string }));
+    expect(() => validateSilhouetteManifest(many, { allowSweep: true })).toThrow(/4 to 12/);
+  });
+
+  it('leaves station bundles unchanged with allowSweep', () => {
+    expect(
+      validateSilhouetteManifest(silhouetteManifest(), { allowSweep: true }).images,
+    ).toHaveLength(5);
+  });
+
+  it.each(['sweep_1', 'sweep_001', 'Sweep_01', 'sweep-01', 'sweep_ab', 'kf01'])(
+    'rejects the bad sweep station %s',
+    (station) => {
+      const bad = sweepManifest(8);
+      bad.images[3] = { ...bad.images[3], station } as (typeof bad.images)[0];
+      expect(() => validateSilhouetteManifest(bad, { allowSweep: true })).toThrow(
+        /mixes sweep and station photos|station is not a known station/,
+      );
+    },
+  );
+
+  it('rejects mixed station kinds and duplicate sweep stations', () => {
+    const mixed = sweepManifest(8);
+    mixed.images[2] = { ...mixed.images[2], station: 'front' } as (typeof mixed.images)[0];
+    expect(() => validateSilhouetteManifest(mixed, { allowSweep: true })).toThrow(
+      /mixes sweep and station photos/,
+    );
+    expect(() => validateSilhouetteManifest(mixed)).toThrow(/sweep capture is not enabled/);
+    const duplicate = sweepManifest(8);
+    duplicate.images[5] = {
+      ...duplicate.images[5],
+      station: 'sweep_01',
+    } as (typeof duplicate.images)[0];
+    expect(() => validateSilhouetteManifest(duplicate, { allowSweep: true })).toThrow(
+      /station is duplicated/,
+    );
+    const missing = sweepManifest(8);
+    missing.images[4] = { ...missing.images[4], station: null } as never;
+    expect(() => validateSilhouetteManifest(missing, { allowSweep: true })).toThrow(
+      /station is not a known station/,
+    );
+  });
+
+  it('uploadSilhouetteBundleWith passes allowSweep through, and refuses without it', async () => {
+    const text = JSON.stringify(sweepManifest(8));
+    const refused = photoHarness({ manifestText: text });
+    await expect(uploadSilhouetteBundleWith(refused.deps, BUNDLE)).rejects.toThrow(
+      /sweep capture is not enabled/,
+    );
+    expect(refused.uploadCalls).toHaveLength(0);
+    const h = photoHarness({ manifestText: text });
+    const res = await uploadSilhouetteBundleWith(h.deps, { ...BUNDLE, allowSweep: true });
+    expect(res.imageCount).toBe(8);
+    expect(h.uploadCalls.map((c) => c.path).at(-1)).toMatch(/capture\.json$/);
   });
 });
 

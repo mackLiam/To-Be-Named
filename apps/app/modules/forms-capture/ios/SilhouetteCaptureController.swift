@@ -39,6 +39,13 @@ import Vision
 
  Cannot be unit tested off-device: every input is a live ARFrame. Decision
  rules live in SilhouetteCaptureLogic.swift; constants in SilhouetteTuning.
+
+ Sweep mode (dev flag, mode "sweep", SCAN-V3-PLAN.md Phase 0.5): the same
+ floor, aim, Vision, JPEG and mask writers, but no stations. Keyframes are kept
+ by azimuth spacing (SweepCaptureLogic.swift, tested on macOS under
+ logic-tests/) and written with station "sweep_NN", up to 24, in the same v2
+ bundle. Every sweep branch is guarded by `sweep`; with it false the station
+ flow is unchanged.
 */
 @MainActor
 final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
@@ -56,6 +63,7 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
   }
 
   private let leg: SilhouetteLeg
+  private let sweep: Bool
   private let onStats: ([String: Any]) -> Void
   private let sessionId = UUID().uuidString
   private let sessionDir: URL
@@ -116,6 +124,15 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
   private var finished = false
   private var previousIdleTimerDisabled = false
 
+  // Sweep (mode "sweep" only). Only one sweep check runs at a time (capturing),
+  // so the selection a check decided against is still current when it lands.
+  private var sweepSelection = SweepSelection()
+  private var sweepEntries: [Int: [String: Any]] = [:]
+  private var sweepFraming: SweepFraming?
+  private var sweepFramingAt: TimeInterval = -.infinity
+  private let ghostLeg = GhostLegView()
+  private let tick = UIImpactFeedbackGenerator(style: .light)
+
   // Overlay.
   private let messageLabel = UILabel()
   private let detailLabel = UILabel()
@@ -135,8 +152,9 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
   private let lightPromptButton = UIButton(type: .system)
   private let finishFourButton = UIButton(type: .system)
 
-  init(leg: SilhouetteLeg, onStats: @escaping ([String: Any]) -> Void) {
+  init(leg: SilhouetteLeg, sweep: Bool = false, onStats: @escaping ([String: Any]) -> Void) {
     self.leg = leg
+    self.sweep = sweep
     self.onStats = onStats
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     sessionDir = support.appendingPathComponent("photo-captures/\(sessionId)", isDirectory: true)
@@ -321,7 +339,7 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
     startAttempt(now: now)
     showAnchorLine(at: axis)
     haptic.notificationOccurred(.success)
-    messageLabel.text = guidance.force("Move to the next dot", now: now)
+    messageLabel.text = guidance.force(sweep ? SweepInstruction.keepGoing.text : "Move to the next dot", now: now)
     refreshOverlay()
   }
 
@@ -436,6 +454,11 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
         : (slow ? SilhouetteCaptureLogic.aimTapFallback : SilhouetteCaptureLogic.aimInstruction)
       show(PhotoCaptureController.trackingMessage(frame.camera.trackingState) ?? hint, now: now)
     case .stations:
+      if sweep {
+        guard !finishRequested, presentedViewController == nil else { return }
+        evaluateSweep(frame, now: now)
+        return
+      }
       guard !capturing, !finishRequested, presentedViewController == nil else { return }
       evaluate(frame, now: now)
     }
@@ -785,6 +808,7 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
   private func retakeFromStart() {
     guard !capturing, !finished else { return }
     for station in SilhouetteStation.allCases { removeFiles(for: station) }
+    if sweep { resetSweep() }
     captured = [:]
     selected = nil
     acceptedVariances = []
@@ -875,7 +899,7 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
   // MARK: - Stats
 
   private func emitStats() {
-    onStats([
+    var stats: [String: Any] = [
       "stationsCaptured": captured.count,
       "currentStation": currentStationName ?? NSNull(),
       "azimuthOffsetDeg": lastAzimuthOffset.map { Double($0 * 180 / .pi) } ?? NSNull(),
@@ -887,7 +911,9 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
       "failures": Dictionary(uniqueKeysWithValues: failures.map { ($0.key.rawValue, $0.value) }),
       "torchOn": torchOn,
       "ambientIntensity": lastAmbient.map { Double($0) } ?? NSNull(),
-    ])
+    ]
+    if sweep { addSweepStats(&stats) }
+    onStats(stats)
   }
 
   private var currentStationName: String? {
@@ -898,6 +924,11 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
   // MARK: - Finish
 
   @objc private func doneTapped() {
+    if sweep {
+      guard sweepProgress.canFinish else { return }
+      requestFinish(early: !sweepProgress.autoStop)
+      return
+    }
     guard captured.count == SilhouetteTuning.stationCount else { return }
     requestFinish(early: false)
   }
@@ -923,9 +954,20 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
 
   private func finish() {
     guard !finished, let anchor else { return }
-    let images = SilhouetteStation.allCases.compactMap { captured[$0] }
-    let coverage = Double(images.count) / Double(SilhouetteTuning.stationCount)
-    let finishedEarly = images.count < SilhouetteTuning.stationCount
+    let images: [[String: Any]]
+    let coverage: Double
+    let finishedEarly: Bool
+    if sweep {
+      try? FileManager.default.removeItem(at: sweepStagingDir)
+      images = sweepEntries.keys.sorted().compactMap { sweepEntries[$0] }
+      coverage = SweepCaptureLogic.coverage(sweepSelection.keyframes)
+      finishedEarly = !sweepProgress.autoStop
+      haptic.notificationOccurred(.success)
+    } else {
+      images = SilhouetteStation.allCases.compactMap { captured[$0] }
+      coverage = Double(images.count) / Double(SilhouetteTuning.stationCount)
+      finishedEarly = images.count < SilhouetteTuning.stationCount
+    }
     let manifest: [String: Any] = [
       "format": "forms.photo-capture",
       "version": 2,
@@ -1027,6 +1069,9 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
     topRow.alignment = .center
     topRow.spacing = 14
     topRow.translatesAutoresizingMaskIntoConstraints = false
+    if sweep {
+      topRow.insertArrangedSubview(ghostLeg, at: 0)
+    }
     topPanel.addSubview(topRow)
 
     levelRow.accessory = tiltView
@@ -1111,6 +1156,8 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
     case .stations:
       if lowLight && !torchOn {
         text = SilhouetteCaptureLogic.darkHint
+      } else if sweep {
+        text = SweepCaptureLogic.countLine(sweepProgress)
       } else if let target {
         text = "Photo \(captured.count + 1) of \(SilhouetteTuning.stationCount)"
       } else {
@@ -1160,6 +1207,352 @@ final class SilhouetteCaptureController: UIViewController, ARSessionDelegate {
     style(button: doneButton, title: "Done", filled: canFinish)
     doneButton.isEnabled = canFinish && !finishRequested
     finishFourButton.isHidden = !SilhouetteCaptureLogic.canFinishWithFour(capturedSet) || finishRequested
+    if sweep { refreshSweepOverlay() }
+  }
+}
+
+// MARK: - Sweep (dev flag, mode "sweep")
+
+/// One sweep check: the framing of the frame and, when it became a keyframe,
+/// what was written.
+private struct SweepKept {
+  let decision: SweepDecision
+  let slot: Int
+  let quality: SweepQuality
+  let visibleBands: [Bool]
+  let width: Int
+  let height: Int
+  let scaleX: Float
+  let scaleY: Float
+  let joints: [String: Any]
+}
+
+private enum SweepOutcome {
+  case checked(SweepFraming, kept: SweepKept?)
+  case writeFailed
+}
+
+extension SilhouetteCaptureController {
+  private var sweepProgress: SweepProgress { SweepCaptureLogic.progress(sweepSelection.keyframes) }
+
+  /// Candidate files land here first and are moved over a slot only once both
+  /// the JPEG and the mask are written, so a failed replacement never leaves a
+  /// kept keyframe without its files.
+  private var sweepStagingDir: URL { sessionDir.appendingPathComponent("staging", isDirectory: true) }
+
+  private func evaluateSweep(_ frame: ARFrame, now: TimeInterval) {
+    guard let anchor else { return }
+    let camera = frame.camera
+    let transform = camera.transform
+    let position = PhotoCaptureController.translation(transform)
+    let azimuth = PhotoCaptureLogic.wrapAngle(PhotoCaptureLogic.azimuth(of: position, around: anchor) - frontAzimuth)
+    let distance = PhotoCaptureLogic.horizontalDistance(position, toAxis: anchor)
+    let pitch = SilhouetteCaptureLogic.pitch(cameraTransform: transform)
+    let speed = angularSpeed(now: now, transform: transform)
+    lastAzimuthOffset = azimuth
+    lastDistance = distance
+    lastPitch = pitch
+
+    let trackingOK: Bool
+    if case .normal = camera.trackingState { trackingOK = true } else { trackingOK = false }
+    var failing = SweepCaptureLogic.failing(
+      trackingNormal: trackingOK, distance: distance, pitch: pitch, angularSpeed: speed)
+    let framing = now - sweepFramingAt <= SweepTuning.framingMaxAgeS ? sweepFraming : nil
+    if let framing, !framing.legFound || framing.tooClose || !framing.kneeInFrame {
+      failing.append(.mask)
+    }
+    for condition in failing {
+      failures[condition, default: 0] += 1
+      attemptFailures[condition, default: 0] += 1
+    }
+
+    if trackingOK, !capturing, now - lastMaskCheckAt >= SweepTuning.checkIntervalS {
+      // A stale framing verdict must not block the fresh check that replaces it.
+      let othersOK = failing.allSatisfy { $0 == .mask }
+      requestSweepCheck(
+        frame, anchor: anchor, azimuth: azimuth, othersOK: othersOK,
+        keepAllowed: othersOK && sweepSelection.canPossiblyAccept(azimuth: azimuth))
+    }
+
+    let progress = sweepProgress
+    let instruction = SweepCaptureLogic.instruction(
+      SweepInstructionInput(
+        tooDark: lowLight && !torchOn, trackingNormal: trackingOK, framing: framing, distance: distance,
+        pitch: pitch, angularSpeed: speed, progress: progress))
+    show(instruction.text, now: now)
+    refreshHint(target: nil)
+
+    if progress.autoStop {
+      requestFinish(early: false)
+      return
+    }
+    if let attemptStartedAt, !troubleShown, now - attemptStartedAt >= SilhouetteTuning.troubleAfterS {
+      showTrouble()
+    }
+  }
+
+  /// Vision on one frame (at most 4 a second): framing for the instruction
+  /// always, and a keyframe write when the frame qualifies and wins its bin.
+  private func requestSweepCheck(
+    _ frame: ARFrame, anchor: SIMD3<Float>, azimuth: Float, othersOK: Bool, keepAllowed: Bool
+  ) {
+    let checkedAt = frame.timestamp
+    lastMaskCheckAt = checkedAt
+    let camera = frame.camera
+    guard let pixel = Self.anchorPixel(camera, anchor: anchor) else {
+      sweepFraming = .notFound
+      sweepFramingAt = checkedAt
+      return
+    }
+    capturing = true
+    let pixelBuffer = frame.capturedImage
+    let transform = camera.transform
+    let intrinsics = camera.intrinsics
+    let imageSize = camera.imageResolution
+    let axis = SweepLegAxis(anchor: anchor, floorY: floorY)
+    let up = SilhouetteCaptureLogic.imageUpAxis(cameraTransform: transform)
+    let selection = sweepSelection
+    let threshold = PhotoCaptureLogic.blurThreshold(acceptedVariances: acceptedVariances)
+    let staging = sweepStagingDir
+    let imagesDir = imagesDir
+    let masksDir = masksDir
+    let context = ciContext
+    let leg = leg
+
+    workQueue.async { [weak self] in
+      let outcome = Self.sweepCheck(
+        pixelBuffer: pixelBuffer, anchorPixel: pixel, transform: transform, intrinsics: intrinsics,
+        imageSize: imageSize, axis: axis, up: up, leg: leg, azimuth: azimuth, keepAllowed: keepAllowed,
+        selection: selection, threshold: threshold, staging: staging, imagesDir: imagesDir, masksDir: masksDir,
+        context: context)
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          self?.applySweep(
+            outcome, azimuth: azimuth, transform: transform, intrinsics: intrinsics, checkedAt: checkedAt,
+            othersOK: othersOK)
+        }
+      }
+    }
+  }
+
+  private func applySweep(
+    _ outcome: SweepOutcome, azimuth: Float, transform: simd_float4x4, intrinsics: simd_float3x3,
+    checkedAt: TimeInterval, othersOK: Bool
+  ) {
+    capturing = false
+    guard !finished else { return }
+    switch outcome {
+    case .writeFailed:
+      teardown(deleteFiles: true) { [weak self] in
+        self?.settle { $0.reject(CaptureWriteFailedException("could not write a photo or mask")) }
+      }
+      return
+    case let .checked(framing, kept):
+      sweepFraming = framing
+      sweepFramingAt = checkedAt
+      if framing.legFound {
+        maskFailStreak = 0
+      } else if othersOK {
+        maskFailStreak += 1
+      }
+      if let kept {
+        sweepSelection.apply(kept.decision, azimuth: azimuth, quality: kept.quality, visibleBands: kept.visibleBands)
+        let stem = String(format: "%03d", kept.slot)
+        let columns = [transform.columns.0, transform.columns.1, transform.columns.2, transform.columns.3]
+        sweepEntries[kept.slot] = [
+          "file": "\(stem).jpg",
+          "mask": "\(stem).png",
+          "station": SweepCaptureLogic.stationName(slot: kept.slot),
+          "timestamp": checkedAt,
+          "camera_to_world": columns.flatMap { [Double($0.x), Double($0.y), Double($0.z), Double($0.w)] },
+          "intrinsics": [
+            Double(intrinsics[0][0] * kept.scaleX),
+            Double(intrinsics[1][1] * kept.scaleY),
+            Double(intrinsics[2][0] * kept.scaleX),
+            Double(intrinsics[2][1] * kept.scaleY),
+          ],
+          "width": kept.width,
+          "height": kept.height,
+          "tracking": "normal",
+          "joints": kept.joints,
+        ]
+        acceptedVariances.append(kept.quality.sharpness)
+        startAttempt(now: checkedAt)
+        tick.impactOccurred()
+        refreshOverlay()
+      }
+    }
+    if finishRequested {
+      finish()
+    }
+  }
+
+  /// Off the main thread. Mask first (nothing is written for a frame that
+  /// does not qualify), then the JPEG and mask into staging, then both moved
+  /// onto the slot. Same writers, sizes and intrinsics scaling as a station.
+  private nonisolated static func sweepCheck(
+    pixelBuffer: CVPixelBuffer, anchorPixel: CGPoint, transform: simd_float4x4, intrinsics: simd_float3x3,
+    imageSize: CGSize, axis: SweepLegAxis, up: ImageUpAxis, leg: SilhouetteLeg, azimuth: Float,
+    keepAllowed: Bool, selection: SweepSelection, threshold: Float, staging: URL, imagesDir: URL,
+    masksDir: URL, context: CIContext
+  ) -> SweepOutcome {
+    guard imageSize.width > 0, imageSize.height > 0,
+      let detection = SilhouetteMasking.detect(pixelBuffer, anchorPixel: anchorPixel)
+    else { return .checked(.notFound, kept: nil) }
+    let grid = detection.grid
+    let k = SIMD4<Float>(intrinsics[0][0], intrinsics[1][1], intrinsics[2][0], intrinsics[2][1])
+    let points = SweepCaptureLogic.framePoints(
+      axis: axis, cameraToWorld: transform, intrinsics: k, scaleX: Float(grid.width) / Float(imageSize.width),
+      scaleY: Float(grid.height) / Float(imageSize.height))
+    let framing = SweepCaptureLogic.framing(mask: grid.bytes, width: grid.width, height: grid.height, points: points)
+    guard keepAllowed, let sharpness = PhotoCaptureLogic.laplacianVariance(pixelBuffer),
+      SweepCaptureLogic.isKeepable(framing, sharpness: sharpness, threshold: threshold)
+    else { return .checked(framing, kept: nil) }
+    let quality = SweepQuality(
+      kneeInFrame: framing.kneeInFrame, ankleInFrame: framing.ankleInFrame, sharpness: sharpness)
+    let decision = selection.decide(azimuth: azimuth, quality: quality)
+    let slot: Int
+    switch decision {
+    case let .add(s), let .replace(s): slot = s
+    case .reject: return .checked(framing, kept: nil)
+    }
+
+    let fm = FileManager.default
+    let stagedJPEG = staging.appendingPathComponent("candidate.jpg")
+    let stagedMask = staging.appendingPathComponent("candidate.png")
+    func discardStaged() {
+      try? fm.removeItem(at: stagedJPEG)
+      try? fm.removeItem(at: stagedMask)
+    }
+    guard (try? fm.createDirectory(at: staging, withIntermediateDirectories: true)) != nil else { return .writeFailed }
+    switch PhotoCaptureController.encodeAndWrite(pixelBuffer: pixelBuffer, to: stagedJPEG, context: context) {
+    case .skipped:
+      return .checked(framing, kept: nil)
+    case .writeFailed:
+      discardStaged()
+      return .writeFailed
+    case let .written(width, height, scaleX, scaleY):
+      guard let mask = SilhouetteMasking.fullMask(detection, width: width, height: height) else {
+        discardStaged()
+        return .checked(framing, kept: nil)
+      }
+      guard let bytes = SilhouetteMasking.writePNG(mask, width: width, height: height, to: stagedMask) else {
+        discardStaged()
+        return .writeFailed
+      }
+      guard bytes <= SilhouetteTuning.maxMaskPngBytes else {
+        discardStaged()
+        return .checked(framing, kept: nil)
+      }
+      let stem = String(format: "%03d", slot)
+      let jpegURL = imagesDir.appendingPathComponent("\(stem).jpg")
+      let maskURL = masksDir.appendingPathComponent("\(stem).png")
+      do {
+        try? fm.removeItem(at: jpegURL)
+        try? fm.removeItem(at: maskURL)
+        try fm.moveItem(at: stagedJPEG, to: jpegURL)
+        try fm.moveItem(at: stagedMask, to: maskURL)
+      } catch {
+        discardStaged()
+        return .writeFailed
+      }
+      let joints = SilhouetteJoints.detect(pixelBuffer, up: up, leg: leg, width: width, height: height)
+      return .checked(
+        framing,
+        kept: SweepKept(
+          decision: decision, slot: slot, quality: quality, visibleBands: framing.visibleBands, width: width,
+          height: height, scaleX: scaleX, scaleY: scaleY, joints: joints))
+    }
+  }
+
+  private func resetSweep() {
+    for slot in sweepEntries.keys {
+      let stem = String(format: "%03d", slot)
+      try? FileManager.default.removeItem(at: imagesDir.appendingPathComponent("\(stem).jpg"))
+      try? FileManager.default.removeItem(at: masksDir.appendingPathComponent("\(stem).png"))
+    }
+    try? FileManager.default.removeItem(at: sweepStagingDir)
+    sweepEntries = [:]
+    sweepSelection = SweepSelection()
+    sweepFraming = nil
+    sweepFramingAt = -.infinity
+  }
+
+  private func refreshSweepOverlay() {
+    let stations = phase == .stations
+    let progress = sweepProgress
+    mapView.isHidden = true
+    ghostLeg.isHidden = !stations
+    ghostLeg.levels = SweepCaptureLogic.ghostLevels(sweepSelection.keyframes)
+    // Done appears once earned, never greyed out from the start (plan 5.3).
+    let canFinish = stations && progress.canFinish
+    style(button: doneButton, title: "Done", filled: true)
+    doneButton.isHidden = !canFinish
+    doneButton.isEnabled = canFinish && !finishRequested
+  }
+
+  /// Scalars only, like the rest of onSilhouetteStats.
+  private func addSweepStats(_ stats: inout [String: Any]) {
+    let progress = sweepProgress
+    stats["currentStation"] = NSNull()
+    stats["sweepKeyframes"] = progress.keyframes
+    stats["sweepSpanDeg"] = Double(progress.spanRad * 180 / .pi)
+    stats["sweepKneeKeyframes"] = progress.kneeKeyframes
+    stats["sweepSideView"] = progress.sideView
+    stats["sweepCoverage"] = SweepCaptureLogic.coverage(sweepSelection.keyframes)
+  }
+}
+
+/// The ghost leg (plan 5.3), flat for the spike: one segment per height band,
+/// ankle at the bottom, stepping up in opacity as keyframes credit the band.
+/// TODO(liam): the plan's AR ghost leg placed on the real shin replaces this.
+private final class GhostLegView: UIView {
+  private var segments: [UIView] = []
+
+  var levels: [Int] = [] {
+    didSet { if levels != oldValue { setNeedsLayout() } }
+  }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    translatesAutoresizingMaskIntoConstraints = false
+    for _ in 0..<SweepTuning.coverageBands {
+      let segment = UIView()
+      segment.backgroundColor = .systemYellow
+      segment.layer.borderColor = UIColor.systemYellow.cgColor
+      segment.layer.borderWidth = 1
+      segment.layer.cornerRadius = 3
+      addSubview(segment)
+      segments.append(segment)
+    }
+    NSLayoutConstraint.activate([
+      widthAnchor.constraint(equalToConstant: 28),
+      heightAnchor.constraint(equalToConstant: 112),
+    ])
+    isAccessibilityElement = true
+    accessibilityLabel = "Views collected along the leg"
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) is not supported")
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let count = CGFloat(segments.count)
+    let gap: CGFloat = 3
+    let height = (bounds.height - gap * (count - 1)) / count
+    for (i, segment) in segments.enumerated() {
+      // Band 0 is the ankle, drawn at the bottom.
+      let y = bounds.height - CGFloat(i + 1) * height - CGFloat(i) * gap
+      segment.frame = CGRect(x: 0, y: y, width: bounds.width, height: height)
+      let level = i < levels.count ? levels[i] : 0
+      segment.backgroundColor = UIColor.systemYellow.withAlphaComponent(
+        CGFloat(level) / CGFloat(SweepTuning.ghostSteps))
+    }
+    let seen = levels.filter { $0 > 0 }.count
+    accessibilityValue = "\(seen) of \(segments.count) heights seen"
   }
 }
 

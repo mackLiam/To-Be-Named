@@ -158,6 +158,13 @@ class Settings(BaseSettings):
     reconstruct_detail: Literal["reduced", "medium"] = Field(
         default="reduced", description="PhotogrammetrySession detail level."
     )
+    # Dev flag for the sweep spike (docs/SCAN-V3-PLAN.md Phase 0.5). Off by
+    # default: a sweep bundle (stations sweep_NN, up to 24 photos) is rejected
+    # as a rescan unless an operator turns this on for the worker.
+    sweep_capture_enabled: bool = Field(
+        default=False,
+        description="Accept capture.json v2 sweep bundles (SWEEP_CAPTURE_ENABLED).",
+    )
 
     @field_validator("worker_steps", mode="before")
     @classmethod

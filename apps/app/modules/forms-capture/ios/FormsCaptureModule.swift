@@ -19,7 +19,8 @@ import RealityKit
      capture for iPhones without ObjectCaptureSession; the bundle is
      reconstructed server-side (PhotoCaptureController).
    - startSilhouetteCapture(): solo still-photo capture at five stations with
-     on-device Vision leg masks (SilhouetteCaptureController).
+     on-device Vision leg masks (SilhouetteCaptureController); mode "sweep"
+     (dev flag) keeps keyframes by azimuth instead of stations.
    - cancel(): tear down whichever session is in flight.
    - Emits 'onCaptureStateChange', 'onReconstructionProgress' and, during
      photo capture, 'onPhotoCaptureStats' (scalars only, once a second).
@@ -119,6 +120,8 @@ public class FormsCaptureModule: Module {
         promise.reject(CaptureUnknownException("leg must be L or R"))
         return
       }
+      // Only the exact string arms the sweep; anything else is the station flow.
+      let sweep = options.mode == "sweep"
       Task { @MainActor [weak self] in
         guard let self else { return }
         guard ARWorldTrackingConfiguration.isSupported else {
@@ -127,6 +130,7 @@ public class FormsCaptureModule: Module {
         }
         let controller = SilhouetteCaptureController(
           leg: leg,
+          sweep: sweep,
           onStats: { [weak self] stats in
             self?.sendEvent("onSilhouetteStats", stats)
           }

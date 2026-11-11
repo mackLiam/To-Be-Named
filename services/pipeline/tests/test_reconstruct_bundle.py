@@ -19,6 +19,7 @@ from forms_pipeline.reconstruct.bundle import (
     MAX_JPEG_BYTES,
     MAX_PNG_BYTES,
     MAX_SILHOUETTE_IMAGES,
+    MAX_SWEEP_IMAGES,
     METHOD_PHOTOGRAMMETRY,
     METHOD_SILHOUETTE,
     MIN_IMAGES,
@@ -352,3 +353,100 @@ def _v2_image():
 def test_validate_mask_rejections(data: bytes, match: str) -> None:
     with pytest.raises(BundleValidationError, match=match):
         validate_mask(_v2_image(), data)
+
+
+# --- capture v2 sweep (dev flag, SCAN-V3-PLAN.md Phase 0.5) ------------------------------
+
+
+def _sweep(count: int = 12) -> dict:
+    doc = _v2(count)
+    for i, image in enumerate(doc["images"]):
+        image["station"] = f"sweep_{i:02d}"
+    return doc
+
+
+def test_sweep_rejected_with_the_flag_off() -> None:
+    for count in (5, 12, MAX_SWEEP_IMAGES):
+        with pytest.raises(BundleValidationError, match="sweep capture is not enabled"):
+            parse_capture(capture_bytes(_sweep(count)))
+
+
+def test_sweep_parses_with_the_flag_on() -> None:
+    bundle = parse_capture(capture_bytes(_sweep(12)), sweep_enabled=True)
+    assert bundle.method == METHOD_SILHOUETTE
+    assert [img.station for img in bundle.images] == [f"sweep_{i:02d}" for i in range(12)]
+    assert bundle.images[0].mask == "000.png"
+
+
+@pytest.mark.parametrize(
+    "count", [MIN_SILHOUETTE_IMAGES, MAX_SILHOUETTE_IMAGES + 1, MAX_SWEEP_IMAGES]
+)
+def test_sweep_image_count_bounds_inclusive(count: int) -> None:
+    assert len(parse_capture(capture_bytes(_sweep(count)), sweep_enabled=True).images) == count
+
+
+@pytest.mark.parametrize("count", [MIN_SILHOUETTE_IMAGES - 1, MAX_SWEEP_IMAGES + 1])
+def test_sweep_image_count_bounds(count: int) -> None:
+    with pytest.raises(BundleValidationError, match=f"expected 4 to {MAX_SWEEP_IMAGES} photos"):
+        parse_capture(capture_bytes(_sweep(count)), sweep_enabled=True)
+
+
+def test_flag_on_leaves_station_bundles_unchanged() -> None:
+    for count in (MIN_SILHOUETTE_IMAGES, MAX_SILHOUETTE_IMAGES):
+        on = parse_capture(capture_bytes(_v2(count)), sweep_enabled=True)
+        off = parse_capture(capture_bytes(_v2(count)))
+        assert [(i.file, i.mask, i.station) for i in on.images] == [
+            (i.file, i.mask, i.station) for i in off.images
+        ]
+    with pytest.raises(BundleValidationError, match="expected 4 to 12 photos"):
+        parse_capture(capture_bytes(_v2(MAX_SILHOUETTE_IMAGES + 1)), sweep_enabled=True)
+
+
+@pytest.mark.parametrize(
+    "station",
+    ["sweep_1", "sweep_001", "sweep_ab", "Sweep_01", "sweep-01", " sweep_01", "sweep_01\n", "kf01"],
+)
+def test_sweep_bad_station_name_rejected(station: str) -> None:
+    doc = _sweep(8)
+    doc["images"][3]["station"] = station
+    with pytest.raises(BundleValidationError, match="Please rescan"):
+        parse_capture(json.dumps(doc).encode(), sweep_enabled=True)
+
+
+@pytest.mark.parametrize("station", [None, 7])
+def test_sweep_non_string_station_rejected(station) -> None:
+    doc = _sweep(8)
+    doc["images"][3]["station"] = station
+    with pytest.raises(BundleValidationError, match="invalid station"):
+        parse_capture(json.dumps(doc).encode(), sweep_enabled=True)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_mixed_station_kinds_rejected(enabled: bool) -> None:
+    doc = _sweep(8)
+    doc["images"][2]["station"] = "front"
+    match = "mixes sweep and station photos" if enabled else "sweep capture is not enabled"
+    with pytest.raises(BundleValidationError, match=match):
+        parse_capture(json.dumps(doc).encode(), sweep_enabled=enabled)
+
+
+def test_duplicate_sweep_station_rejected() -> None:
+    doc = _sweep(8)
+    doc["images"][5]["station"] = "sweep_01"
+    with pytest.raises(BundleValidationError, match="duplicate sweep stations"):
+        parse_capture(json.dumps(doc).encode(), sweep_enabled=True)
+
+
+def test_sweep_station_on_v1_is_ignored_as_before() -> None:
+    doc = capture_doc(camera_ring(24))
+    doc["images"][0]["station"] = "sweep_00"
+    assert parse_capture(capture_bytes(doc)).method == METHOD_PHOTOGRAMMETRY
+
+
+def test_settings_flag_defaults_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    from forms_pipeline.config import Settings
+
+    monkeypatch.delenv("SWEEP_CAPTURE_ENABLED", raising=False)
+    assert Settings(_env_file=None).sweep_capture_enabled is False
+    monkeypatch.setenv("SWEEP_CAPTURE_ENABLED", "true")
+    assert Settings(_env_file=None).sweep_capture_enabled is True

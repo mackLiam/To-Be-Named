@@ -183,7 +183,10 @@ def handle_reconstructing(
     owner, scan_id = _uuid(scan.storage_user_id), _uuid(job.scan_id)
     prefix = f"{owner}/{scan_id}/"
 
-    bundle = parse_capture(ctx.storage.download(BUCKET, f"{prefix}capture.json"))
+    bundle = parse_capture(
+        ctx.storage.download(BUCKET, f"{prefix}capture.json"),
+        sweep_enabled=settings.sweep_capture_enabled,
+    )
     if bundle.method == METHOD_SILHOUETTE:
         _handle_silhouette(job, ctx, settings, bundle, owner, scan_id)
         return
