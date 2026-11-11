@@ -87,19 +87,27 @@ def test_two_takes_of_the_same_leg_agree(ok_rows: dict) -> None:
     assert result["max"] < 0.01
 
 
-def test_without_a_floor_up_comes_from_the_cameras(tmp_path: Path) -> None:
-    root = write_bundle(
-        tmp_path / "nofloor", scene(floor=False), "c2w_opencv", random_similarity(1)
-    )
+@pytest.mark.parametrize("upside_down", [False, True])
+def test_without_a_floor_up_comes_from_the_leg_axis(tmp_path: Path, upside_down: bool) -> None:
+    """No floor in the cloud: up is the mask-triangulated leg axis, signed away from the
+    foot. An upside-down phone (camera-mean image-up toward the floor) changes nothing."""
+    sc = scene(floor=False, upside_down=upside_down)
+    root = write_bundle(tmp_path / "nofloor", sc, "c2w_opencv", random_similarity(1))
     row = run.analyze_bundle(root, tmp_path / "out", run.Options(max_keyframes=8))
     assert row["status"] == "ok", row
-    assert row["frame"]["up_source"] == fr.UP_CAMERA_MEAN
+    assert row["frame"]["up_source"] == fr.UP_LEG_AXIS
+    assert row["frame"]["tilt_gate_exercised"] is False
+    assert row["frame"]["up_foot_vote_agreement"] == 1.0
+    assert (row["frame"]["up_vs_camera_mean_deg"] > 170.0) is upside_down
     assert row["silhouette"]["floor_used"] is False
-    # Camera-mean up leans about 5 degrees here (test_harness_frame); ratios hold.
-    assert row["silhouette"]["axis_tilt_deg"] < 8.0
+    assert row["silhouette"]["axis_tilt_deg"] < 2.0  # up is the axis itself
     for key, diff in agreement(row["metrics"], truth())["diffs"].items():
-        if "OD/OW" in key:
-            assert diff < 0.02, key
+        if key == PROFILE_KEY:
+            assert diff < PROFILE_TOL, key
+        elif key.startswith("Leg_Length"):
+            assert diff < LEG_RATIO_TOL, key
+        else:
+            assert diff < SLICE_RATIO_TOL, key
 
 
 # --- failure rows ------------------------------------------------------------------

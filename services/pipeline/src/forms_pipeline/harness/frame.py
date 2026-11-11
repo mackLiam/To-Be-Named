@@ -12,9 +12,11 @@ convention, and plain video has no gravity. Here:
    candidate within CONVENTION_TIE_FRACTION of the best is a near-tie, decided by
    mask coverage: the share of leg-mask cells that projected points land in.
 2. fit_floor: RANSAC plane fit (seeded) on the point cloud; the floor is the
-   largest plane with every camera on one side, and up is its normal toward the
-   cameras. Without one, up is the mean of the cameras' image-up vectors.
-   RANSAC sees only points outside the leg masks (floor_candidates).
+   largest plane with every camera on one side whose normal lies near the cameras'
+   mean image-up axis, of either sign (a phone held upside down films the foot at
+   the top of the frame), and up is its normal toward the cameras, which are always
+   above the floor. RANSAC sees only points outside the leg masks (floor_candidates).
+   Without a floor, up comes from the leg itself (leg_axis_up).
 3. build_world: +Y up, origin at the leg position, uniform scale so the median
    camera-to-leg distance is NOMINAL_CAMERA_DISTANCE_M. Scale is nominal, never real.
 """
@@ -26,12 +28,21 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from forms_pipeline.reconstruct.silhouette import View, project
+from forms_pipeline.reconstruct import ReconstructionQualityError
+from forms_pipeline.reconstruct.silhouette import (
+    MIN_VIEWS,
+    View,
+    centerline_normal,
+    leg_component,
+    project,
+    triangulate_axis,
+)
 
 CONVENTIONS = ("c2w_arkit", "c2w_opencv", "w2c_arkit", "w2c_opencv")
 _OPENCV_TO_ARKIT = np.diag([1.0, -1.0, -1.0, 1.0])
 
 UP_FLOOR = "floor_plane"
+UP_LEG_AXIS = "leg_axis"
 UP_CAMERA_MEAN = "camera_mean"
 INTRINSICS_POSE = "pose"
 INTRINSICS_ASSUMED = "assumed"
@@ -52,11 +63,18 @@ FLOOR_ITERATIONS = 400
 FLOOR_TOLERANCE_FRACTION = 0.01
 MIN_FLOOR_INLIER_FRACTION = 0.10
 MIN_FLOOR_INLIERS = 30
-# A plane steeper than this from the cameras' mean image-up is a wall, not the floor.
+# A plane steeper than this from the cameras' mean image-up axis (either sign) is a
+# wall, not the floor.
 # TODO(liam): 50 is a guess; a steeply pitched or rolled phone could exceed it.
 MAX_FLOOR_TILT_DEG = 50.0
 MIN_LEG_POINTS = 20
 SEED = 0
+# Foot-end vote (leg_axis_up): mask widths across the projected axis in this many
+# bands, read over this share of the mask's length (clear of a pointed toe or a
+# rounded mask end), needing this many bands clear of the image border.
+FOOT_BANDS = 24
+FOOT_RANGE = (0.1, 0.9)
+MIN_FOOT_BANDS = 8
 
 
 class FrameError(RuntimeError):
@@ -232,11 +250,9 @@ def resolve_convention(cameras: Sequence[Camera], points: np.ndarray) -> Convent
     )
 
 
-# TODO(liam): with no floor, up is the cameras' mean image-up (brief default). On
-# IMG_3836 the leg points' long axis sits 34 degrees from it; decide whether the
-# fallback should be the leg axis instead (that would hide a genuinely tilted shin).
 def camera_mean_up(c2ws: Sequence[np.ndarray]) -> np.ndarray:
-    """Mean image-up (camera +Y) direction; the phone is held with the image upright."""
+    """Mean image-up (camera +Y) direction. Only an axis prior for the floor search and
+    the last-resort up: a phone held upside down makes it point at the floor."""
     up = np.mean([m[:3, 1] for m in c2ws], axis=0)
     norm = np.linalg.norm(up)
     if norm < 1e-6:
@@ -251,8 +267,9 @@ def scene_scale(points: np.ndarray, centers: np.ndarray) -> float:
 def fit_floor(
     points: np.ndarray, centers: np.ndarray, camera_up: np.ndarray, seed: int = SEED
 ) -> FloorPlane | None:
-    """Largest plane with every camera on one side and within MAX_FLOOR_TILT_DEG of
-    camera_up, normal toward the cameras; None when no plane qualifies."""
+    """Largest plane with every camera on one side and its normal within
+    MAX_FLOOR_TILT_DEG of the camera_up axis (either sign), normal toward the cameras;
+    None when no plane qualifies."""
     pts = subsample(points)
     n = len(pts)
     if n < max(MIN_FLOOR_INLIERS, 3) or len(centers) == 0:
@@ -267,12 +284,11 @@ def fit_floor(
     norms = np.linalg.norm(normals, axis=1)
     ok = norms > 1e-12
     normals, a = normals[ok] / norms[ok, None], a[ok]
-    normals *= np.where(normals @ camera_up < 0, -1.0, 1.0)[:, None]
     offsets = np.einsum("ij,ij->i", normals, a)
     cos_max = np.cos(np.radians(MAX_FLOOR_TILT_DEG))
     best: FloorPlane | None = None
     for normal, offset in zip(normals, offsets, strict=True):
-        if normal @ camera_up < cos_max:
+        if abs(normal @ camera_up) < cos_max:
             continue
         side = centers @ normal - offset
         if not (np.all(side > tol) or np.all(side < -tol)):
@@ -299,7 +315,7 @@ def fit_floor(
         not np.all(side > 0)
         or count < MIN_FLOOR_INLIERS
         or count / n < MIN_FLOOR_INLIER_FRACTION
-        or normal @ camera_up < cos_max
+        or abs(normal @ camera_up) < cos_max
     ):
         return None
     return FloorPlane(normal=normal, offset=offset, inliers=count, inlier_fraction=count / n)
@@ -344,6 +360,100 @@ def leg_axis_angle_deg(
     leg = points[member]
     axis = np.linalg.eigh(np.cov((leg - leg.mean(axis=0)).T))[1][:, -1]
     return float(np.degrees(np.arccos(np.clip(abs(axis @ up), 0.0, 1.0))))
+
+
+@dataclass(frozen=True)
+class LegAxisUp:
+    up: np.ndarray  # unit, session frame, from the foot toward the knee
+    views: int  # views whose centerline fed the axis
+    votes: int  # views that voted on the foot end
+    agreement: float  # share of the votes for the chosen end
+
+
+def _grid_view(cam: Camera, mask: MaskLookup, c2w: np.ndarray) -> tuple[View, np.ndarray] | None:
+    """The coarse mask as a silhouette View (intrinsics scaled to the grid) and its leg."""
+    grid = np.where(mask.grid, 255, 0).astype(np.uint8)
+    leg = leg_component(grid)
+    if leg is None:
+        return None
+    fx, fy, cx, cy = cam.intrinsics
+    k = float(mask.stride)
+    view = View(str(cam.frame_id), grid, c2w, (fx / k, fy / k, cx / k, cy / k))
+    return view, leg
+
+
+def foot_vote(view: View, leg: np.ndarray, point: np.ndarray, direction: np.ndarray) -> int:
+    """+1 if the foot is toward +direction in this view, -1 if toward -direction, 0 if
+    the view cannot tell.
+
+    The ankle is the narrowest part of the lower leg (about 0.6 of the calf's width,
+    the knee about 0.9 to 1), so the narrowest band of the mask across the projected
+    axis lies at the foot end. Bands touching the image border are skipped: their
+    width is the frame's, not the leg's.
+    """
+    c2w = view.camera_to_world
+    step = 0.05 * np.linalg.norm(point - c2w[:3, 3])
+    uv, depth = project(c2w, view.intrinsics, np.array([point, point + step * direction]))
+    if not (np.all(depth > 0) and np.all(np.isfinite(uv))):
+        return 0
+    d = uv[1] - uv[0]
+    if not np.linalg.norm(d) > 1e-9:
+        return 0
+    d /= np.linalg.norm(d)
+    rows, cols = np.nonzero(leg)
+    q = (np.column_stack([cols, rows]) - uv[0]) @ d
+    h, w = leg.shape
+    on_border = (rows == 0) | (rows == h - 1) | (cols == 0) | (cols == w - 1)
+    lo, hi = float(q.min()), float(q.max())
+    if not hi - lo > FOOT_BANDS:
+        return 0
+    band = np.minimum(((q - lo) / (hi - lo) * FOOT_BANDS).astype(np.int64), FOOT_BANDS - 1)
+    width = np.bincount(band, minlength=FOOT_BANDS).astype(np.float64)
+    touches = np.bincount(band, weights=on_border, minlength=FOOT_BANDS) > 0
+    centers = (np.arange(FOOT_BANDS) + 0.5) / FOOT_BANDS
+    ok = ~touches & (centers >= FOOT_RANGE[0]) & (centers <= FOOT_RANGE[1]) & (width > 0)
+    if ok.sum() < MIN_FOOT_BANDS:
+        return 0
+    narrowest = centers[ok][int(np.argmin(width[ok]))]
+    return 1 if narrowest > 0.5 else -1
+
+
+def leg_axis_up(cameras: Sequence[Camera], c2ws: Sequence[np.ndarray]) -> LegAxisUp | None:
+    """Up without a floor: the leg axis triangulated from the mask centerlines (the
+    silhouette math's own axis), pointing away from the foot end the masks vote for.
+
+    None when the axis cannot be triangulated or the vote is empty or tied. A shin
+    tilted from gravity is invisible this way: the silhouette tilt gate then sees 0.
+    """
+    found = []
+    for cam, c2w in zip(cameras, c2ws, strict=True):
+        if cam.mask is None:
+            continue
+        gv = _grid_view(cam, cam.mask, c2w)
+        if gv is None:
+            continue
+        normal = centerline_normal(*gv)
+        if normal is not None:
+            found.append((gv, normal))
+    if len(found) < MIN_VIEWS:
+        return None
+    normals = np.array([n for _, n in found])
+    centers = np.array([gv[0].camera_to_world[:3, 3] for gv, _ in found])
+    try:
+        point, direction = triangulate_axis(normals, centers)
+    except ReconstructionQualityError:
+        return None
+    votes = np.array([foot_vote(v, leg, point, direction) for (v, leg), _ in found])
+    votes = votes[votes != 0]
+    if len(votes) == 0 or votes.sum() == 0:
+        return None
+    toward = 1 if votes.sum() > 0 else -1
+    return LegAxisUp(
+        up=-toward * direction,
+        views=len(found),
+        votes=len(votes),
+        agreement=float((votes == toward).mean()),
+    )
 
 
 def up_rotation(up: np.ndarray) -> np.ndarray:

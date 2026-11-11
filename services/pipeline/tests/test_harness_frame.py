@@ -261,3 +261,80 @@ def test_rescale_views_scales_about_the_origin() -> None:
     assert np.allclose(out.camera_to_world[:3, :3], np.eye(3))
     assert floor == pytest.approx(-0.75)
     assert fr.rescale_views([view], None, 2.0)[1] is None
+
+
+# --- up without gravity: an upside-down phone, no floor ----------------------------------
+
+
+@pytest.mark.parametrize("seed", [0, 3])
+def test_an_upside_down_phone_still_finds_the_floor(seed: int) -> None:
+    """Image-up points at the floor when the phone is rolled half a turn; the floor's
+    normal is still on the image-up axis and is turned toward the cameras."""
+    sc, sim = scene(upside_down=True), random_similarity(seed)
+    c2ws = [sim.c2w(m) for m in sc.c2w]
+    centers = np.array([m[:3, 3] for m in c2ws])
+    camera_up = fr.camera_mean_up(c2ws)
+    assert _angle_deg(camera_up, sim.up) > 170.0
+    floor = fr.fit_floor(sim.point(sc.points), centers, camera_up)
+    assert floor is not None
+    assert _angle_deg(floor.normal, sim.up) < 0.5
+
+
+@pytest.mark.parametrize(("upside_down", "seed"), [(False, 0), (True, 0), (True, 5)])
+def test_without_a_floor_up_is_the_leg_axis_away_from_the_foot(
+    upside_down: bool, seed: int
+) -> None:
+    sc, sim = scene(floor=False, upside_down=upside_down), random_similarity(seed)
+    cams = session_cameras(sc, sim, "c2w_arkit", masks=True)
+    found = fr.leg_axis_up(cams, [sim.c2w(m) for m in sc.c2w])
+    assert found is not None
+    # The truth leg stands upright: its axis is world up.
+    assert _angle_deg(found.up, sim.up) < 3.0
+    assert found.views == len(cams) and found.votes == len(cams)
+    assert found.agreement == 1.0
+
+
+def test_leg_axis_up_needs_enough_masked_views() -> None:
+    sc, sim = scene(floor=False), random_similarity(0)
+    cams = session_cameras(sc, sim, "c2w_arkit", masks=True)
+    c2ws = [sim.c2w(m) for m in sc.c2w]
+    assert fr.leg_axis_up(cams[:2], c2ws[:2]) is None
+    unmasked = session_cameras(sc, sim, "c2w_arkit", masks=False)
+    assert fr.leg_axis_up(unmasked, c2ws) is None
+
+
+def _taper_mask(narrow_at_top: bool, wide_end_off_frame: bool = False) -> np.ndarray:
+    """A vertical band whose half-width runs 20 px at the ankle end to 60 px at the
+    other, plus a wide foot blob beyond the ankle; optionally the wide end runs on to
+    the image border, as a close-up's knee and thigh do."""
+    h, w = 320, 240
+    mask = np.zeros((h, w), dtype=np.uint8)
+    rows = np.arange(40, 280)
+    frac = (rows - 40) / 239.0
+    half = (20 + 40 * frac) if narrow_at_top else (60 - 40 * frac)
+    for r, hw in zip(rows, half, strict=True):
+        mask[r, int(120 - hw) : int(120 + hw)] = 255
+    if narrow_at_top:
+        mask[30:42, 60:180] = 255
+        if wide_end_off_frame:
+            mask[280:, 60:180] = 255
+    else:
+        mask[278:290, 60:180] = 255
+        if wide_end_off_frame:
+            mask[:40, 60:180] = 255
+    return mask
+
+
+def test_foot_vote_reads_the_narrow_end() -> None:
+    view = View("v", np.zeros((320, 240), np.uint8), np.eye(4), (300.0, 300.0, 119.5, 159.5))
+    point = np.array([0.0, 0.0, -1.0])
+    image_up = np.array([0.0, 1.0, 0.0])  # camera +Y projects toward the top row
+    for narrow_at_top in (True, False):
+        for off_frame in (False, True):
+            leg = _taper_mask(narrow_at_top, off_frame) >= 128
+            vote = fr.foot_vote(view, leg, point, image_up)
+            assert vote == (1 if narrow_at_top else -1), (narrow_at_top, off_frame)
+    # Every band of a leg lying along the image border is the frame's width: no vote.
+    along_border = np.zeros((320, 240), dtype=bool)
+    along_border[:, :30] = True
+    assert fr.foot_vote(view, along_border, point, image_up) == 0

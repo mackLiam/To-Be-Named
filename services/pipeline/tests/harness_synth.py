@@ -36,6 +36,7 @@ BOUND_R = 0.2
 COARSE_PX = 2
 CONVENTIONS = ("c2w_arkit", "c2w_opencv", "w2c_arkit", "w2c_opencv")
 _FLIP = np.diag([1.0, -1.0, -1.0, 1.0])
+_ROLL_HALF_TURN = np.diag([-1.0, -1.0, 1.0, 1.0])  # about the viewing axis
 
 
 # --- truth scene -------------------------------------------------------------------------
@@ -129,25 +130,40 @@ def _joints(c2w: np.ndarray) -> dict[str, list[float]]:
 
 
 @functools.lru_cache
-def scene(n_frames: int = 26, arc_deg: float = ARC_DEG, floor: bool = True) -> Scene:
-    rng = np.random.default_rng(7)
+def _masks(arc_deg: float, n_frames: int, upside_down: bool) -> tuple[np.ndarray, ...]:
+    """The rendered masks of an arc (cached apart from the cloud: rendering dominates)."""
+    return tuple(render_mask(c2w) for c2w in _arc(arc_deg, n_frames, upside_down))
+
+
+def _arc(arc_deg: float, n_frames: int, upside_down: bool) -> list[np.ndarray]:
     target = np.array([0.0, TARGET_HEIGHT_M, 0.0])
-    c2ws, masks, joints, sharp = [], [], [], []
-    for i, az in enumerate(np.radians(np.linspace(-arc_deg / 2, arc_deg / 2, n_frames))):
+    out = []
+    for az in np.radians(np.linspace(-arc_deg / 2, arc_deg / 2, n_frames)):
         pos = np.array(
             [np.sin(az) * CAMERA_DISTANCE_M, CAMERA_HEIGHT_M, np.cos(az) * CAMERA_DISTANCE_M]
         )
         c2w = upright_camera(pos, target)
-        c2ws.append(c2w)
-        masks.append(render_mask(c2w))
-        joints.append(_joints(c2w))
-        sharp.append(10.0 if i % 7 == 3 else float(100.0 + rng.uniform(-20, 20)))
+        out.append(c2w @ _ROLL_HALF_TURN if upside_down else c2w)
+    return out
+
+
+@functools.lru_cache
+def scene(
+    n_frames: int = 26, arc_deg: float = ARC_DEG, floor: bool = True, upside_down: bool = False
+) -> Scene:
+    """upside_down rolls every phone half a turn: the foot is at the top of the frame and
+    the cameras' mean image-up points at the floor (IMG_3836, 2026-11-11)."""
+    rng = np.random.default_rng(7)
+    c2ws = _arc(arc_deg, n_frames, upside_down)
+    joints = [_joints(c2w) for c2w in c2ws]
+    sharp = [10.0 if i % 7 == 3 else float(100.0 + rng.uniform(-20, 20)) for i in range(n_frames)]
     parts = [leg_points(3000, rng)]
     if floor:
         parts.append(floor_points(3000, rng))
     parts.append(rng.uniform([-1.0, 0.1, -1.0], [1.0, 1.2, -0.6], (150, 3)))  # clutter behind
     pts = np.vstack(parts) + rng.normal(0.0, 0.001, (sum(len(p) for p in parts), 3))
-    return Scene(tuple(c2ws), tuple(masks), tuple(joints), tuple(sharp), pts)
+    masks = _masks(arc_deg, n_frames, upside_down)
+    return Scene(tuple(c2ws), masks, tuple(joints), tuple(sharp), pts)
 
 
 # --- session frame and conventions ---------------------------------------------------------

@@ -247,7 +247,14 @@ def analyze_bundle(bundle_dir: Path, work_dir: Path, options: Options | None = N
         pts = fr.subsample(points)
         member = fr.leg_membership(pts, [c2w_session[c.frame_id] for c in cams], cams)
         floor = fr.fit_floor(fr.floor_candidates(pts, member), centers, camera_up)
-        up = camera_up if floor is None else floor.normal
+        axis_up = None
+        if floor is not None:
+            up, up_source = floor.normal, fr.UP_FLOOR
+        else:
+            axis_up = fr.leg_axis_up(cams, [c2w_session[c.frame_id] for c in cams])
+            up, up_source = (
+                (camera_up, fr.UP_CAMERA_MEAN) if axis_up is None else (axis_up.up, fr.UP_LEG_AXIS)
+            )
         leg, leg_source = fr.leg_position(pts, member)
         world = fr.build_world(up, leg, centers, floor)
         row["frame"] = {
@@ -255,7 +262,10 @@ def analyze_bundle(bundle_dir: Path, work_dir: Path, options: Options | None = N
             "convention_in_view": convention.in_view,
             "convention_coverage": convention.coverage,
             "convention_scores": convention.scores,
-            "up_source": fr.UP_CAMERA_MEAN if floor is None else fr.UP_FLOOR,
+            "up_source": up_source,
+            # Only a floor is independent of the leg; otherwise the tilt gate reads ~0.
+            "tilt_gate_exercised": floor is not None,
+            "up_foot_vote_agreement": None if axis_up is None else axis_up.agreement,
             "floor_inlier_fraction": None if floor is None else floor.inlier_fraction,
             "up_vs_camera_mean_deg": float(
                 np.degrees(np.arccos(np.clip(up @ camera_up, -1.0, 1.0)))
@@ -319,6 +329,11 @@ def analyze_bundle(bundle_dir: Path, work_dir: Path, options: Options | None = N
             "joints_used": art["joints_used"],
             "floor_used": art["floor_used"],
             "pass1_views_used": first.artifacts["views_used"],
+            "silhouette_version": art["silhouette_version"],
+            "views_axis": art["views_axis"],
+            "edges_at_border_fraction": art["edges_at_border_fraction"],
+            "views_cut_off_below": art["views_cut_off_below"],
+            "views_cut_off_above": art["views_cut_off_above"],
         }
 
         stage = "measure"
@@ -457,6 +472,8 @@ def _row_markdown(row: dict) -> list[str]:
                       f"{frame['convention']} ({_fmt(frame['convention_in_view'])}, "
                       f"{_fmt(frame['convention_coverage'])})"))  # fmt: skip
         facts.append(("up source", frame["up_source"]))
+        facts.append(("tilt gate exercised", _fmt(frame.get("tilt_gate_exercised"))))
+        facts.append(("up vs camera-mean image-up deg", _fmt(frame["up_vs_camera_mean_deg"], 1)))
         facts.append(("intrinsics", _fmt(frame["intrinsics_source"])))
         facts.append(
             (
@@ -486,6 +503,7 @@ def _row_markdown(row: dict) -> list[str]:
                               _fmt(m["touching_side_fraction"], 2)))  # fmt: skip
         facts.append(("joints seen (frames)", _fmt(masks["joints_seen"])))
     if sil:
+        facts.append(("silhouette version", _fmt(sil.get("silhouette_version"))))
         facts.append(("silhouette views used", str(sil["views_used"])))
         facts.append(("axis tilt deg", _fmt(sil["axis_tilt_deg"], 1)))
         facts.append(("view correction max deg", _fmt(sil["view_correction_max_deg"], 2)))
