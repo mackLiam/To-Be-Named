@@ -22,7 +22,7 @@ every milestone, so the latest commit on the branch holds the latest state.
 ## Verification (run by the orchestrator, 2026-11-11 about 02:00)
 
 - `make lint typecheck test`: exit 0. Pipeline 1051 passed; shared 142,
-  app 510, web 534 tests; ruff, tsc and ESLint clean.
+  app 510, web 534 tests (593 after the security fixes, re-run); ruff, tsc and ESLint clean.
 - `pnpm turbo run build typecheck test` and `pnpm format:check`: green.
 - `bash supabase/tests/run_sql_checks.sh`: all SQL checks passed (including
   catalog_checks.sql and order_ops_checks.sql).
@@ -154,6 +154,17 @@ every milestone, so the latest commit on the branch holds the latest state.
   facts only and visible "coming before launch" placeholders; admin print
   queue and a packing slip that carries no prices, measurements or scan
   data. 534 web tests.
+
+- Security review (c7978b2): an independent read-only review of migrations
+  0022 to 0026 and the new admin routes found no critical or high issues.
+  One medium, proven with a probe: an admin could remake an order for a
+  customer with a pending account deletion, reprocessing a scan they asked
+  us to delete; now refused in SQL and the panel. Also fixed: refund mode
+  no longer defaults to full; refunds reconcile with Stripe first so a
+  retry cannot refund twice; uploads capped at 4 MB, cached one hour,
+  EXIF/GPS stripped, animated WebP refused; admin pages show only fixed
+  messages. Three lows are in KNOWN-ISSUES (customer search email in the
+  URL, refund.updated, zero-total promo codes). 593 web tests.
 
 ## Video results (counts and ratios only)
 
@@ -302,8 +313,13 @@ capture is Mac-side only.
   custom only. Confirm, or ask for a grouping column.
 - Catalog: preset S/M/L value sets, lead time and capacity, launch
   availability per product, prices and the photos themselves are not set.
-- Catalog: photo EXIF/GPS is not stripped (needs an image library or a
-  photographer workflow).
+- Catalog: EXIF is now stripped, including the orientation tag, so upload
+  photos already upright (the upload hint says so). Animated PNG is not
+  refused.
+- Refunds: admin messages no longer echo Stripe's decline reason or exact
+  ranges (fixed messages only); use the Stripe dashboard for detail.
+  Reconciliation records dashboard refunds into the panel's ledger under the
+  admin who triggered it.
 - App: Android and web users with no scans have no entry point to hand
   measuring (needs a navigation decision).
 - App: capture failure screens show "Code: ERR_..." to users; added on
