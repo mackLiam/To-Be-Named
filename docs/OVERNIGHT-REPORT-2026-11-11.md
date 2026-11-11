@@ -328,8 +328,51 @@ None.
 
 ## What failed and why
 
-Nothing yet.
+- **Neither test video produces a final measured leg.** IMG_3836 never sees
+  the knee from enough of the arc (the knee end is off the frame in 15 of 18
+  keyframes). IMG_3834 measured at silhouette v3, then became a retake at v4
+  because its knee is bent near 90 degrees, a pose shown to shorten
+  Leg_Length by up to 15% on synthetic legs. Both are framing or pose
+  limits the user can fix, which is the brief's acceptable outcome; neither
+  is a math failure.
+- **The 3D viewer could not use the shared leg-model contract in React
+  Native** at first (it pulled in a module that reads the schema with
+  node:fs). Fixed in cfb44c0 with bundle-safe subpath exports.
+- **A full Xcode simulator build of the app fails** until `pod install` is
+  run: the new SweepCaptureLogic.swift is not in the generated Pods file
+  list. The module itself compiles against the simulator SDK.
+- **The estimator's feasibility targets are not met** under provisional
+  numbers: a full sweep comes out "required" (Leg_Length binds), and a
+  scale-free capture needs two tape values, not one.
+- **Prior 0.1.0 used the wrong width definition** (anatomical mediolateral
+  instead of extraction's larger section extent), found by the harness
+  estimator stage; fixed as prior 0.1.1 (see below if it landed).
+- Rule slips by subagents: several ran a read-only `git diff --stat` despite
+  the no-git rule (no effect). One test file and two others had literal
+  dash characters in assertions; replaced with escapes before commit.
 
 ## Next steps
 
-To be written at the end of the session.
+In order, for Liam:
+
+1. **Tape ground truth (Phase 0, human-only).** Five then ten legs with tape
+   and books, logged in docs/accuracy-log.md. Everything provisional tonight
+   (estimator noise, tolerances, the bent-knee window, IMG_3834's short
+   Leg_Length/OW_S3) waits on it.
+2. **Record two good videos** of one leg with the new pose (foot forward,
+   knee slightly bent, whole lower leg plus a little thigh in frame across a
+   front half-circle), drop them in services/pipeline/recordings/videos/,
+   and run `.venv/bin/python -m forms_pipeline.harness run`. That gives the
+   first agreement table between two videos of the same leg.
+3. **Try the sweep on a phone:** `pod install`, a dev client build,
+   EXPO_PUBLIC_SWEEP_CAPTURE=true and SWEEP_CAPTURE_ENABLED=true, then
+   tune the values listed under TODO(liam).
+4. **Decide the product calls** listed under TODO(liam), the most urgent
+   being the foot-forward pose, the gate tolerances with Zane, and the
+   remake versus refund policy.
+5. **Deploy order** if any of this ships: migrations 0022 to 0026 before
+   the web build (0025 before the refund webhook change), then the app.
+6. **Phase 1b** (estimator wiring, migrations 0018, 0019, 0021, the order
+   snapshot) after step 1, reviewed as one security surface.
+7. Review and merge this branch into develop (not done tonight, per the
+   brief).
