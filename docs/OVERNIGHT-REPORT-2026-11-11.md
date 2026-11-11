@@ -14,7 +14,7 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
 | Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
 | Admin product management | round 1 done (9ccd578, 0a1a2e6); round 2 (orders: remakes, partial refunds, customer lookup, emails; 0024-0026) in progress |
-| Phase 0.5 sweep capture spike (Swift, behind a flag) | in progress |
+| Phase 0.5 sweep capture spike (Swift, behind a flag) | built, off by default (ff4c296, 8192b45); untested on a device |
 | UI and UX pass | apps/app done (e4b8960); apps/web after admin round 2 |
 | docs/BUSINESS-GAPS.md | done (5ad999e) |
 
@@ -104,6 +104,19 @@ every milestone, so the latest commit on the branch holds the latest state.
   safe-area inset, helper-mode capture copy. Visual and copy only. Tests 458
   to 487.
 
+- Phase 0.5 sweep capture (ff4c296, 8192b45): pure SweepCaptureLogic.swift
+  (azimuth keyframes up to 24, span across the wrap, Done and auto-stop
+  gated on a near-side view and the knee end in frame across the arc,
+  leg-relative framing checks where toes and thigh never warn, coverage
+  credited only for heights in frame, one instruction at a time) with 34
+  Swift tests in apps/app/modules/forms-capture/logic-tests. Controller sweep
+  mode reuses the station writer. Python and the app validator accept sweep
+  bundles only with SWEEP_CAPTURE_ENABLED. The module compiles against the
+  simulator SDK. To try it on a phone: `pod install` (the new Swift file is
+  not in the Pods file list yet), a dev client build,
+  EXPO_PUBLIC_SWEEP_CAPTURE=true in the app env and SWEEP_CAPTURE_ENABLED=true
+  on the worker.
+
 ## Video results (counts and ratios only)
 
 Baseline, production math unchanged (9424e5c):
@@ -172,6 +185,11 @@ capture is Mac-side only.
   includes expo-gl. On the current dev client the viewer shows its fallback
   text. Touch orbit and the plan 7.6 performance budget (iPhone 12, 60 fps,
   first render under 300 ms) are unmeasured.
+- Sweep capture: everything. Vision rate and heat at 4 checks a second,
+  whether the motion and sharpness limits pass enough frames in an 8 to 12
+  second sweep, the knee estimate (mirrored from the floor about the aim
+  anchor), the too-close rule on real masks, the flat ghost-leg bar and
+  haptics, and the round trip to reconstruct_silhouette on 12 to 24 views.
 - App UI pass: tab bar height with a real home indicator and Android gesture
   nav, brand fonts in native headers, largest accessibility text sizes.
 - The forms-video CLI and harness run on the Mac only; the capture lessons
@@ -218,6 +236,12 @@ capture is Mac-side only.
   payment (order/[key].tsx); neither is decided, so nothing is shown.
 - App: the guard-pair product render has a soft glow and drop shadow that
   brushes against the no-glow rule; judge it or swap in a real photo.
+- Sweep: tuning values to set from device runs (ankle 0.08 m above the
+  floor, anchor to ankle 0.20 m clamped 0.12 to 0.30, thigh margin 0.06 m,
+  edge margin 3%, side band 15% to 90% of the shin, motion limit 0.8 rad/s).
+  "Knee seen in all three thirds of the arc" may be too strict at the arc
+  ends. The in-AR ghost leg, voice prompts and the bent-knee prompt are not
+  built; the ghost leg is a flat 8-segment bar for now.
 - Estimator conservative defaults: manual input accepts any non-empty subset
   of the 9 typed keys; a missing or invalid tolerance makes the gate fail,
   never pass; keys already typed are not offered as tape actions.
