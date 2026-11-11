@@ -4,22 +4,46 @@ Unattended session, 22:26 to 07:00 EST, branch `feat/overnight-2026-11-11`
 (not merged to develop). Brief: docs/OVERNIGHT-2026-11-11.md. Updated after
 every milestone, so the latest commit on the branch holds the latest state.
 
+## Read this first
+
+1. **Scan goal met: bad videos now give a clear, fixable failure, never
+   garbage.** IMG_3836 fails on "knee outside the frame"; IMG_3834 measured
+   with human cross-sections at silhouette v3, then became a bent-knee
+   retake at v4. Six real defects were found and fixed along the way (cut-off
+   views failed whole scans, a twisting loft, the floor fit, an upside-down
+   phone, a misleading ankle reason, the bent-knee length loss).
+2. **Most urgent decision: the capture pose.** The bent-knee retake plus the
+   30 degree shin-tilt gate leave no ordinary seated pose that passes both.
+   Options in SCAN-V3-PLAN.md 5.1 and under TODO(liam) below.
+3. **Built beyond the scan:** the estimator (unwired) and its contracts, a 3D
+   viewer spike, the sweep capture behind a flag, admin catalog, photos,
+   remakes, partial refunds and customer lookup, a UI pass on both apps,
+   checkout gates (all off), policy page shells, and a security review with
+   its fixes. Everything verified green; nothing ran on a phone.
+4. **Deploy order if any of it ships:** migrations 0022 to 0026 before the
+   web build (0025 before the refund webhook change).
+5. **Never create a 100%-off promotion code** until the webhook handles it.
+
 ## Status at a glance
 
 | Area | State |
 |---|---|
 | Video harness: Swift forms-video | done (bf48577) |
 | Video harness: Python driver | done (9424e5c) |
-| Iteration on the two test videos | done: IMG_3834 measures, IMG_3836 fails on the knee (da80ef4, 8ebbd81, a957033) |
+| Iteration on the two test videos | done: both give fixable failures (IMG_3834 bent knee, IMG_3836 knee out of frame); d39e5f1 to b9d9b15 |
+| Bent-knee rule (silhouette v4) | done (b9d9b15); pose decision open |
+| Estimator verdict in the harness, prior 0.1.1 | done (5e1ffb3, 89c2e50) |
 | Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
 | Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
 | Admin product management | done: catalog and photos (9ccd578), orders depth (7b3369f) |
 | Phase 0.5 sweep capture spike (Swift, behind a flag) | built, off by default (ff4c296, 8192b45); untested on a device |
 | UI and UX pass | done: apps/app (e4b8960), apps/web (8aa4481) |
 | Business gaps, code-only items | done: checkout gates (b6f4a8d), FAQ, sizing and returns shells, print queue and packing slip (0b51a39) |
-| docs/BUSINESS-GAPS.md | done (5ad999e) |
+| docs/BUSINESS-GAPS.md | done (5ad999e), updated as items shipped |
+| App Shop tab follows the catalog | done (dfac25b) |
+| Security review of tonight's web and SQL | done, fixes in c7978b2 |
 
-## Verification (run by the orchestrator, 2026-11-11 about 02:00)
+## Verification (run by the orchestrator, 2026-11-11 about 01:15)
 
 - `make lint typecheck test`: exit 0. Pipeline 1051 passed; shared 142,
   app 510, web 534 tests (593 after the security fixes, re-run); ruff, tsc and ESLint clean.
@@ -35,8 +59,8 @@ every milestone, so the latest commit on the branch holds the latest state.
 
 - Contract for the harness bundle (forms.video-bundle v1) written into
   docs/VIDEO-HARNESS.md before either side was built.
-- SCAN-V3-PLAN.md section 5.7: one tape measurement per leg adds real scale
-  (2d15b35).
+- SCAN-V3-PLAN.md section 5.7: tape measurements add real scale (2d15b35;
+  corrected later to two values under the provisional numbers).
 - fitPreview.ts Club coverage 0.12-0.88 corrected to the model's 0.2-0.8
   (5054ca1).
 - forms-video Swift CLI (bf48577): frames, sharpness, Vision masks and
@@ -59,7 +83,7 @@ every milestone, so the latest commit on the branch holds the latest state.
   unchanged, and reports ratios only. 94 tests on synthetic legs under random
   similarity transforms. It found a production bug: the silhouette loft can
   join neighbouring rings half a turn apart (eigenvector sign flip), which
-  corrupts any slice that lands in that band. Fix in progress.
+  corrupts any slice that lands in that band. Fixed in d39e5f1.
 
 - Shared contracts (6159a30): forms.leg-model v1 and
   forms.measurement-quality v1, TS and Python validators, 67 shared fixtures
@@ -102,8 +126,8 @@ every milestone, so the latest commit on the branch holds the latest state.
 - Admin catalog (9ccd578): migrations 0022 (display order, availability
   available / coming soon / paused, sizing modes sold, "available" needs a
   CAD model) and 0023 (product_images, public product-images bucket). Upload
-  route validates admin aal2, same origin plus custom header, a streamed 5 MB
-  cap, magic bytes and dimensions, and builds the path server-side. Checkout
+  route validates admin aal2, same origin plus custom header, a streamed size
+  cap (5 MB, lowered to 4 MB in c7978b2), magic bytes and dimensions, and builds the path server-side. Checkout
   refuses anything not purchasable. Fixed the admin order page crash for
   deleted accounts. I removed the agent's storage select policy on the photo
   bucket: public URLs work without it and it let anyone list photo names for
@@ -259,6 +283,19 @@ capture is Mac-side only.
 
 ## TODO(liam) defaults taken
 
+- **Scan, the most urgent product decision: the capture pose.** The seated
+  "foot flat, shin upright" pose bends the knee near 90 degrees, which
+  measured Leg_Length up to 15% short on synthetic legs, so silhouette v4
+  refuses knees bent past about 60 degrees. With the thigh horizontal, knee
+  bend is about 90 degrees minus the shin's lean, and the posture gate
+  refuses a lean past 30 degrees, so **no ordinary seated pose passes both
+  gates today**. Options are in SCAN-V3-PLAN.md 5.1: standing with a helper;
+  a high seat with the leg forward and MAX_TILT_DEG opened to 40 (the math
+  holds there); or a knee landmark that does not need the dip. I kept the
+  retake (a failed scan is reversible, a short guard is not) and did not
+  change the app's capture copy, because the right pose is your call. Until
+  then, station and sweep captures in the current pose will fail late with
+  the bent-knee reason.
 - **Phase 1 migrations deferred (against the brief).** forms-architect
   reviewed the Phase 1 brief and recommended 0018, 0019 and 0021 wait for
   Phase 1b (wiring after the Phase 0 ground truth): a quality table and a
@@ -273,19 +310,6 @@ capture is Mac-side only.
   flagged `provisional` in the files, until the Phase 0 calibration.
 - Scan: MAX_TILT_DEG stays 30. The math holds at 40 on synthetic shins
   (tests/test_silhouette_tilt.py); opening the gate is a product call.
-- **Scan, the most urgent product decision: the capture pose.** The seated
-  "foot flat, shin upright" pose bends the knee near 90 degrees, which
-  measured Leg_Length up to 15% short on synthetic legs, so silhouette v4
-  refuses knees bent past about 60 degrees. With the thigh horizontal, knee
-  bend is about 90 degrees minus the shin's lean, and the posture gate
-  refuses a lean past 30 degrees, so **no ordinary seated pose passes both
-  gates today**. Options are in SCAN-V3-PLAN.md 5.1: standing with a helper;
-  a high seat with the leg forward and MAX_TILT_DEG opened to 40 (the math
-  holds there); or a knee landmark that does not need the dip. I kept the
-  retake (a failed scan is reversible, a short guard is not) and did not
-  change the app's capture copy, because the right pose is your call. Until
-  then, station and sweep captures in the current pose will fail late with
-  the bent-knee reason.
 - Scan: segment.py's bent-knee rule also changes the photogrammetry path for
   bent-knee inputs only (short leg becomes a rescan). No version constant
   covers segment.py; decide whether that needs one.
@@ -393,20 +417,22 @@ None.
 
 In order, for Liam:
 
+0. **Decide the capture pose** (top TODO above); until then every seated
+   scan fails on the bent-knee rule.
 1. **Tape ground truth (Phase 0, human-only).** Five then ten legs with tape
    and books, logged in docs/accuracy-log.md. Everything provisional tonight
    (estimator noise, tolerances, the bent-knee window, IMG_3834's short
    Leg_Length/OW_S3) waits on it.
-2. **Record two good videos** of one leg with the new pose (foot forward,
-   knee slightly bent, whole lower leg plus a little thigh in frame across a
-   front half-circle), drop them in services/pipeline/recordings/videos/,
+2. **Record two good videos** of one leg in the chosen pose (knee only
+   slightly bent, whole lower leg plus a little thigh in frame across a
+   front half-circle, floor visible around the foot), drop them in services/pipeline/recordings/videos/,
    and run `.venv/bin/python -m forms_pipeline.harness run`. That gives the
    first agreement table between two videos of the same leg.
 3. **Try the sweep on a phone:** `pod install`, a dev client build,
    EXPO_PUBLIC_SWEEP_CAPTURE=true and SWEEP_CAPTURE_ENABLED=true, then
    tune the values listed under TODO(liam).
 4. **Decide the product calls** listed under TODO(liam), the most urgent
-   being the foot-forward pose, the gate tolerances with Zane, and the
+   being the gate tolerances with Zane and the
    remake versus refund policy.
 5. **Deploy order** if any of this ships: migrations 0022 to 0026 before
    the web build (0025 before the refund webhook change), then the app.
