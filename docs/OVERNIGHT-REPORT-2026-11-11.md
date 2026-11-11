@@ -13,9 +13,9 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Iteration on the two test videos | round 2 in progress |
 | Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
 | Phase 2 3D viewer spike (r3f + expo-gl) | in progress |
-| Admin product management | not started |
+| Admin product management | round 1 in progress (catalog depth, photos; migrations 0022, 0023) |
 | UI and UX pass | not started |
-| docs/BUSINESS-GAPS.md | not started |
+| docs/BUSINESS-GAPS.md | done (5ad999e) |
 
 ## Done (with commits)
 
@@ -69,6 +69,11 @@ every milestone, so the latest commit on the branch holds the latest state.
   15 mm tolerance. Widths and depths pass (r up to 0.95). Per the plan the
   tolerance or the capture changes, not the bands: a decision for Liam and
   Zane after the Phase 0 calibration.
+
+- Business gaps audit (5ad999e): 20 areas ranked by launch impact. The
+  blockers (tax, shipping, policies, checkout completion, fulfillment) all
+  need Liam's accounts, money or legal text; it started in parallel with the
+  scan agents because it was read-only and took nothing from them.
 
 ## Video results (counts and ratios only)
 
