@@ -159,7 +159,7 @@ select checks22.eq(
 select checks22.eq(
   (select public::text || '/' || file_size_limit || '/' || array_to_string(allowed_mime_types, ',')
      from storage.buckets where id = 'product-images'),
-  'true/5242880/image/jpeg,image/png,image/webp', 'product-images bucket is public, 5 MB, jpeg/png/webp');
+  'true/4194304/image/jpeg,image/png,image/webp', 'product-images bucket is public, 4 MB, jpeg/png/webp');
 select checks22.eq(
   (select bool_or(public) from storage.buckets where id in ('meshes', 'stls')), false,
   'scan and STL buckets stay private');

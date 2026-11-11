@@ -11,9 +11,9 @@ import { lookaheadRange, splitLookahead } from './pagination';
 
 export type OpsResult = { error: string | null };
 
-const NOT_RETRIABLE =
+export const NOT_RETRIABLE =
   'Only a dead-lettered job can be retried, and not one whose scan was deleted or whose order was cancelled.';
-const ALREADY_ACTIVE = 'Another job for this scan is already active.';
+export const ALREADY_ACTIVE = 'Another job for this scan is already active.';
 
 /** The RPC writes its own audit row; do not add a second one here. */
 export async function retryPipelineJob(

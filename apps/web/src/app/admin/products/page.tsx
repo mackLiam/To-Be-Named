@@ -8,6 +8,7 @@ import styles from '../admin.module.css';
 import { AdminShell } from '../AdminShell';
 import { SubmitButton } from '../SubmitButton';
 import { requireAdmin } from '@/lib/admin-auth';
+import { adminErrorText } from '@/lib/admin-messages';
 import { productStateMeta, resolveShopImage, sizingModesLabel } from '@/lib/catalog';
 import { listMainImages, listProducts } from '@/lib/data';
 import { getServerSupabaseUrl } from '@/lib/env';
@@ -36,7 +37,7 @@ export default async function ProductsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireAdmin();
-  const error = firstValue((await searchParams).error);
+  const error = adminErrorText(firstValue((await searchParams).error));
   const products = await listProducts();
   const mains = await listMainImages(products.map((product) => product.id));
   const supabaseUrl = ctx.fake ? undefined : getServerSupabaseUrl();

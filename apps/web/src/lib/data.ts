@@ -1,5 +1,6 @@
 import type { OrderStatus } from '@forms/shared';
 
+import { hasDeletionRequest } from './account-deletion';
 import { PRODUCT_LIST_LIMIT, compareShopOrder } from './catalog';
 import { isFakeMode, hasServiceRoleConfig } from './env';
 import { normalizeCustomerRow } from './customers';
@@ -307,7 +308,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
       >;
   const order = flattenOrder(rest);
 
-  const [jobs, refunds, remakes, customerEmail] = await Promise.all([
+  const [jobs, refunds, remakes, customerEmail, deletionPending] = await Promise.all([
     client
       .from('pipeline_jobs')
       .select('id, scan_id, step, status')
@@ -327,6 +328,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
       .order('created_at', { ascending: false })
       .limit(REMAKE_LIST_LIMIT),
     lookupCustomerEmail(client.auth.admin, order.user_id),
+    order.user_id ? hasDeletionRequest(client, order.user_id) : Promise.resolve(false),
   ]);
   for (const result of [jobs, refunds, remakes]) {
     if (result.error) {
@@ -342,6 +344,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     refunded_at,
     stripe_refunded_cents,
     customer_email: customerEmail,
+    deletion_pending: deletionPending,
     jobs: (jobs.data ?? []) as OrderDetail['jobs'],
     refunds: (refunds.data ?? []) as RefundRow[],
     remakes: (remakes.data ?? []) as RemakeChild[],

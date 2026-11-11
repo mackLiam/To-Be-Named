@@ -5,7 +5,7 @@
 -- (DESIGN.md section 9). Nothing in this migration touches those.
 --
 -- Writes are service-role only: the admin panel validates every upload
--- server-side (type by magic bytes, 5 MB, at most 6000 px per side) and
+-- server-side (type by magic bytes, 4 MB, at most 6000 px per side) and
 -- builds the storage path itself (<product_id>/<uuid>.<ext>), never from a
 -- client filename (apps/web/src/lib/product-images.ts).
 --
@@ -69,10 +69,11 @@ using (
 
 -- ---------------------------------------------------------------------------
 -- Storage: public bucket for catalog photos. Size and type caps repeat the
--- admin upload checks as a second line.
+-- admin upload checks as a second line. 4 MB stays under Vercel's 4.5 MB
+-- request body limit for the upload route (apps/web lib/product-images.ts).
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('product-images', 'product-images', true, 5242880,
+values ('product-images', 'product-images', true, 4194304,
         array['image/jpeg', 'image/png', 'image/webp'])
 on conflict (id) do nothing;
 

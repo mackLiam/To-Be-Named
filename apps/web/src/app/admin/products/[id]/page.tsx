@@ -9,6 +9,7 @@ import { AdminShell } from '../../AdminShell';
 import { PhotoManager } from '../PhotoManager';
 import { ProductForm } from '../ProductForm';
 import { requireAdmin } from '@/lib/admin-auth';
+import { adminErrorText } from '@/lib/admin-messages';
 import { productImagePublicUrl } from '@/lib/catalog';
 import { getProduct, listProductImages } from '@/lib/data';
 import { getServerSupabaseUrl } from '@/lib/env';
@@ -30,7 +31,7 @@ export default async function EditProductPage({
 }) {
   const ctx = await requireAdmin();
   const { id } = await params;
-  const error = firstValue((await searchParams).error);
+  const error = adminErrorText(firstValue((await searchParams).error));
   const product = await getProduct(id);
   if (!product) {
     notFound();

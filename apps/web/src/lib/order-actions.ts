@@ -46,6 +46,15 @@ export interface ActionOutcome {
 
 export const READ_ONLY = 'Read-only: no service role is configured, so changes cannot be saved.';
 
+/** Success notices (admin-messages.ts maps them to codes). */
+export const ORDER_NOTICES = {
+  remakeCreated: 'Remake created. Its CAD jobs are queued from the original scans.',
+  remakeExisting: 'This order already had an open remake. Showing it instead of making a second.',
+  refundIssued: 'Refund issued.',
+  refundRepeat: 'This refund was already issued and recorded.',
+  noteAdded: 'Note added.',
+} as const;
+
 function orderPath(id: string | undefined): string {
   return id && isUuid(id) ? `/admin/orders/${id.toLowerCase()}` : '/admin/orders';
 }
@@ -101,9 +110,7 @@ export async function remakeOrderAction(
   return {
     path: orderPath(result.remakeId),
     error: null,
-    notice: result.created
-      ? 'Remake created. Its CAD jobs are queued from the original scans.'
-      : 'This order already had an open remake. Showing it instead of making a second.',
+    notice: result.created ? ORDER_NOTICES.remakeCreated : ORDER_NOTICES.remakeExisting,
   };
 }
 
@@ -117,7 +124,11 @@ export async function refundOrderAction(
     return fail('/admin/orders', 'Unknown order.');
   }
   const path = orderPath(id);
-  const mode = form.mode ?? 'full';
+  // No default: a form that lost its mode must not become a full refund.
+  const mode = form.mode;
+  if (mode !== 'full' && mode !== 'partial') {
+    return fail(path, 'Choose a full or a partial refund.');
+  }
   let amountCents: number | undefined;
   if (mode === 'partial') {
     const parsed = parseMoneyAmount(form.amount);
@@ -125,8 +136,6 @@ export async function refundOrderAction(
       return fail(path, 'Enter the refund amount, for example 12.50.');
     }
     amountCents = parsed;
-  } else if (mode !== 'full') {
-    return fail(path, 'Choose a full or a partial refund.');
   }
   if (!w) {
     return fail(path, READ_ONLY);
@@ -158,7 +167,7 @@ export async function refundOrderAction(
   return {
     path,
     error: null,
-    notice: refund.recorded ? 'Refund issued.' : 'This refund was already issued and recorded.',
+    notice: refund.recorded ? ORDER_NOTICES.refundIssued : ORDER_NOTICES.refundRepeat,
   };
 }
 
@@ -176,7 +185,9 @@ export async function addOrderNoteAction(
     return fail(path, READ_ONLY);
   }
   const result = await addOrderNote(w.client, w.actor, parsed.value);
-  return result.error ? fail(path, result.error) : { path, error: null, notice: 'Note added.' };
+  return result.error
+    ? fail(path, result.error)
+    : { path, error: null, notice: ORDER_NOTICES.noteAdded };
 }
 
 /**

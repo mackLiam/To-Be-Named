@@ -227,7 +227,7 @@ describe('remakeOrderAction', () => {
     const deps = { authorize: async () => writer(client), email: emailDeps() };
     expect(await remakeOrderAction(deps, { id: ORDER, reason: 'print_defect' })).toEqual({
       path: `/admin/orders/${ORDER}`,
-      error: 'Remake refused: the customer deleted their account',
+      error: 'Remake refused: the customer deleted their account.',
       notice: null,
     });
     expect(await remakeOrderAction(deps, { id: ORDER, reason: 'other' })).toMatchObject({
@@ -270,7 +270,8 @@ describe('refundOrderAction', () => {
       }
       return { id: 're_9', status: 'succeeded', amount: params.amount ?? 17800 };
     });
-    return { stripe: { refunds: { create } } as RefundStripe, create };
+    const list = vi.fn(async () => ({ data: [], has_more: false }));
+    return { stripe: { refunds: { create, list } } as RefundStripe, create };
   }
 
   it('issues a partial refund in major units, emails once, and audits the email', async () => {
@@ -313,7 +314,7 @@ describe('refundOrderAction', () => {
       { authorize: async () => writer(client), email: emailDeps(), stripe: () => stripe },
       { id: ORDER, mode: 'partial', amount: '178.01' },
     );
-    expect(out.error).toMatch(/to \$178\.00/);
+    expect(out.error).toBe('The refund must be more than 0 and at most the amount left to refund.');
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -327,7 +328,9 @@ describe('refundOrderAction', () => {
       { authorize: async () => writer(client), email, stripe: () => stripe },
       { id: ORDER, mode: 'full' },
     );
-    expect(out.error).toBe('Stripe did not refund the payment: Your card was declined.');
+    expect(out.error).toBe(
+      'Stripe did not refund the payment. The Stripe dashboard shows why; nothing was recorded.',
+    );
     expect(email.fetch).not.toHaveBeenCalled();
     expect(inserts).toEqual([]);
   });
@@ -351,6 +354,11 @@ describe('refundOrderAction', () => {
     [{ id: ORDER, mode: 'partial', amount: '0' }, 'Enter the refund amount, for example 12.50.'],
     [{ id: ORDER, mode: 'partial', amount: '-3' }, 'Enter the refund amount, for example 12.50.'],
     [{ id: ORDER, mode: 'half' }, 'Choose a full or a partial refund.'],
+    [{ id: ORDER }, 'Choose a full or a partial refund.'],
+    [{ id: ORDER, amount: '12.50' }, 'Choose a full or a partial refund.'],
+    [{ id: ORDER, mode: '' }, 'Choose a full or a partial refund.'],
+    [{ id: ORDER, mode: 'FULL' }, 'Choose a full or a partial refund.'],
+    [{ id: ORDER, mode: ' full' }, 'Choose a full or a partial refund.'],
     [{ id: 'nope', mode: 'full' }, 'Unknown order.'],
   ])('rejects bad input %o', async (form, message) => {
     const stripe = vi.fn();

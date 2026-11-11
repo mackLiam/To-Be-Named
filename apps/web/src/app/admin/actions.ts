@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { requireAdmin } from '@/lib/admin-auth';
+import { errorCode, flashPath, noticeCode, type AdminErrorCode } from '@/lib/admin-messages';
 import { emailDepsFromEnv } from '@/lib/email';
 import { shouldUseFake } from '@/lib/data';
 import { getStripeSecretKey, isFakeMode } from '@/lib/env';
@@ -55,18 +56,23 @@ function fields(formData: FormData): Record<string, string> {
   return out;
 }
 
-function back(path: string, error: string | null): never {
-  redirect(error ? `${path}?error=${encodeURIComponent(error)}` : path);
+/** Redirect with the error's code (lib/admin-messages.ts), never its text. */
+function back(
+  path: string,
+  error: string | null,
+  fallback: AdminErrorCode = 'action_failed',
+): never {
+  redirect(flashPath(path, { error: errorCode(error, fallback) }));
 }
 
 /** Redirect for the lib/order-actions outcomes: error or notice, never both. */
-function finish(outcome: ActionOutcome): never {
+function finish(outcome: ActionOutcome, fallback: AdminErrorCode): never {
   revalidatePath(outcome.path);
-  if (outcome.error) {
-    redirect(`${outcome.path}?error=${encodeURIComponent(outcome.error)}`);
-  }
   redirect(
-    outcome.notice ? `${outcome.path}?notice=${encodeURIComponent(outcome.notice)}` : outcome.path,
+    flashPath(outcome.path, {
+      error: errorCode(outcome.error, fallback),
+      notice: noticeCode(outcome.notice),
+    }),
   );
 }
 
@@ -149,7 +155,7 @@ export async function setOrderStatus(formData: FormData): Promise<void> {
     await afterStatusChange(w, id, to, emailDepsFromEnv());
   }
   revalidatePath(path);
-  back(path, result.error);
+  back(path, result.error, 'status_refused');
 }
 
 export async function saveTracking(formData: FormData): Promise<void> {
@@ -166,7 +172,7 @@ export async function saveTracking(formData: FormData): Promise<void> {
   }
   const parsed = parseTrackingForm(form);
   if (!parsed.ok) {
-    back(path, parsed.errors.join(' '));
+    back(path, parsed.errors.join(' '), 'tracking_invalid');
   }
   const result = await updateOrderTracking(w.client, w.actor, id, parsed.value);
   revalidatePath(path);
@@ -184,18 +190,21 @@ export async function refundOrder(formData: FormData): Promise<void> {
       },
       fields(formData),
     ),
+    'refund_failed',
   );
 }
 
 export async function remakeOrder(formData: FormData): Promise<void> {
   finish(
     await remakeOrderAction({ authorize: writer, email: emailDepsFromEnv() }, fields(formData)),
+    'remake_form_invalid',
   );
 }
 
 export async function addOrderNote(formData: FormData): Promise<void> {
   finish(
     await addOrderNoteAction({ authorize: writer, email: emailDepsFromEnv() }, fields(formData)),
+    'note_failed',
   );
 }
 

@@ -19,6 +19,18 @@ function text(s: string): number[] {
   return [...s].map((c) => c.charCodeAt(0));
 }
 
+/** A PNG chunk: length, type, data, and a placeholder CRC (nothing here checks it). */
+export function pngChunk(type: string, data: number[]): number[] {
+  return [...u32be(data.length), ...text(type), ...data, 0, 0, 0, 0];
+}
+
+/** PNG with extra chunks between IHDR and IEND. */
+export function pngWith(width: number, height: number, chunks: number[][]): Uint8Array {
+  const base = png(width, height);
+  const iend = base.length - 12;
+  return Uint8Array.from([...base.subarray(0, iend), ...chunks.flat(), ...base.subarray(iend)]);
+}
+
 export function png(width: number, height: number): Uint8Array {
   return Uint8Array.from([
     0x89,
@@ -42,7 +54,19 @@ export function png(width: number, height: number): Uint8Array {
     0,
     0,
     0,
+    ...pngChunk('IEND', []),
   ]);
+}
+
+/** A JPEG marker segment; the length field counts itself. */
+export function jpegSegment(marker: number, payload: number[]): number[] {
+  return [0xff, marker, ...u16be(payload.length + 2), ...payload];
+}
+
+/** JPEG with extra segments right after SOI. */
+export function jpegWith(width: number, height: number, segments: number[][]): Uint8Array {
+  const base = jpeg(width, height);
+  return Uint8Array.from([...base.subarray(0, 2), ...segments.flat(), ...base.subarray(2)]);
 }
 
 /** JPEG with an APP0 segment (and optional fill bytes) before the SOF. */
@@ -96,9 +120,23 @@ export function jpeg(width: number, height: number, sof = 0xc0): Uint8Array {
   ]);
 }
 
-function riff(chunk: string, payload: number[]): Uint8Array {
-  const body = [...text('WEBP'), ...text(chunk), ...u32be(payload.length).reverse(), ...payload];
+/** A RIFF chunk, padded to an even size. */
+export function riffChunk(type: string, payload: number[]): number[] {
+  return [
+    ...text(type),
+    ...u32be(payload.length).reverse(),
+    ...payload,
+    ...(payload.length % 2 ? [0] : []),
+  ];
+}
+
+function riffOf(chunks: number[][]): Uint8Array {
+  const body = [...text('WEBP'), ...chunks.flat()];
   return Uint8Array.from([...text('RIFF'), ...u32be(body.length).reverse(), ...body]);
+}
+
+function riff(chunk: string, payload: number[]): Uint8Array {
+  return riffOf([riffChunk(chunk, payload)]);
 }
 
 export function webpLossy(width: number, height: number): Uint8Array {
@@ -131,4 +169,17 @@ export function webpLossless(width: number, height: number): Uint8Array {
 
 export function webpExtended(width: number, height: number): Uint8Array {
   return riff('VP8X', [0, 0, 0, 0, ...u24le(width - 1), ...u24le(height - 1)]);
+}
+
+/** Extended WebP: VP8X with these flags, then the given chunks. */
+export function webpExtendedWith(
+  width: number,
+  height: number,
+  flags: number,
+  chunks: number[][],
+): Uint8Array {
+  return riffOf([
+    riffChunk('VP8X', [flags, 0, 0, 0, ...u24le(width - 1), ...u24le(height - 1)]),
+    ...chunks,
+  ]);
 }

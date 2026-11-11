@@ -63,11 +63,13 @@ export function isFitReason(reason: RemakeReason): boolean {
 export interface RemakeableOrder {
   status: string;
   user_id: string | null;
+  /** A pending account deletion request (0012); create_order_remake refuses it. */
+  deletion_pending: boolean;
 }
 
 /** Whether the order page offers "Remake". */
 export function canRemake(order: RemakeableOrder): boolean {
-  return REMAKEABLE.includes(order.status) && order.user_id !== null;
+  return REMAKEABLE.includes(order.status) && order.user_id !== null && !order.deletion_pending;
 }
 
 export type RemakeState =
@@ -83,6 +85,12 @@ export function remakeState(
   }
   if (order.user_id === null) {
     return { kind: 'unavailable', reason: 'The customer deleted their account, so no remake.' };
+  }
+  if (order.deletion_pending) {
+    return {
+      kind: 'unavailable',
+      reason: 'The customer asked to delete their account, so no remake.',
+    };
   }
   if (!REMAKEABLE.includes(order.status)) {
     return { kind: 'unavailable', reason: 'A remake is possible once the order has shipped.' };
@@ -146,6 +154,37 @@ export function parseRemakeForm(
   };
 }
 
+/** Fixed admin-facing outcomes of createRemake (admin-messages.ts maps them to codes). */
+export const REMAKE_MESSAGES = {
+  orderNotFound: 'Order not found.',
+  refusedStatus: 'Remake refused: only a shipped or delivered order can be remade.',
+  refusedDeleted: 'Remake refused: the customer deleted their account.',
+  refusedDeleting: 'Remake refused: the customer asked to delete their account.',
+  refusedProduction:
+    'Remake refused: the product has no CAD model or a scan has no measurements. Fix that, then try again.',
+  refusedInput: 'Remake refused: the form was not valid. Reload the page and try again.',
+  alreadyOpen: 'This order already has an open remake. Reload to see it.',
+} as const;
+
+/**
+ * create_order_remake's 23514 refusals (0024) by their fixed message text.
+ * Anything else with that code comes from the paid trigger (0008, 0016):
+ * no CAD model, or a scan without measurements.
+ */
+function remakeRefusal(message: string | undefined): string {
+  const text = message ?? '';
+  if (text.startsWith('only a shipped or delivered order can be remade')) {
+    return REMAKE_MESSAGES.refusedStatus;
+  }
+  if (text === 'the customer deleted their account') {
+    return REMAKE_MESSAGES.refusedDeleted;
+  }
+  if (text === 'the customer asked to delete their account') {
+    return REMAKE_MESSAGES.refusedDeleting;
+  }
+  return REMAKE_MESSAGES.refusedProduction;
+}
+
 export type RemakeResult =
   | { error: string; remakeId?: undefined; created?: undefined }
   | { error: null; remakeId: string; created: boolean };
@@ -169,17 +208,18 @@ export async function createRemake(
   });
   if (error) {
     if (error.code === 'P0002') {
-      return { error: 'Order not found.' };
+      return { error: REMAKE_MESSAGES.orderNotFound };
     }
-    // 23514: refused by state (status, deleted account, or the paid trigger
-    // found no CAD model or no measurements); its message says which.
+    if (error.code === '23514') {
+      return { error: remakeRefusal(error.message) };
+    }
     // 22023: input the form should have caught.
-    if (error.code === '23514' || error.code === '22023') {
-      return { error: `Remake refused: ${error.message}` };
+    if (error.code === '22023') {
+      return { error: REMAKE_MESSAGES.refusedInput };
     }
     // The open-remake index caught a race the row lock did not.
     if (error.code === '23505') {
-      return { error: 'This order already has an open remake. Reload to see it.' };
+      return { error: REMAKE_MESSAGES.alreadyOpen };
     }
     throw error;
   }

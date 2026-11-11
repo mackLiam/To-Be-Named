@@ -46,6 +46,7 @@ describe('canRemake and remakeState', () => {
   const base = {
     status: 'delivered',
     user_id: 'u1',
+    deletion_pending: false,
     remakes: [] as { id: string; status: string }[],
   };
 
@@ -64,6 +65,16 @@ describe('canRemake and remakeState', () => {
     expect(remakeState({ ...base, user_id: null })).toEqual({
       kind: 'unavailable',
       reason: 'The customer deleted their account, so no remake.',
+    });
+  });
+
+  it('refuses a customer with a pending account deletion, as create_order_remake does', () => {
+    const leaving = { ...base, deletion_pending: true };
+    expect(canRemake(leaving)).toBe(false);
+    expect(canRemake({ ...leaving, status: 'shipped' })).toBe(false);
+    expect(remakeState(leaving)).toEqual({
+      kind: 'unavailable',
+      reason: 'The customer asked to delete their account, so no remake.',
     });
   });
 
@@ -166,15 +177,27 @@ describe('createRemake', () => {
         code: '23514',
         message: 'only a shipped or delivered order can be remade (status is paid)',
       },
-      'Remake refused: only a shipped or delivered order can be remade (status is paid)',
+      'Remake refused: only a shipped or delivered order can be remade.',
+    ],
+    [
+      { code: '23514', message: 'the customer deleted their account' },
+      'Remake refused: the customer deleted their account.',
+    ],
+    [
+      { code: '23514', message: 'the customer asked to delete their account' },
+      'Remake refused: the customer asked to delete their account.',
     ],
     [
       { code: '23514', message: 'product p has no CAD model' },
-      'Remake refused: product p has no CAD model',
+      'Remake refused: the product has no CAD model or a scan has no measurements. Fix that, then try again.',
+    ],
+    [
+      { code: '23514', message: 'scan s on order o has no measurements' },
+      'Remake refused: the product has no CAD model or a scan has no measurements. Fix that, then try again.',
     ],
     [
       { code: '22023', message: 'a remake for reason other needs a note' },
-      'Remake refused: a remake for reason other needs a note',
+      'Remake refused: the form was not valid. Reload the page and try again.',
     ],
     [
       { code: '23505', message: 'duplicate key' },

@@ -10,6 +10,7 @@ import { StatusBadge } from '../../StatusBadge';
 import { SubmitButton } from '../../SubmitButton';
 import { retryJob } from '../actions';
 import { requireAdmin } from '@/lib/admin-auth';
+import { adminErrorText } from '@/lib/admin-messages';
 import { getTriage } from '@/lib/data';
 import { firstValue } from '@/lib/pagination';
 import { formatDateTime, groupMeasurements, shortId } from '@/lib/view';
@@ -43,7 +44,7 @@ export default async function JobDetailPage({
 }) {
   const ctx = await requireAdmin();
   const { id } = await params;
-  const error = firstValue((await searchParams).error);
+  const error = adminErrorText(firstValue((await searchParams).error));
 
   const triage = await getTriage(id);
   if (!triage) {

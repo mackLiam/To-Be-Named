@@ -15,6 +15,7 @@ import { SubmitButton } from '../../SubmitButton';
 import { RefundPanel } from './RefundPanel';
 import { RemakePanel } from './RemakePanel';
 import { requireAdmin } from '@/lib/admin-auth';
+import { adminErrorText, adminNoticeText } from '@/lib/admin-messages';
 import { getOrderDetail, getOrderTimeline } from '@/lib/data';
 import { MAX_NOTE_LENGTH } from '@/lib/order-notes';
 import { DEFAULT_PAGE_SIZE, firstValue, parsePageParam } from '@/lib/pagination';
@@ -47,8 +48,8 @@ export default async function OrderDetailPage({
   const ctx = await requireAdmin();
   const { id } = await params;
   const sp = await searchParams;
-  const error = firstValue(sp.error);
-  const notice = error ? undefined : firstValue(sp.notice);
+  const error = adminErrorText(firstValue(sp.error));
+  const notice = error ? null : adminNoticeText(firstValue(sp.notice));
   const timelinePage = parsePageParam(sp.tl);
 
   const order = await getOrderDetail(id);

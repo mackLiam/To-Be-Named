@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrderStatus, ScanStatus } from '@forms/shared';
 import type Stripe from 'stripe';
 
+import { hasDeletionRequest } from './account-deletion';
 import { isPurchasable } from './catalog';
 import { CHECKOUT_GATES_OFF, getCheckoutGates, type CheckoutGates } from './env';
 import { isUuid } from './shop';
@@ -459,15 +460,8 @@ export function supabaseCheckoutStore(client: SupabaseClient): CheckoutStore {
     return result.data;
   };
   return {
-    async hasDeletionRequest(userId) {
-      const { count, error } = await client
-        .from('account_deletion_requests')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('user_id', userId);
-      if (error) {
-        throw error;
-      }
-      return (count ?? 0) > 0;
+    hasDeletionRequest(userId) {
+      return hasDeletionRequest(client, userId);
     },
     async getProduct(id) {
       return check(

@@ -6,7 +6,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Spinner } from '../../Spinner';
 import styles from '../admin.module.css';
 import { deletePhoto, movePhoto, savePhotoAlt, setMainPhoto } from './photo-actions';
-import { MAX_ALT_TEXT, UPLOAD_HEADER } from '@/lib/product-images';
+import { MAX_ALT_TEXT, MAX_IMAGE_SIZE_LABEL, UPLOAD_HEADER } from '@/lib/product-images';
 
 export interface PhotoView {
   id: string;
@@ -185,7 +185,8 @@ export function PhotoManager({ productId, photos }: { productId: string; photos:
               aria-describedby="photo-hint"
             />
             <span className={styles.fieldHint} id="photo-hint">
-              JPEG, PNG or WebP, at most 5 MB and 6000 px per side.
+              JPEG, PNG or WebP (not animated), at most {MAX_IMAGE_SIZE_LABEL} and 6000 px per side.
+              Location, camera and text metadata are removed, so export the photo upright.
             </span>
           </label>
           <label className={styles.field}>

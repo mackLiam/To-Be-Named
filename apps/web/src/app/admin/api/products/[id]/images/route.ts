@@ -12,8 +12,9 @@ import { createServiceRoleClient } from '@/lib/supabase-admin';
 /**
  * Catalog photo upload. Thin adapter over handleImageUpload (unit tested in
  * lib/product-image-writes.test.ts), which enforces: aal2 admin or 404,
- * same-origin plus a custom header (CSRF), a 5 MB streamed cap, type by
- * magic bytes, dimensions, a server-generated path, and an audit row.
+ * same-origin plus a custom header (CSRF), a 4 MB streamed cap, type by
+ * magic bytes, dimensions, no animation, metadata stripped, a
+ * server-generated path, and an audit row.
  * The body is the raw file; alt text rides in the query string.
  */
 export async function POST(

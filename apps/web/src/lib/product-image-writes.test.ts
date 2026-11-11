@@ -1,13 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { AdminDecision } from './access';
-import { jpeg, png } from './image-fixtures.test-helpers';
+import { jpeg, jpegSegment, jpegWith, png, webpExtendedWith } from './image-fixtures.test-helpers';
 import {
+  IMAGE_CACHE_SECONDS,
   deleteProductImage,
   handleImageUpload,
   isStorageNotFound,
   moveImage,
   setMainImage,
+  supabaseImageStorage,
   updateImageAlt,
   uploadProductImage,
   type ImageStorage,
@@ -48,6 +51,7 @@ function fakes(
     detail: Record<string, unknown>;
   }[] = [];
   const removed: string[] = [];
+  const stored = new Map<string, Uint8Array>();
   const repo: ProductImageRepo = {
     async productExists(productId) {
       return (opts.products ?? [PRODUCT]).includes(productId);
@@ -96,18 +100,19 @@ function fakes(
     },
   };
   const storage: ImageStorage = {
-    async upload(path) {
+    async upload(path, bytes) {
       if (objects.has(path)) {
         throw new Error('exists');
       }
       objects.add(path);
+      stored.set(path, bytes);
     },
     async remove(path) {
       removed.push(path);
       objects.delete(path);
     },
   };
-  return { repo, storage, rows, objects, audits, removed };
+  return { repo, storage, rows, objects, audits, removed, stored };
 }
 
 describe('uploadProductImage', () => {
@@ -142,9 +147,32 @@ describe('uploadProductImage', () => {
     expect(f.rows.at(-1)).toMatchObject({ sort_order: 5, is_main: false });
   });
 
+  it('stores the photo without its EXIF GPS block and audits the stored size', async () => {
+    const f = fakes();
+    const gps = jpegSegment(0xe1, [...new TextEncoder().encode('Exif\u0000\u0000GPS 51.5N'), 0]);
+    const input = jpegWith(1600, 1200, [gps]);
+    await uploadProductImage(f.repo, f.storage, 'a', {
+      productId: PRODUCT,
+      bytes: input,
+      declaredType: 'image/jpeg',
+      alt: 'Front',
+      newId: () => id(9),
+    });
+    const saved = f.stored.get(`${PRODUCT}/${id(9)}.jpg`)!;
+    expect(Array.from(saved)).toEqual(Array.from(jpeg(1600, 1200)));
+    expect(saved.length).toBe(input.length - gps.length);
+    expect(f.audits[0]!.detail).toMatchObject({ bytes: saved.length, width: 1600, height: 1200 });
+  });
+
   it('refuses invalid input before touching storage', async () => {
     const cases = [
       { bytes: png(10, 10), declaredType: 'image/jpeg', alt: 'x' },
+      // Animated WebP (VP8X animation flag).
+      { bytes: webpExtendedWith(10, 10, 0x02, []), declaredType: 'image/webp', alt: 'x' },
+      // Frame header readable, but no scan: the metadata walk cannot finish.
+      { bytes: jpeg(10, 10).subarray(0, 40), declaredType: 'image/jpeg', alt: 'x' },
+      // PNG with no IEND.
+      { bytes: png(10, 10).subarray(0, 33), declaredType: 'image/png', alt: 'x' },
       { bytes: new TextEncoder().encode('<svg/>'), declaredType: 'image/png', alt: 'x' },
       { bytes: png(7000, 10), declaredType: 'image/png', alt: 'x' },
       { bytes: png(10, 10), declaredType: 'image/png', alt: '' },
@@ -380,13 +408,14 @@ describe('handleImageUpload', () => {
     expect((await handleImageUpload(request({ productId: '../x' }).req)).status).toBe(404);
     expect((await handleImageUpload(request({ alt: '' }).req)).status).toBe(400);
     expect(
-      (await handleImageUpload(request({ contentLength: String(MAX_IMAGE_BYTES + 1) }).req)).status,
-    ).toBe(413);
+      await handleImageUpload(request({ contentLength: String(MAX_IMAGE_BYTES + 1) }).req),
+    ).toEqual({ status: 413, body: { error: 'The file is larger than 4 MB.' } });
     const big = new Uint8Array(MAX_IMAGE_BYTES + 1);
     big.set(png(10, 10));
-    expect(
-      (await handleImageUpload(request({ contentLength: null, body: body(big) }).req)).status,
-    ).toBe(413);
+    expect(await handleImageUpload(request({ contentLength: null, body: body(big) }).req)).toEqual({
+      status: 413,
+      body: { error: 'The file is larger than 4 MB.' },
+    });
   });
 
   it('400s a file whose bytes are not the declared image', async () => {
@@ -403,6 +432,21 @@ describe('handleImageUpload', () => {
     expect(await handleImageUpload(broken.req)).toEqual({
       status: 500,
       body: { error: 'Upload failed. Try again.' },
+    });
+  });
+});
+
+describe('supabaseImageStorage', () => {
+  it('uploads without upsert and with a one-hour cache', async () => {
+    const upload = vi.fn(async () => ({ data: {}, error: null }));
+    const client = { storage: { from: () => ({ upload }) } } as unknown as SupabaseClient;
+    const bytes = png(10, 10);
+    await supabaseImageStorage(client).upload('p/i.png', bytes, 'image/png');
+    expect(IMAGE_CACHE_SECONDS).toBe(3600);
+    expect(upload).toHaveBeenCalledWith('p/i.png', bytes, {
+      contentType: 'image/png',
+      upsert: false,
+      cacheControl: '3600',
     });
   });
 });

@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrderStatus } from '@forms/shared';
 
-import { formatMoney } from './money';
 import { transitionOrder } from './shop-writes';
 
 /**
@@ -43,6 +42,11 @@ export interface LedgerRefund {
   seq: number;
   amount_cents: number;
   stripe_status: string | null;
+}
+
+/** A ledger row as refundOrder reads it, with the id it reconciles by. */
+export interface LedgerRow extends LedgerRefund {
+  stripe_refund_id: string;
 }
 
 /** Whether the admin page offers refunds at all. */
@@ -121,7 +125,45 @@ export interface RefundStripe {
       params: { payment_intent: string; amount?: number },
       options: { idempotencyKey: string },
     ): Promise<StripeRefund>;
+    list(params: {
+      payment_intent: string;
+      limit: number;
+    }): Promise<{ data: StripeRefund[]; has_more: boolean }>;
   };
+}
+
+/** Admin-facing refund messages that are fixed text (admin-messages.ts maps them to codes). */
+export const REFUND_MESSAGES = {
+  orderNotFound: 'Order not found.',
+  notRefundable: 'This order has no refundable payment.',
+  nothingLeft: 'Nothing is left to refund on this order.',
+  badAmount: 'The refund must be more than 0 and at most the amount left to refund.',
+  tooMany: `This order already has ${MAX_REFUNDS_PER_ORDER} refunds. Use the Stripe dashboard.`,
+  listFailed:
+    'Stripe could not list the refunds already made on this payment, so no new refund was sent. Try again in a minute.',
+  reconciled:
+    'Stripe had refunds this panel had not recorded. They are recorded now and nothing new was sent. Check the amount left to refund before refunding again.',
+  stripeFailed:
+    'Stripe did not refund the payment. The Stripe dashboard shows why; nothing was recorded.',
+  notRecorded:
+    'Stripe made the refund, but this panel did not record it. Submitting a refund again records it from Stripe first and sends no new refund.',
+  reconcileFailed:
+    'Stripe has a refund on this payment that could not be recorded here, so no new refund was sent. Use the Stripe dashboard.',
+  notCancelled:
+    'Refund issued, but the order was not cancelled. Cancel it from the status buttons.',
+} as const;
+
+/**
+ * Stripe refunds on the payment that the ledger does not hold yet, oldest
+ * first (Stripe lists newest first). Refunds with no amount are skipped:
+ * order_refunds_amount_positive (0025) would refuse them.
+ */
+export function unrecordedRefunds(
+  listed: readonly StripeRefund[],
+  ledger: readonly Pick<LedgerRow, 'stripe_refund_id'>[],
+): StripeRefund[] {
+  const known = new Set(ledger.map((r) => r.stripe_refund_id));
+  return listed.filter((r) => !known.has(r.id) && r.amount > 0).reverse();
 }
 
 export interface IssuedRefund {
@@ -165,28 +207,77 @@ export async function refundOrder(
     throw readError;
   }
   if (!order) {
-    return { error: 'Order not found.' };
+    return { error: REFUND_MESSAGES.orderNotFound };
   }
   const row = order as unknown as OrderForRefund;
   if (!canRefund(row)) {
-    return { error: 'This order has no refundable payment.' };
+    return { error: REFUND_MESSAGES.notRefundable };
   }
   const joined = Array.isArray(row.products) ? row.products[0] : row.products;
   const currency = joined?.currency ?? 'usd';
 
   const { data: ledgerData, error: ledgerError } = await client
     .from('order_refunds')
-    .select('seq, amount_cents, stripe_status')
+    .select('seq, amount_cents, stripe_status, stripe_refund_id')
     .eq('order_id', id)
     .order('seq')
     .limit(MAX_REFUNDS_PER_ORDER);
   if (ledgerError) {
     throw ledgerError;
   }
-  const ledger = (ledgerData ?? []) as LedgerRefund[];
+  const ledger = (ledgerData ?? []) as LedgerRow[];
+
+  // Reconcile before choosing an amount or a seq. A refund Stripe made but
+  // the ledger lost (the record step failed, or the idempotency key expired
+  // after 24 hours) would otherwise leave money "remaining" that was already
+  // returned, and a retry would refund it a second time under a new seq.
+  let listed: { data: StripeRefund[]; has_more: boolean };
+  try {
+    listed = await stripe.refunds.list({
+      payment_intent: row.stripe_payment_intent!,
+      limit: MAX_REFUNDS_PER_ORDER,
+    });
+  } catch {
+    return { error: REFUND_MESSAGES.listFailed };
+  }
+  if (listed.has_more) {
+    return { error: REFUND_MESSAGES.tooMany };
+  }
+  const missing = unrecordedRefunds(listed.data, ledger);
+  for (const lost of missing) {
+    const lostSeq = nextRefundSeq(ledger);
+    if (lostSeq === null) {
+      return { error: REFUND_MESSAGES.tooMany };
+    }
+    const kind = row.amount_cents != null && lost.amount >= row.amount_cents ? 'full' : 'partial';
+    const { error: recordError } = await client.rpc('record_order_refund', {
+      p_order_id: id,
+      p_seq: lostSeq,
+      p_kind: kind,
+      p_amount_cents: lost.amount,
+      p_stripe_refund_id: lost.id,
+      p_stripe_status: lost.status,
+      p_actor: actor,
+    });
+    if (recordError) {
+      return { error: REFUND_MESSAGES.reconcileFailed };
+    }
+    ledger.push({
+      seq: lostSeq,
+      amount_cents: lost.amount,
+      stripe_status: lost.status,
+      stripe_refund_id: lost.id,
+    });
+  }
+  // The admin chose the amount against a remaining total that was wrong;
+  // stop so they choose again against the corrected one.
+  if (missing.length > 0) {
+    return { error: REFUND_MESSAGES.reconciled };
+  }
+
   const remaining = refundableRemaining(row, ledger);
   if (remaining <= 0) {
-    return { error: 'Nothing is left to refund on this order.' };
+    return { error: REFUND_MESSAGES.nothingLeft };
   }
 
   const kind = amountCents === undefined ? 'full' : 'partial';
@@ -194,15 +285,11 @@ export async function refundOrder(
     kind === 'partial' &&
     (!Number.isInteger(amountCents) || amountCents! < 1 || amountCents! > remaining)
   ) {
-    return {
-      error: `The refund must be from ${formatMoney(1, currency)} to ${formatMoney(remaining, currency)}, the amount left to refund.`,
-    };
+    return { error: REFUND_MESSAGES.badAmount };
   }
   const seq = nextRefundSeq(ledger);
   if (seq === null) {
-    return {
-      error: `This order already has ${MAX_REFUNDS_PER_ORDER} refunds. Use the Stripe dashboard.`,
-    };
+    return { error: REFUND_MESSAGES.tooMany };
   }
 
   let refund: StripeRefund;
@@ -213,10 +300,8 @@ export async function refundOrder(
         : { payment_intent: row.stripe_payment_intent!, amount: amountCents! },
       { idempotencyKey: refundIdempotencyKey(id, kind, seq) },
     );
-  } catch (err) {
-    // Admin-only surface: Stripe's own reason is what the admin needs to act.
-    const reason = err instanceof Error ? err.message : 'unknown error';
-    return { error: `Stripe did not refund the payment: ${reason}` };
+  } catch {
+    return { error: REFUND_MESSAGES.stripeFailed };
   }
   const refundedCents = refund.amount > 0 ? refund.amount : (amountCents ?? remaining);
 
@@ -231,18 +316,16 @@ export async function refundOrder(
     p_actor: actor,
   });
   if (recordError) {
-    // Money moved. A retry with the same amount reuses the idempotency key,
-    // gets this refund back from Stripe, and records it.
-    return {
-      error: `Stripe refunded ${formatMoney(refundedCents, currency)} (${refund.id}), but it was not recorded: ${recordError.message}. Retry the same refund to record it; it will not be charged twice.`,
-    };
+    // Money moved. The next attempt's reconcile step records this refund
+    // from Stripe's list before it can issue anything new.
+    return { error: REFUND_MESSAGES.notRecorded };
   }
 
   let cancelled = false;
   if (kind === 'full' && (CANCEL_ON_REFUND as readonly string[]).includes(row.status)) {
     const moved = await transitionOrder(client, actor, id, 'cancelled' satisfies OrderStatus);
     if (moved.error) {
-      return { error: `Refund issued, but the order was not cancelled: ${moved.error}` };
+      return { error: REFUND_MESSAGES.notCancelled };
     }
     cancelled = true;
   }

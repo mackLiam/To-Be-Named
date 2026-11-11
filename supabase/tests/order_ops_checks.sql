@@ -44,6 +44,20 @@ begin
 end;
 $$;
 
+-- 'SQLSTATE: message' of the error p_sql raises; fails when it succeeds.
+create function checks24.error_of(p_sql text) returns text
+language plpgsql as $$
+begin
+  execute p_sql;
+  raise exception 'expected an error but succeeded: %', p_sql;
+exception when others then
+  if sqlerrm like 'expected an error but succeeded:%' then
+    raise;
+  end if;
+  return sqlstate || ': ' || sqlerrm;
+end;
+$$;
+
 grant execute on all functions in schema checks24 to anon, authenticated, service_role;
 
 \set ua '24000000-0000-0000-0000-00000000000a'
@@ -143,6 +157,26 @@ select checks24.expect_error(
 select checks24.expect_error(
   format('select * from public.create_order_remake(%L, %L, null, %L, %L)', :'o_gone', 'print_defect', 'both', 'a'),
   '23514');
+-- o_b belongs to ub, who has a pending account deletion request: refused
+-- with the fixed message, and nothing is created.
+create temp table before_b as
+  select (select count(*) from public.orders)::int as orders,
+         (select count(*) from public.pipeline_jobs)::int as jobs,
+         (select count(*) from public.audit_log where action like 'order.remake%')::int as audits;
+grant select on before_b to service_role;
+select checks24.eq(
+  checks24.error_of(format('select * from public.create_order_remake(%L, %L, null, %L, %L)',
+                           :'o_b', 'print_defect', 'both', 'a')),
+  '23514: the customer asked to delete their account',
+  'a delivered order of a customer with a pending deletion cannot be remade');
+select checks24.eq(
+  (select count(*) from public.orders where remake_of = :'o_b')::int, 0,
+  'a pending deletion leaves no remake order');
+select checks24.eq(
+  format('%s/%s/%s', (select count(*) from public.orders), (select count(*) from public.pipeline_jobs),
+         (select count(*) from public.audit_log where action like 'order.remake%')),
+  (select format('%s/%s/%s', orders, jobs, audits) from before_b),
+  'a pending deletion creates no order, job or audit row');
 select checks24.expect_error(
   format('select * from public.create_order_remake(%L, %L, %L, %L, %L)', :'o_left', 'other', '   ', 'both', 'a'),
   '22023');

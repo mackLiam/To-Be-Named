@@ -152,6 +152,7 @@ describe('getOrderDetail (fake fallback)', () => {
     expect(order).not.toBeNull();
     expect(order!.user_id).toBeNull();
     expect(order!.customer_email).toBeNull();
+    expect(order!.deletion_pending).toBe(false);
   });
 });
 

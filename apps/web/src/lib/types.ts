@@ -77,6 +77,8 @@ export interface OrderDetail extends OrderRow {
   // Migration 0025: Stripe's cumulative refunded total, from the webhook.
   stripe_refunded_cents: number | null;
   customer_email: string | null;
+  // The customer has a pending account deletion request (0012); remakes refuse it (0024).
+  deletion_pending: boolean;
   jobs: Pick<JobRow, 'id' | 'scan_id' | 'step' | 'status'>[];
   refunds: RefundRow[];
   remakes: RemakeChild[];

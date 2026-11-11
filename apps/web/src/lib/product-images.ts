@@ -1,16 +1,20 @@
 /**
  * Catalog photo upload rules. Pure: type sniffing by magic bytes, header
  * level dimension parsing for JPEG, PNG and WebP (no image dependency), the
- * size and dimension caps, server-side path generation, alt text, and the
- * same-origin check for the upload route. Every upload is untrusted input:
+ * size and dimension caps, metadata stripping, server-side path generation,
+ * alt text, and the same-origin check for the upload route. Every upload is untrusted input:
  * the declared Content-Type and the client's filename are never believed.
  */
 
 import { isUuid } from './ids';
 import type { ParseResult } from './shop';
 
-/** Mirrors the bucket file_size_limit (0023). */
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/**
+ * Mirrors the bucket file_size_limit (0023). Below Vercel's 4.5 MB request
+ * body limit, so the route's own 413 is what an admin sees, not the platform's.
+ */
+export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+export const MAX_IMAGE_SIZE_LABEL = '4 MB';
 /** Per side. Bounds decode memory for anything that later renders the file. */
 export const MAX_IMAGE_DIMENSION = 6000;
 /** Bounds every gallery read and the reorder renumbering. */
@@ -21,6 +25,8 @@ export const MAX_ALT_TEXT = 200;
 export const UPLOAD_HEADER = 'x-forms-admin-upload';
 
 export type ImageKind = 'jpeg' | 'png' | 'webp';
+
+const UNREADABLE = 'The image could not be read. Export it again and retry.';
 
 export const IMAGE_KIND_META: Record<ImageKind, { contentType: string; ext: string }> = {
   jpeg: { contentType: 'image/jpeg', ext: 'jpg' },
@@ -74,6 +80,9 @@ function u16le(b: Uint8Array, o: number): number {
 }
 function u24le(b: Uint8Array, o: number): number {
   return b[o]! | (b[o + 1]! << 8) | (b[o + 2]! << 16);
+}
+function u32le(b: Uint8Array, o: number): number {
+  return (b[o]! | (b[o + 1]! << 8) | (b[o + 2]! << 16) | (b[o + 3]! << 24)) >>> 0;
 }
 
 function pngDimensions(b: Uint8Array): Dimensions | null {
@@ -158,6 +167,22 @@ function webpDimensions(b: Uint8Array): Dimensions | null {
   return null;
 }
 
+// VP8X flags byte (file offset 20), WebP container spec: reserved (2 bits),
+// ICC, alpha, EXIF, XMP, animation, reserved; most significant bit first.
+const VP8X_FLAGS_OFFSET = 20;
+const VP8X_ANIMATION = 0x02;
+const VP8X_XMP = 0x04;
+const VP8X_EXIF = 0x08;
+
+/** An extended WebP whose VP8X header sets the animation flag. */
+export function isAnimatedWebp(b: Uint8Array): boolean {
+  return (
+    ascii(b, 12, 4) === 'VP8X' &&
+    b.length > VP8X_FLAGS_OFFSET &&
+    (b[VP8X_FLAGS_OFFSET]! & VP8X_ANIMATION) !== 0
+  );
+}
+
 /** Dimensions from the header, or null when it does not parse. */
 export function readImageDimensions(bytes: Uint8Array, kind: ImageKind): Dimensions | null {
   if (kind === 'png') {
@@ -189,11 +214,17 @@ export function validateImageUpload(
     return { ok: false, errors: ['The file is empty.'] };
   }
   if (bytes.length > MAX_IMAGE_BYTES) {
-    return { ok: false, errors: ['The file is larger than 5 MB.'] };
+    return { ok: false, errors: [`The file is larger than ${MAX_IMAGE_SIZE_LABEL}.`] };
   }
   const kind = sniffImageKind(bytes);
   if (!kind) {
     return { ok: false, errors: ['Only JPEG, PNG or WebP images can be uploaded.'] };
+  }
+  if (kind === 'webp' && isAnimatedWebp(bytes)) {
+    return {
+      ok: false,
+      errors: ['Animated WebP images cannot be uploaded. Export a still image.'],
+    };
   }
   const meta = IMAGE_KIND_META[kind];
   const declared = (declaredType ?? '').split(';')[0]!.trim().toLowerCase();
@@ -202,7 +233,7 @@ export function validateImageUpload(
   }
   const dims = readImageDimensions(bytes, kind);
   if (!dims || dims.width < 1 || dims.height < 1) {
-    return { ok: false, errors: ['The image could not be read. Export it again and retry.'] };
+    return { ok: false, errors: [UNREADABLE] };
   }
   if (dims.width > MAX_IMAGE_DIMENSION || dims.height > MAX_IMAGE_DIMENSION) {
     return {
@@ -214,6 +245,174 @@ export function validateImageUpload(
     ok: true,
     value: { kind, contentType: meta.contentType, ext: meta.ext, bytes: bytes.length, ...dims },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Metadata stripping. Catalog photos are public, and phone photos carry GPS
+// coordinates and device details. Each walker copies whole segments or
+// chunks, never decodes pixels, and advances at least one byte per step, so
+// it is linear in the (capped) file size.
+// ---------------------------------------------------------------------------
+
+function concatRanges(b: Uint8Array, ranges: readonly (readonly [number, number])[]): Uint8Array {
+  const total = ranges.reduce((sum, [start, end]) => sum + (end - start), 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const [start, end] of ranges) {
+    out.set(b.subarray(start, end), offset);
+    offset += end - start;
+  }
+  return out;
+}
+
+// APP1 holds EXIF (GPS, device) and XMP; APP13 holds Photoshop IPTC.
+const JPEG_DROP = new Set([0xe1, 0xed]);
+
+/**
+ * Drops APP1 and APP13 segments before the first SOS; the scan and
+ * everything after it are copied unchanged. Null when the marker structure
+ * is broken or there is no SOS.
+ */
+export function stripJpegMetadata(b: Uint8Array): Uint8Array | null {
+  if (!startsWith(b, [0xff, 0xd8])) {
+    return null;
+  }
+  const keep: [number, number][] = [[0, 2]];
+  let o = 2;
+  while (o + 1 < b.length) {
+    if (b[o] !== 0xff) {
+      return null;
+    }
+    const marker = b[o + 1]!;
+    if (marker === 0xff) {
+      keep.push([o, o + 1]); // fill byte
+      o += 1;
+      continue;
+    }
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      keep.push([o, o + 2]);
+      o += 2;
+      continue;
+    }
+    // SOI again, EOI before any scan, or a stuffed zero: not a valid header.
+    if (marker === 0xd8 || marker === 0xd9 || marker === 0x00) {
+      return null;
+    }
+    if (o + 4 > b.length) {
+      return null;
+    }
+    const end = o + 2 + u16be(b, o + 2);
+    if (end < o + 4 || end > b.length) {
+      return null;
+    }
+    if (marker === 0xda) {
+      keep.push([o, b.length]);
+      return concatRanges(b, keep);
+    }
+    if (!JPEG_DROP.has(marker)) {
+      keep.push([o, end]);
+    }
+    o = end;
+  }
+  return null;
+}
+
+const PNG_DROP = new Set(['eXIf', 'tEXt', 'iTXt', 'zTXt']);
+
+/**
+ * Drops eXIf and the three text chunk types; every other chunk is copied
+ * unchanged (CRCs included) through IEND, and anything after IEND is dropped.
+ * Null when a chunk overruns the file or there is no IEND.
+ */
+export function stripPngMetadata(b: Uint8Array): Uint8Array | null {
+  if (!startsWith(b, PNG_SIGNATURE)) {
+    return null;
+  }
+  const keep: [number, number][] = [[0, PNG_SIGNATURE.length]];
+  let o = PNG_SIGNATURE.length;
+  while (o + 12 <= b.length) {
+    // length + type + data + CRC
+    const end = o + 12 + u32be(b, o);
+    if (end > b.length) {
+      return null;
+    }
+    const type = ascii(b, o + 4, 4);
+    if (!PNG_DROP.has(type)) {
+      keep.push([o, end]);
+    }
+    o = end;
+    if (type === 'IEND') {
+      return concatRanges(b, keep);
+    }
+  }
+  return null;
+}
+
+const WEBP_DROP = new Set(['EXIF', 'XMP ']);
+
+/**
+ * Drops EXIF and XMP chunks, clears their VP8X flags, and rewrites the RIFF
+ * size; other chunks are copied unchanged and bytes past the RIFF size are
+ * dropped. Null when a chunk overruns the RIFF payload, or for animation
+ * chunks (validateImageUpload refuses animated files by their flag).
+ */
+export function stripWebpMetadata(b: Uint8Array): Uint8Array | null {
+  if (b.length < 12 || ascii(b, 0, 4) !== 'RIFF' || ascii(b, 8, 4) !== 'WEBP') {
+    return null;
+  }
+  const riffEnd = 8 + u32le(b, 4);
+  if (riffEnd > b.length) {
+    return null;
+  }
+  const keep: [number, number][] = [[0, 12]];
+  let o = 12;
+  while (o < riffEnd) {
+    if (o + 8 > riffEnd) {
+      return null;
+    }
+    const type = ascii(b, o, 4);
+    const size = u32le(b, o + 4);
+    // Odd-sized chunks carry one pad byte.
+    const end = o + 8 + size + (size & 1);
+    if (end > riffEnd) {
+      return null;
+    }
+    if (type === 'ANIM' || type === 'ANMF') {
+      return null;
+    }
+    if (!WEBP_DROP.has(type)) {
+      keep.push([o, end]);
+    }
+    o = end;
+  }
+  if (keep.length === 1) {
+    return null;
+  }
+  const out = concatRanges(b, keep);
+  const size = out.length - 8;
+  out[4] = size & 0xff;
+  out[5] = (size >>> 8) & 0xff;
+  out[6] = (size >>> 16) & 0xff;
+  out[7] = (size >>> 24) & 0xff;
+  if (ascii(out, 12, 4) === 'VP8X' && out.length > VP8X_FLAGS_OFFSET) {
+    out[VP8X_FLAGS_OFFSET] = out[VP8X_FLAGS_OFFSET]! & ~(VP8X_EXIF | VP8X_XMP);
+  }
+  return out;
+}
+
+/**
+ * The bytes to store: the upload without location, device and text
+ * metadata. Run after validateImageUpload; a structure the walker cannot
+ * follow is refused rather than stored with its metadata intact.
+ */
+export function stripImageMetadata(bytes: Uint8Array, kind: ImageKind): ParseResult<Uint8Array> {
+  const out =
+    kind === 'jpeg'
+      ? stripJpegMetadata(bytes)
+      : kind === 'png'
+        ? stripPngMetadata(bytes)
+        : stripWebpMetadata(bytes);
+  return out ? { ok: true, value: out } : { ok: false, errors: [UNREADABLE] };
 }
 
 /**

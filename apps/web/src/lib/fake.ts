@@ -317,6 +317,7 @@ export function fakeOrderDetail(id: string): OrderDetail | null {
       country: 'US',
     },
     customer_email: order.user_id ? 'fake.customer@example.com' : null,
+    deletion_pending: false,
     jobs: fakeJobs
       .filter((job) => job.order_id === id)
       .map(({ id: jobId, scan_id, step, status }) => ({ id: jobId, scan_id, step, status })),

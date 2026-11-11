@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { requireAdmin } from '@/lib/admin-auth';
+import { errorCode, flashPath } from '@/lib/admin-messages';
 import { isMoveDirection } from '@/lib/catalog';
 import { shouldUseFake } from '@/lib/data';
 import {
@@ -30,7 +31,7 @@ function done(productId: string, error: string | null): never {
   const path = `/admin/products/${productId}`;
   revalidatePath(path);
   revalidatePath('/admin/products');
-  redirect(error ? `${path}?error=${encodeURIComponent(error)}#photos` : `${path}#photos`);
+  redirect(flashPath(path, { error: errorCode(error, 'action_failed') }, '#photos'));
 }
 
 /** Admin gate first, then the ids every photo action needs. */
@@ -39,7 +40,7 @@ async function photoContext(formData: FormData) {
   const productId = String(formData.get('product_id') ?? '');
   const imageId = String(formData.get('image_id') ?? '');
   if (!isUuid(productId)) {
-    redirect('/admin/products?error=Unknown%20product.');
+    redirect(flashPath('/admin/products', { error: 'unknown_product' }));
   }
   if (!isUuid(imageId)) {
     done(productId, 'Unknown photo.');

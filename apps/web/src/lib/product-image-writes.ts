@@ -7,10 +7,12 @@ import { PRODUCT_IMAGES_BUCKET, planMove, type MoveDirection } from './catalog';
 import {
   MAX_IMAGES_PER_PRODUCT,
   MAX_IMAGE_BYTES,
+  MAX_IMAGE_SIZE_LABEL,
   buildImagePath,
   isSameOrigin,
   parseAltText,
   readCappedBytes,
+  stripImageMetadata,
   validateImageUpload,
 } from './product-images';
 import { isUuid } from './shop';
@@ -78,6 +80,10 @@ export async function uploadProductImage(
   if (!image.ok) {
     return { error: image.errors.join(' ') };
   }
+  const stored = stripImageMetadata(input.bytes, image.value.kind);
+  if (!stored.ok) {
+    return { error: stored.errors.join(' ') };
+  }
   if (!(await repo.productExists(input.productId))) {
     return { error: 'Product not found.' };
   }
@@ -91,7 +97,7 @@ export async function uploadProductImage(
   const isMain = !existing.some((row) => row.is_main);
   const sortOrder = existing.reduce((max, row) => Math.max(max, row.sort_order + 1), 0);
 
-  await storage.upload(path, input.bytes, image.value.contentType);
+  await storage.upload(path, stored.value, image.value.contentType);
   try {
     await repo.insertImage({
       id,
@@ -110,7 +116,7 @@ export async function uploadProductImage(
     image_id: id,
     storage_path: path,
     content_type: image.value.contentType,
-    bytes: image.value.bytes,
+    bytes: stored.value.length,
     width: image.value.width,
     height: image.value.height,
     is_main: isMain,
@@ -257,6 +263,7 @@ export interface UploadResponse {
 }
 
 const READ_ONLY = 'Read-only: no service role is configured, so photos cannot be uploaded.';
+const TOO_LARGE = `The file is larger than ${MAX_IMAGE_SIZE_LABEL}.`;
 
 export async function handleImageUpload(req: UploadRequest): Promise<UploadResponse> {
   // Anything short of an aal2 admin (or fake mode) is a 404, before any
@@ -279,11 +286,11 @@ export async function handleImageUpload(req: UploadRequest): Promise<UploadRespo
   }
   const declaredLength = Number(req.contentLength ?? '0');
   if (Number.isFinite(declaredLength) && declaredLength > MAX_IMAGE_BYTES) {
-    return { status: 413, body: { error: 'The file is larger than 5 MB.' } };
+    return { status: 413, body: { error: TOO_LARGE } };
   }
   const bytes = await readCappedBytes(req.body, MAX_IMAGE_BYTES);
   if (bytes === null) {
-    return { status: 413, body: { error: 'The file is larger than 5 MB.' } };
+    return { status: 413, body: { error: TOO_LARGE } };
   }
 
   const actor = req.decision.user.email ?? req.decision.user.id;
@@ -310,6 +317,8 @@ export async function handleImageUpload(req: UploadRequest): Promise<UploadRespo
 // Production seams (SERVICE ROLE client only). Thin by rule.
 // ---------------------------------------------------------------------------
 
+export const IMAGE_CACHE_SECONDS = 3600;
+
 const IMAGE_COLUMNS = 'id, product_id, storage_path, alt_text, sort_order, is_main, created_at';
 
 /** Storage reports a missing object as 404 (status or statusCode). */
@@ -325,11 +334,12 @@ export function supabaseImageStorage(client: SupabaseClient): ImageStorage {
   const bucket = () => client.storage.from(PRODUCT_IMAGES_BUCKET);
   return {
     async upload(path, bytes, contentType) {
-      // Paths are fresh uuids, so a long cache and no upsert are both safe.
+      // Paths are fresh uuids, so no upsert is safe. The cache stays short so
+      // a photo deleted by mistake stops being served within an hour.
       const { error } = await bucket().upload(path, bytes, {
         contentType,
         upsert: false,
-        cacheControl: '31536000',
+        cacheControl: String(IMAGE_CACHE_SECONDS),
       });
       if (error) {
         throw error;

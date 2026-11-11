@@ -135,6 +135,13 @@ begin
   if v_order.user_id is null then
     raise exception 'the customer deleted their account' using errcode = 'check_violation';
   end if;
+  -- A pending deletion request (0012) is the same request, not yet carried
+  -- out. checkout (apps/web lib/checkout.ts) refuses new orders for it too.
+  if exists (
+    select 1 from public.account_deletion_requests r where r.user_id = v_order.user_id
+  ) then
+    raise exception 'the customer asked to delete their account' using errcode = 'check_violation';
+  end if;
 
   v_left := case when p_legs in ('both', 'left') then v_order.scan_id_left end;
   v_right := case when p_legs in ('both', 'right') then v_order.scan_id_right end;
