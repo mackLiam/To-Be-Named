@@ -431,6 +431,29 @@ front): without one, OD is not observed at all (section 4.4).
 - Stuck for 20 seconds: the existing "Having trouble?" sheet with the most
   frequent failing check and "Enter measurements by hand".
 
+**Lessons from the video harness (2026-11-11, docs/VIDEO-HARNESS.md).** Two
+deliberately bad videos failed only on framing once the math stopped
+treating a cut-off view as fatal (silhouette v2/v3). On the phone:
+
+- **Knee end in frame is the check that matters.** Require the knee end with
+  a little thigh above it inside the frame in at least 3 keyframes spread
+  across the arc, for both auto-stop and Done. Copy: "Move the phone further
+  back so the knee fits". Toes or foot off the frame need no warning.
+- **Too close:** a live per-keyframe check of the leg mask touching the frame
+  along the leg's sides, with "Move the phone further back" before the arc
+  continues.
+- **Credit keyframes by visible region:** a keyframe counts toward coverage
+  only for the leg heights it shows inside the frame, so the ghost leg stays
+  faint where the knee was never seen.
+- **Bent knee:** a seated self-scan with the knee near 90 degrees puts the
+  thigh into the knee slices and appears to shorten Leg_Length. Prompt a
+  slightly straighter leg (foot forward), pending tape ground truth.
+- **Phone orientation:** irrelevant to the math on the phone (ARKit gravity),
+  but an upside-down hold shows up in the ghost-leg overlay.
+- Body pose found no body in any close-up frame, so the on-device ankle and
+  knee hints cannot rely on Vision joints at this distance; use the mask's
+  width profile.
+
 ### 5.4 Photos stay on the phone
 
 The silhouette math needs masks, poses, intrinsics and joints. It does not
