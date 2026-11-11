@@ -378,6 +378,22 @@ of section 4.6 when the verdict asks for one.
    manual payload), the handler call, a Leg_Length override in the measure
    step, and the manual-entry knee-point diagram. Until decided, the app's station copy ("foot flat,
    shin upright") leads to a bent-knee retake. Untested on a device.
+   **Direction (2026-11-11, Liam): scan only, the user types and measures
+   nothing.** The typed length stays a hidden fallback. First probe of a
+   front-edge knee finder, on the synthetic hinged leg's truth solid (not yet
+   through the silhouette reconstruction): the thigh of a bent knee enters
+   the shin slices from behind, so the front edge alone keeps its dip. The
+   front-edge minimum sat 7.5 mm below the true knee at 45, 60, 75 and 90
+   degrees (about 2% of a 380 mm leg, inside the provisional 15 mm
+   tolerance), while the full-width minimum drifted to 37.5 mm low at 90
+   degrees. At 0 degrees the front edge found a false minimum lower down, so
+   the rule would be: width dip when no thigh onset, front-edge dip when
+   there is one. Caveats: the synthetic leg has no kneecap or patellar
+   tendon, so the 7.5 mm bias is not anatomy; next steps are the same probe
+   through the masks and dual-conic slices, the shin-thigh hinge as a second
+   finder, and tape ground truth on real seated legs. Scale for in-app
+   captures comes from ARKit world tracking (metric on every iPhone),
+   accuracy unmeasured.
 2. Hold the phone at shin height, about an arm's length away, pointing at the
    shin. The app finds the leg automatically (Vision body pose, as in da1b01b).
 3. **Press record, keep the phone at shin height, and move it slowly round
