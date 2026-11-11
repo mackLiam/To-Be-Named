@@ -338,3 +338,78 @@ def test_foot_vote_reads_the_narrow_end() -> None:
     along_border = np.zeros((320, 240), dtype=bool)
     along_border[:, :30] = True
     assert fr.foot_vote(view, along_border, point, image_up) == 0
+
+
+# --- floor choice among distractor planes ---------------------------------------------
+
+
+def _strip_beside_the_foot(n: int, rng: np.random.Generator) -> np.ndarray:
+    """A dense 0.15 x 0.06 m patch tilted 40 degrees, next to the foot: about what
+    the cameras' dwell on the foot made of a shoe and floor edge in IMG_3834 at 120
+    frames. Every camera is on one side of its plane."""
+    tilt = Rotation.from_euler("x", -40.0, degrees=True).as_matrix()
+    local = np.column_stack(
+        [rng.uniform(-0.075, 0.075, n), np.zeros(n), rng.uniform(-0.03, 0.03, n)]
+    )
+    return local @ tilt.T + [0.3, 0.05, 0.0]
+
+
+def _seat(n: int, rng: np.random.Generator) -> np.ndarray:
+    """A level seat 0.45 m up, above every camera, bigger than the floor patch."""
+    return np.column_stack([rng.uniform(0.15, 1.5, n), np.full(n, 0.45), rng.uniform(-1.5, 1.5, n)])
+
+
+def test_the_floor_is_the_widest_plane_not_the_densest() -> None:
+    sc, sim = scene(), random_similarity(2)
+    rng = np.random.default_rng(11)
+    strip = _strip_beside_the_foot(5000, rng)  # more points than the 3000 floor points
+    pts = sim.point(np.vstack([sc.points, strip]))
+    c2ws = [sim.c2w(m) for m in sc.c2w]
+    centers = np.array([m[:3, 3] for m in c2ws])
+    floor = fr.fit_floor(pts, centers, fr.camera_mean_up(c2ws))
+    assert floor is not None
+    assert _angle_deg(floor.normal, sim.up) < 0.5
+    # Ranked by inliers instead, the strip would win.
+    strip_normal = sim.rotation @ Rotation.from_euler("x", -40.0, degrees=True).as_matrix()[:, 1]
+    tol = fr.FLOOR_TOLERANCE_FRACTION * fr.scene_scale(pts, centers)
+    on_strip = np.abs((pts - sim.point(np.array([0.3, 0.05, 0.0]))) @ strip_normal) <= tol
+    on_floor = np.abs((pts - sim.point(np.zeros(3))) @ sim.up) <= tol
+    assert on_strip.sum() > on_floor.sum()
+
+
+def test_a_seat_above_the_cameras_is_not_the_floor_given_the_leg() -> None:
+    """Either sign of image-up is accepted, so a broad level plane above every camera
+    passes the plane checks with its normal pointing down. The leg rules reject it:
+    the leg rises through it and its up points from the knee toward the foot."""
+    sc, sim = scene(), random_similarity(6)
+    rng = np.random.default_rng(12)
+    pts = sim.point(np.vstack([sc.points, _seat(6000, rng)]))
+    c2ws = [sim.c2w(m) for m in sc.c2w]
+    centers = np.array([m[:3, 3] for m in c2ws])
+    camera_up = fr.camera_mean_up(c2ws)
+    seat_won = fr.fit_floor(pts, centers, camera_up)
+    assert seat_won is not None and _angle_deg(seat_won.normal, -sim.up) < 1.0
+    leg = sim.point(leg_points(2000, np.random.default_rng(13)))
+    floor = fr.fit_floor(pts, centers, camera_up, leg=leg, leg_up=sim.up)
+    assert floor is not None and _angle_deg(floor.normal, sim.up) < 0.5
+    # Each leg rule rejects the seat on its own.
+    floor = fr.fit_floor(pts, centers, camera_up, leg=leg)
+    assert floor is not None and _angle_deg(floor.normal, sim.up) < 0.5
+    floor = fr.fit_floor(pts, centers, camera_up, leg_up=sim.up)
+    assert floor is not None and _angle_deg(floor.normal, sim.up) < 0.5
+
+
+def test_a_plane_far_below_the_leg_is_not_its_floor() -> None:
+    """The leg's low end must sit near the floor: a plane a leg's height below it is
+    some other surface (the gap rule), even with nothing of the leg below it."""
+    sc = scene()
+    rng = np.random.default_rng(14)
+    low = np.column_stack(
+        [rng.uniform(-1.0, 1.0, 6000), np.full(6000, -0.8), rng.uniform(-1.0, 1.0, 6000)]
+    )
+    pts = np.vstack([leg_points(3000, rng), low])
+    centers = np.array([m[:3, 3] for m in sc.c2w])
+    up = np.array([0.0, 1.0, 0.0])
+    assert fr.fit_floor(pts, centers, up) is not None
+    leg = leg_points(2000, rng)
+    assert fr.fit_floor(pts, centers, up, leg=leg, leg_up=up) is None

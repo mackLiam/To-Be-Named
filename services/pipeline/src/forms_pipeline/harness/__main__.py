@@ -7,14 +7,16 @@ import json
 import sys
 from pathlib import Path
 
-from forms_pipeline.harness.bundle import MASK_KINDS
+from forms_pipeline.harness.bundle import MASK_KINDS, MAX_FRAMES
 from forms_pipeline.harness.keyframes import DEFAULT_MAX_KEYFRAMES
 from forms_pipeline.harness.run import (
     DEFAULT_BUNDLES,
     DEFAULT_FORMS_VIDEO,
     DEFAULT_OUT,
     DEFAULT_VIDEOS,
+    FORMS_VIDEO_MAX_FRAMES,
     FORMS_VIDEO_TIMEOUT_S,
+    MIN_FORMS_VIDEO_FRAMES,
     Options,
     analyze_bundle,
     render_markdown,
@@ -37,6 +39,12 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--forms-video", type=Path, default=DEFAULT_FORMS_VIDEO)
     run.add_argument("--reuse", action="store_true", help="skip forms-video if the bundle exists")
     run.add_argument("--timeout-s", type=float, default=FORMS_VIDEO_TIMEOUT_S)
+    run.add_argument(
+        "--max-frames",
+        type=int,
+        default=FORMS_VIDEO_MAX_FRAMES,
+        help="frames forms-video samples per video",
+    )
     common(run)
 
     analyze = sub.add_parser("analyze", help="one existing bundle")
@@ -53,6 +61,12 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     if args.command == "run":
+        if not MIN_FORMS_VIDEO_FRAMES <= args.max_frames <= MAX_FRAMES:
+            print(
+                f"--max-frames must be between {MIN_FORMS_VIDEO_FRAMES} and {MAX_FRAMES}",
+                file=sys.stderr,
+            )
+            return 2
         if not args.videos.is_dir():
             print("videos directory not found", file=sys.stderr)
             return 2
@@ -64,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
             reuse=args.reuse,
             options=options,
             timeout_s=args.timeout_s,
+            max_frames=args.max_frames,
         )
         ok = sum(r.get("status") == "ok" for r in rows)
         print(f"{ok} of {len(rows)} videos analyzed; see {args.out / 'results.md'}")

@@ -32,6 +32,7 @@ from forms_pipeline.harness import frame as fr
 from forms_pipeline.harness.bundle import (
     JOINT_NAMES,
     MASK_KINDS,
+    MAX_FRAMES,
     VideoBundle,
     load_bundle,
     load_mask,
@@ -66,6 +67,11 @@ DEFAULT_FORMS_VIDEO = PIPELINE_ROOT.parent / "reconstruct" / ".build" / "release
 VIDEO_SUFFIXES = frozenset({".mov", ".mp4"})
 # forms-video bounds itself with --timeout-s; the grace is a backstop for a wedged process.
 FORMS_VIDEO_TIMEOUT_S = 1800.0
+# Frames forms-video samples from a video (its own default is 60). Dense sampling lets
+# photogrammetry register the bad stretches: 2026-11-11, at 120 frames IMG_3834 and
+# IMG_3836 registered 119/120 and 103/103 against 44/60 and 38/60 at 60.
+FORMS_VIDEO_MAX_FRAMES = 120
+MIN_FORMS_VIDEO_FRAMES = 10  # forms-video's own --max-frames range is 10...200
 SUBPROCESS_GRACE_S = 60.0
 # Pass 2 runs the silhouette math at a realistic leg size so its metric thresholds
 # (search radius, minimum semi-axis, Leg_Length range) act as they would on a phone.
@@ -246,15 +252,20 @@ def analyze_bundle(bundle_dir: Path, work_dir: Path, options: Options | None = N
         camera_up = fr.camera_mean_up(list(c2w_session.values()))
         pts = fr.subsample(points)
         member = fr.leg_membership(pts, [c2w_session[c.frame_id] for c in cams], cams)
-        floor = fr.fit_floor(fr.floor_candidates(pts, member), centers, camera_up)
-        axis_up = None
+        axis_up = fr.leg_axis_up(cams, [c2w_session[c.frame_id] for c in cams])
+        floor = fr.fit_floor(
+            fr.floor_candidates(pts, member),
+            centers,
+            camera_up,
+            leg=None if member is None else pts[member],
+            leg_up=None if axis_up is None else axis_up.up,
+        )
         if floor is not None:
             up, up_source = floor.normal, fr.UP_FLOOR
+        elif axis_up is not None:
+            up, up_source = axis_up.up, fr.UP_LEG_AXIS
         else:
-            axis_up = fr.leg_axis_up(cams, [c2w_session[c.frame_id] for c in cams])
-            up, up_source = (
-                (camera_up, fr.UP_CAMERA_MEAN) if axis_up is None else (axis_up.up, fr.UP_LEG_AXIS)
-            )
+            up, up_source = camera_up, fr.UP_CAMERA_MEAN
         leg, leg_source = fr.leg_position(pts, member)
         world = fr.build_world(up, leg, centers, floor)
         row["frame"] = {
@@ -266,6 +277,11 @@ def analyze_bundle(bundle_dir: Path, work_dir: Path, options: Options | None = N
             # Only a floor is independent of the leg; otherwise the tilt gate reads ~0.
             "tilt_gate_exercised": floor is not None,
             "up_foot_vote_agreement": None if axis_up is None else axis_up.agreement,
+            "leg_axis_vs_up_from_masks_deg": (
+                None
+                if axis_up is None
+                else float(np.degrees(np.arccos(np.clip(axis_up.up @ up, -1.0, 1.0))))
+            ),
             "floor_inlier_fraction": None if floor is None else floor.inlier_fraction,
             "up_vs_camera_mean_deg": float(
                 np.degrees(np.arccos(np.clip(up @ camera_up, -1.0, 1.0)))
@@ -363,9 +379,15 @@ def _error_kind(stderr: bytes) -> str:
 
 
 def run_forms_video(
-    tool: Path, video: Path, bundle_dir: Path, timeout_s: float = FORMS_VIDEO_TIMEOUT_S
+    tool: Path,
+    video: Path,
+    bundle_dir: Path,
+    timeout_s: float = FORMS_VIDEO_TIMEOUT_S,
+    max_frames: int = FORMS_VIDEO_MAX_FRAMES,
 ) -> None:
     """Run forms-video for one video. Raises StageError with a short reason."""
+    if not MIN_FORMS_VIDEO_FRAMES <= max_frames <= MAX_FRAMES:
+        raise ValueError(f"max_frames must be between {MIN_FORMS_VIDEO_FRAMES} and {MAX_FRAMES}")
     if not tool.is_file():
         raise StageError(
             "forms-video is not built (swift build -c release in services/reconstruct)."
@@ -379,6 +401,8 @@ def run_forms_video(
         str(bundle_dir),
         "--timeout-s",
         str(int(timeout_s)),
+        "--max-frames",
+        str(int(max_frames)),
     ]
     try:
         proc = subprocess.run(  # noqa: S603 - list argv, no shell, paths we chose
@@ -408,6 +432,7 @@ def run_videos(
     reuse: bool = False,
     options: Options | None = None,
     timeout_s: float = FORMS_VIDEO_TIMEOUT_S,
+    max_frames: int = FORMS_VIDEO_MAX_FRAMES,
 ) -> list[dict]:
     """Every video in videos_dir -> rows; writes out_dir/results.json and results.md."""
     options = options or Options()
@@ -416,7 +441,7 @@ def run_videos(
         bundle_dir = bundles_dir / video.stem
         if not (reuse and (bundle_dir / "video.json").is_file()):
             try:
-                run_forms_video(tool, video, bundle_dir, timeout_s)
+                run_forms_video(tool, video, bundle_dir, timeout_s, max_frames)
             except StageError as exc:
                 rows.append(
                     {"video": video.name, "bundle": video.stem, "status": FAILED,

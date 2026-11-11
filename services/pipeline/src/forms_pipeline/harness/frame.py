@@ -59,9 +59,15 @@ CONVENTION_TIE_FRACTION = 0.5
 COVERAGE_CELLS = 32  # mask coverage grid, cells along the long side
 MIN_IN_VIEW_SCORE = 0.05
 # RANSAC, in units of the scene scale (median camera distance to the cloud median).
-FLOOR_ITERATIONS = 400
 FLOOR_TOLERANCE_FRACTION = 0.01
 MIN_FLOOR_INLIER_FRACTION = 0.10
+# Enough draws that a plane holding MIN_FLOOR_INLIER_FRACTION of the points is drawn
+# (three inliers at once) with 95% probability: log(0.05) / log(1 - 0.1 ** 3).
+FLOOR_ITERATIONS = 3000
+# Planes are ranked by the area their inliers cover, counted in cells of this many
+# tolerances on a side, not by inlier count: photogrammetry point density follows
+# texture and where the cameras dwell (the foot), not the size of a surface.
+FLOOR_CELL_TOLERANCES = 3.0
 MIN_FLOOR_INLIERS = 30
 # A plane steeper than this from the cameras' mean image-up axis (either sign) is a
 # wall, not the floor.
@@ -69,6 +75,15 @@ MIN_FLOOR_INLIERS = 30
 MAX_FLOOR_TILT_DEG = 50.0
 MIN_LEG_POINTS = 20
 SEED = 0
+# The leg rests on the floor (fit_floor with leg points): a plane with more than this
+# share of the leg points below it cuts through the leg (a seat, a footrest, a strip of
+# shoe or shin). Not zero: leg membership is a mask vote and takes in a little floor.
+MAX_LEG_BELOW_FRACTION = 0.02
+# ... and the leg's low end sits on or near it: the gap from the floor to the leg's
+# lowest points, as a share of the leg's own height above the floor. Generous, so a
+# foot held a little off the floor still counts; a plane far above or beside the leg
+# (a ceiling, a table top) does not.
+MAX_FLOOR_GAP_FRACTION = 0.5
 # Foot-end vote (leg_axis_up): mask widths across the projected axis in this many
 # bands, read over this share of the mask's length (clear of a pointed toe or a
 # rounded mask end), needing this many bands clear of the image border.
@@ -264,12 +279,53 @@ def scene_scale(points: np.ndarray, centers: np.ndarray) -> float:
     return float(np.median(np.linalg.norm(centers - np.median(points, axis=0), axis=1)))
 
 
+def _supports_leg(
+    normal: np.ndarray,
+    offset: float,
+    leg: np.ndarray | None,
+    leg_up: np.ndarray | None,
+    tol: float,
+) -> bool:
+    """Could this plane (normal toward the cameras) be the floor the leg rests on?"""
+    if leg_up is not None and normal @ leg_up <= 0:
+        return False  # the cameras' side of the plane must be the knee's side
+    if leg is None or len(leg) < MIN_LEG_POINTS:
+        return True
+    height = leg @ normal - offset
+    if (height < -tol).mean() > MAX_LEG_BELOW_FRACTION:
+        return False
+    low, high = np.percentile(height, [1.0, 99.0])
+    return bool(low <= MAX_FLOOR_GAP_FRACTION * max(high - low, tol))
+
+
+def _covered_cells(inliers: np.ndarray, normal: np.ndarray, cell: float) -> int:
+    """Distinct cell x cell squares of the plane that hold at least one inlier."""
+    helper = np.array([1.0, 0.0, 0.0]) if abs(normal[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    x = np.cross(normal, helper)
+    x /= np.linalg.norm(x)
+    y = np.cross(normal, x)
+    ix = np.floor(inliers @ x / cell).astype(np.int64)
+    iy = np.floor(inliers @ y / cell).astype(np.int64)
+    return len(np.unique((ix - ix.min()) * (int(iy.max() - iy.min()) + 1) + (iy - iy.min())))
+
+
 def fit_floor(
-    points: np.ndarray, centers: np.ndarray, camera_up: np.ndarray, seed: int = SEED
+    points: np.ndarray,
+    centers: np.ndarray,
+    camera_up: np.ndarray,
+    seed: int = SEED,
+    leg: np.ndarray | None = None,
+    leg_up: np.ndarray | None = None,
 ) -> FloorPlane | None:
-    """Largest plane with every camera on one side and its normal within
+    """Largest plane (by area covered) with every camera on one side and its normal within
     MAX_FLOOR_TILT_DEG of the camera_up axis (either sign), normal toward the cameras;
-    None when no plane qualifies."""
+    None when no plane qualifies.
+
+    With the leg's points (and its foot-to-knee direction, leg_axis_up), a plane must
+    also support the leg (_supports_leg): the leg above it, its low end near it. A
+    denser cloud holds more non-floor planes near the foot that outscore the floor on
+    inliers (IMG_3834 at 120 frames, 2026-11-11: a strip through the foot, 46 degrees
+    from the leg axis, 134 inliers against the floor's 103)."""
     pts = subsample(points)
     n = len(pts)
     if n < max(MIN_FLOOR_INLIERS, 3) or len(centers) == 0:
@@ -286,16 +342,28 @@ def fit_floor(
     normals, a = normals[ok] / norms[ok, None], a[ok]
     offsets = np.einsum("ij,ij->i", normals, a)
     cos_max = np.cos(np.radians(MAX_FLOOR_TILT_DEG))
+    # Plane checks that need no inliers, all draws at once: tilt, then every camera on
+    # one side (normal turned toward them).
+    ok = np.abs(normals @ camera_up) >= cos_max
+    side = centers @ normals[ok].T - offsets[ok]
+    above, below = np.all(side > tol, axis=0), np.all(side < -tol, axis=0)
+    flip = np.where(below, -1.0, 1.0)
+    keep = above | below
+    normals = normals[ok][keep] * flip[keep, None]
+    offsets = offsets[ok][keep] * flip[keep]
     best: FloorPlane | None = None
+    best_cells = 0
+    cell = FLOOR_CELL_TOLERANCES * tol
     for normal, offset in zip(normals, offsets, strict=True):
-        if abs(normal @ camera_up) < cos_max:
+        if not _supports_leg(normal, float(offset), leg, leg_up, tol):
             continue
-        side = centers @ normal - offset
-        if not (np.all(side > tol) or np.all(side < -tol)):
+        inl = np.abs(pts @ normal - offset) <= tol
+        count = int(inl.sum())
+        if count < MIN_FLOOR_INLIERS:
             continue
-        count = int((np.abs(pts @ normal - offset) <= tol).sum())
-        if best is None or count > best.inliers:
-            best = FloorPlane(normal, float(offset), count, count / n)
+        cells = _covered_cells(pts[inl], normal, cell)
+        if best is None or cells > best_cells:
+            best, best_cells = FloorPlane(normal, float(offset), count, count / n), cells
     if best is None:
         return None
     normal, offset = best.normal, best.offset
@@ -316,6 +384,7 @@ def fit_floor(
         or count < MIN_FLOOR_INLIERS
         or count / n < MIN_FLOOR_INLIER_FRACTION
         or abs(normal @ camera_up) < cos_max
+        or not _supports_leg(normal, offset, leg, leg_up, tol)
     ):
         return None
     return FloorPlane(normal=normal, offset=offset, inliers=count, inlier_fraction=count / n)

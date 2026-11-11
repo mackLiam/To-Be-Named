@@ -276,13 +276,34 @@ def test_forms_video_failures_become_bundle_rows(tmp_path: Path) -> None:
     assert rows[0]["reason"] == "forms-video exited with code 3 (decode)."
     assert "/private/path" not in (out / "results.md").read_text()
 
-    # Called with list argv: --video <file> --out <dir> --timeout-s N; writes a bad manifest.
+    # Called with list argv: --video <file> --out <dir> --timeout-s N --max-frames M; writes
+    # a bad manifest. The harness samples 120 frames unless told otherwise.
     writer = _fake_tool(tmp_path / "ok.sh", 'echo "{}" > "$4/video.json"\necho "$@" > "$4/args"\n')
     rows = run.run_videos(videos, out, tmp_path / "bundles", tool=writer, timeout_s=30)
     args = (tmp_path / "bundles/A/args").read_text().split()
     assert args == ["--video", str(videos / "A.MOV"), "--out", str(tmp_path / "bundles/A"),
-                    "--timeout-s", "30"]  # fmt: skip
+                    "--timeout-s", "30", "--max-frames", "120"]  # fmt: skip
+    assert run.FORMS_VIDEO_MAX_FRAMES == 120
     assert rows[0]["stage"] == "bundle" and "not forms.video-bundle" in rows[0]["reason"]
+    run.run_videos(videos, out, tmp_path / "bundles", tool=writer, max_frames=60)
+    assert (tmp_path / "bundles/A/args").read_text().split()[-2:] == ["--max-frames", "60"]
+    with pytest.raises(ValueError, match="max_frames"):
+        run.run_forms_video(writer, videos / "A.MOV", tmp_path / "x", max_frames=500)
+
+
+def test_cli_passes_max_frames_to_forms_video(tmp_path: Path) -> None:
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    (videos / "A.MOV").write_bytes(b"x")
+    writer = _fake_tool(tmp_path / "ok.sh", 'echo "{}" > "$4/video.json"\necho "$@" > "$4/args"\n')
+    common = ["run", "--videos", str(videos), "--bundles", str(tmp_path / "b")]
+    common += ["--forms-video", str(writer), "--out", str(tmp_path / "out")]
+    assert main(common) == 0
+    assert (tmp_path / "b/A/args").read_text().split()[-2:] == ["--max-frames", "120"]
+    assert main([*common, "--max-frames", "80"]) == 0
+    assert (tmp_path / "b/A/args").read_text().split()[-2:] == ["--max-frames", "80"]
+    assert main([*common, "--max-frames", "201"]) == 2
+    assert main([*common, "--max-frames", "9"]) == 2
 
 
 def test_cli_analyze_and_bad_arguments(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
