@@ -566,6 +566,22 @@ code-CAD port when volume justifies it.
    human-plausible leg dimensions (for example S1_ISW 15mm against a schema
    floor of 30mm), so verify the model regenerates cleanly across the
    schema's full plausible ranges, not just near the placeholder values.
+
+   **(a) answered 2026-11-10 by reading the model through the API**
+   (docs/SCAN-V3-PLAN.md section 6a has the evidence). Each slice sketch is
+   one open interpolated spline through four points, in the slice plane,
+   measured from a fixed reference at (0,0) on the shin crest (the front of
+   the shin): inner calf (-ICW, -ICD), inner shin (-ISW, -ISD), the crest
+   (0, 0), outer (+OW, -OD). Widths are how far round the guard's inner
+   curve reaches on each side of the crest; depths are how far back the leg
+   surface falls away at those points. They are **not** full section widths
+   and depths. The current extraction (full extents, centroid split) and the
+   schema ranges (30-220 mm for every slice value) both encode the wrong
+   meaning: correct depth values are a few mm to about 15 mm. The model
+   regenerated cleanly on a private workbench copy for child, adult and
+   large-adult legs under the verified meaning. Until the schema and
+   extraction are corrected (a versioned lockstep change), the automated
+   scan-to-CAD path must not be enabled for real orders.
 3. **Device floor** - LiDAR-only capture may exclude a large share of the target
    market; server-side reconstruction path (§5) is the hedge. Decide early.
 4. **Protective-equipment compliance** - soccer shin guards are safety gear

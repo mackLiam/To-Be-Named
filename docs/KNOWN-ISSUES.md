@@ -12,6 +12,22 @@ finishing a task checks this file for anything its change closes.
 
 ## Open
 
+### 2026-11-10: extraction and schema ranges do not match the CAD model's meaning
+
+- The Onshape model reads S#_ISW/ISD/ICW/ICD/OW/OD as crest-relative points
+  on the guard's inner curve (DESIGN.md 12.2, SCAN-V3-PLAN.md 6a), while
+  `services/pipeline/src/forms_pipeline/extraction/measure.py` emits full
+  section extents and `packages/shared/schema/measurements.schema.json`
+  gates every slice value at 30-220 mm. Correct values (depths of a few mm)
+  are rejected, and extraction output would build a guard that wraps almost
+  to the calf.
+- `apps/app/src/lib/fitPreview.ts` Club template says coverage 0.12-0.88 of
+  Leg_Length with `placeholder: false`; the model lofts S1 to S4, so 0.2-0.8
+  (minus a small ankle trim).
+- Close by: schema 1.1.0 (descriptions and ranges) plus the crest-relative
+  extraction, lockstep TS/Python, extraction_version bump; then fitPreview
+  coverage. Blocks the automated round trip for real orders.
+
 ### 2026-09-30: maintenance sweeps are not scheduled anywhere
 
 - Retention (`forms_pipeline.jobs.retention`), the owner-deletion purge

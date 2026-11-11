@@ -157,7 +157,12 @@ The 25 contract values are deterministic functions of x evaluated at the
 model's contour at t = 0.2..0.8 (strictly, f(posterior mean), not posterior
 means of each value). The model and the contract can never disagree.
 
-**This is a semantic change to the inner values, stated openly.**
+**The meaning of the slice values is now known (section 6a), and it is
+not what extraction computes today.** The leg model's 25-value projection
+uses the verified crest-relative meaning: per slice, find the crest, take the
+product's wrap widths, read the leg surface's fall-back depths there. The
+paragraph below records the earlier concern and still applies to the
+version bump. **This is a semantic change to the values, stated openly.**
 extraction/measure.py works in a PCA frame whose eigenvector signs are
 arbitrary, splits each section at the mean of its boundary vertices, and has
 no notion of medial or anterior. The leg model uses an anatomical frame
@@ -665,6 +670,104 @@ every scan gets a leg model.
 
 ---
 
+## 6a. The CAD model: verified meaning, and license to improve it
+
+### 6a.1 Liam's standing permission (2026-11-10)
+
+Liam: the Onshape model "isn't a limitation"; if a change to it would make
+the scans or the guards better, make it, on a copy. Rules that follow from
+that:
+
+1. Work only on copies. Never edit the original MVP document or the
+   pipeline's template copy. A private workbench copy, "FORMS model
+   workbench (Claude, copy of pipeline template)", exists for this; it
+   holds only synthetic values, never a real person's measurements.
+2. Every copy is created private, and checked; a copy that comes back public
+   is deleted at once (the same rule as the pipeline's job documents).
+3. A model change is adopted only after: a regeneration sweep across child
+   to large-adult legs with no failing features, a bounding-box sanity
+   check, and, for anything that changes fit, a test print. The pipeline
+   switches to an improved copy by changing `ONSHAPE_DOCUMENT_ID` and friends
+   in `.env`, which Liam does after reviewing the change.
+4. Changes that add, remove or rename variables are schema changes (a
+   versioned lockstep event across TS, Python, the model and DESIGN.md), not
+   model tweaks. Zane is told about every adopted change.
+
+### 6a.2 What the 25 variables actually mean (read from the model)
+
+Read through the API from the workbench copy:
+
+- Planes 1-4 sit at Leg_Length x 0.2, 0.4, 0.6, 0.8 (confirms the slices).
+- Each slice is one sketch holding one open interpolated spline through
+  four points, measured in the slice plane from a fixed reference at (0, 0),
+  the shin crest:
+
+  | Point | Position | S1 at today's placeholder values |
+  |---|---|---|
+  | inner calf | (-ICW, -ICD) | (-25, -12) mm |
+  | inner shin | (-ISW, -ISD) | (-15, -6) mm |
+  | shin crest | (0, 0), fixed | |
+  | outer | (+OW, -OD) | (+30, -10) mm |
+
+- Loft 1 lofts the four splines into the guard's inner surface, from S1 to
+  S4. An offset surface adds EVA_Thickness + Fit_Clearance. A thicken adds
+  Shell_Thickness (PETG), followed by edge fillets and a flat ankle landing
+  for the P1S print.
+
+So **widths say how far round the guard reaches on each side of the crest,
+and depths say how far back the leg surface falls away at those points.**
+They are not full leg widths and depths. The guard covers S1 to S4, which is
+0.2 to 0.8 of Leg_Length, not the 0.12 to 0.88 the 2D preview assumes.
+
+Evidence it is right: the guard Liam printed (149 mm tall, 23.7 mm deep, fit
+well) matches this model at about Leg_Length 250 with small crest-relative
+offsets. A regeneration sweep on the workbench, with values computed this way
+from synthetic leg sections, built cleanly for a child (guard 60 x 139 x 21
+mm), an adult (81 x 218 x 26) and a large adult (97 x 260 x 30).
+
+### 6a.3 What this changes in the scan work
+
+1. **The extraction and the schema are wrong, not the model.** Today's
+   extraction emits full section extents, and the schema gates every slice
+   value at 30-220 mm, so correct values (depths of a few mm) would be
+   rejected and extraction output would build a guard that wraps almost to
+   the calf. Fix first, before any automated order: schema 1.1.0 (same
+   names, corrected descriptions and ranges), crest-relative extraction,
+   extraction_version bump, lockstep TS and Python (KNOWN-ISSUES.md).
+2. **The scan's real job gets smaller and clearer.** Per slice it must find
+   the shin crest and measure how far the leg surface falls back at given
+   distances to each side of it. That is the front of the leg, the part
+   every view of the sweep sees best. The back of the calf never enters the
+   model. That makes the solo sweep a better fit for the problem than any
+   earlier capture.
+3. **Widths are partly a design choice.** How far the guard wraps (ISW, ICW,
+   OW) is what makes a guard a Pro or a Junior Max. So the pipeline sets the
+   widths from the product (a wrap fraction of the leg's section, carried by
+   the CAD descriptor), and the leg model supplies the depths at those
+   widths. One model then serves every tier, and the depths, the true
+   measurements, are what the estimator's confidence and the fit gate are
+   about.
+4. **The leg model (section 7.2) must locate the crest per slice.** Its
+   section contours already allow it; the crest becomes an explicit output
+   and the frame's origin at each height.
+5. **Fit_Clearance already exists** in the model. Raising it slightly when
+   confidence is lower needs no model change, only a per-order value
+   (decision 6 in section 15).
+
+### 6a.4 Model improvements worth testing on the workbench (none adopted yet)
+
+| Idea | Why it would help | Cost |
+|---|---|---|
+| Per-slice crest offset (the tibial crest is not perfectly straight along the leg axis) | The model assumes all four (0, 0) references lie on one straight line; a curved crest misplaces the loft by a few mm | New variables: schema change, so only if scans show the offset matters |
+| Coverage extensions below S1 and above S4 | Junior Max wants more coverage than 0.2 to 0.8 of the leg | New variables or a per-model constant; product decision |
+| More points per slice (a five-point spline on the flat inner face of the tibia) | Better match to the shin's real shape where the guard bears | Schema change; only after the sweep proves it can measure them |
+| Regeneration guard rails (minimum spline spacing, convexity) | Bad inputs fail loudly in Onshape instead of making odd shells | Model only, no schema change |
+
+Only the last one is a pure model change. The rest wait for evidence from
+real scans, per the rules in 6a.1.
+
+---
+
 ## 7. The 3D preview: their leg, their guard, spinning
 
 ### 7.1 What the user sees
@@ -966,6 +1069,9 @@ closes it before any estimator code is trusted:
 
 - Fix the "won't save" upload failure from the dev flow logs (blocks every
   real test). Code: Sonnet-tier, apps/app upload path, after the device log.
+- **Schema 1.1.0 and crest-relative extraction** (section 6a.3 item 1):
+  the first code change, ahead of everything else, because nothing scanned
+  can reach CAD correctly until it lands.
 - The printed guard (done by hand, 2026-11-10, fit well): record the exact
   variable values used and tape-measure that leg at 20/40/60/80%. Comparing
   the two answers what OW/OD mean in the model, since the template still
@@ -1113,6 +1219,10 @@ it is made.
    and OD).
 8. Re-date ROADMAP.md now: Phase 0 absorbs the red Month 1 gate, so the App
    Store and launch weeks move (section 13 note).
+9. Approve schema 1.1.0: same 25 names, descriptions and ranges corrected to
+   the crest-relative meaning (section 6a), with Zane told.
+10. Wrap widths per product tier (how far round each guard reaches), with
+    Zane: the first real product-line parameter.
 
 ## 16. Human-only tasks
 

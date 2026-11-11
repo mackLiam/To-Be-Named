@@ -77,3 +77,7 @@ follow-up action.
   against 23.7 / 95.6 / 149). So the print was not generated from the
   template's current values: it came from other values or another document,
   and those values are still unrecorded.
+- Follow-up (same day): the model's sketches show the slice values are
+  crest-relative guard-profile points, not full leg widths (DESIGN.md 12.2).
+  The print's size fits that meaning at about Leg_Length 250 with small
+  offsets, so this guard is evidence for the verified meaning.
