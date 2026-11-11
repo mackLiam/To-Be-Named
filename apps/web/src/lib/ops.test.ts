@@ -82,6 +82,7 @@ describe('helpers', () => {
   it('links only orders and jobs', () => {
     expect(subjectHref('orders', 'o1')).toBe('/admin/orders/o1');
     expect(subjectHref('pipeline_jobs', 'j1')).toBe('/admin/jobs/j1');
+    expect(subjectHref('products', 'p1')).toBe('/admin/products/p1');
     expect(subjectHref('scans', 's1')).toBeNull();
     expect(subjectHref('orders', null)).toBeNull();
   });

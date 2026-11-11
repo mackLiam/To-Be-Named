@@ -144,5 +144,8 @@ export function subjectHref(table: string | null, id: string | null): string | n
   if (table === 'pipeline_jobs') {
     return `/admin/jobs/${id}`;
   }
+  if (table === 'products') {
+    return `/admin/products/${id}`;
+  }
   return null;
 }

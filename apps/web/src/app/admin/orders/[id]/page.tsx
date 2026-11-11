@@ -14,6 +14,7 @@ import { firstValue } from '@/lib/pagination';
 import { canRefund } from '@/lib/refund';
 import {
   ORDER_ACTION_LABEL,
+  customerLabel,
   describeAudit,
   formatAddress,
   formatMoney,
@@ -73,7 +74,7 @@ export default async function OrderDetailPage({
         </div>
         <div className={styles.fact}>
           <div className={styles.factTerm}>Customer</div>
-          <div className={styles.factValue}>{order.customer_email ?? shortId(order.user_id)}</div>
+          <div className={styles.factValue}>{customerLabel(order)}</div>
         </div>
         <div className={styles.fact}>
           <div className={styles.factTerm}>Placed</div>

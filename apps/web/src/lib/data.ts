@@ -1,7 +1,16 @@
 import type { OrderStatus } from '@forms/shared';
 
+import { PRODUCT_LIST_LIMIT, compareShopOrder } from './catalog';
 import { isFakeMode, hasServiceRoleConfig } from './env';
-import { fakeJobs, fakeOrderDetail, fakeOrders, fakeProducts, fakeTriage } from './fake';
+import {
+  fakeJobs,
+  fakeOrderDetail,
+  fakeOrders,
+  fakeProductImages,
+  fakeProducts,
+  fakeTriage,
+} from './fake';
+import { MAX_IMAGES_PER_PRODUCT } from './product-images';
 import { lookaheadRange, splitLookahead } from './pagination';
 import { isOrderStatus, isUuid, orderReferenceRange } from './shop';
 import type {
@@ -11,6 +20,7 @@ import type {
   JobRow,
   OrderDetail,
   OrderRow,
+  ProductImageRow,
   ProductRow,
   TriageData,
 } from './types';
@@ -177,7 +187,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
       Pick<OrderDetail, 'address' | 'stripe_payment_intent' | 'paid_at' | 'refunded_at'>;
   const order = flattenOrder(rest);
 
-  const [jobs, history, user] = await Promise.all([
+  const [jobs, history, customerEmail] = await Promise.all([
     client
       .from('pipeline_jobs')
       .select('id, scan_id, step, status')
@@ -191,7 +201,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
       .eq('subject_id', id)
       .order('created_at', { ascending: false })
       .limit(HISTORY_LIMIT),
-    client.auth.admin.getUserById(order.user_id),
+    lookupCustomerEmail(client.auth.admin, order.user_id),
   ]);
   if (jobs.error) {
     throw jobs.error;
@@ -206,35 +216,56 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
     stripe_payment_intent,
     paid_at,
     refunded_at,
-    // A deleted auth user cascades the order away, so a miss here is rare;
-    // render the order anyway rather than fail the page on a lookup.
-    customer_email: user.data.user?.email ?? null,
+    customer_email: customerEmail,
     jobs: (jobs.data ?? []) as OrderDetail['jobs'],
     history: (history.data ?? []) as AuditRow[],
   };
 }
 
-const PRODUCT_COLUMNS =
-  'id, name, slug, description, base_price_cents, currency, image_url, active, cad_model, updated_at';
+/**
+ * The customer's email for the order page. Orders outlive accounts (0012 sets
+ * user_id null on deletion), and auth-js throws synchronously on a non-uuid
+ * id, so a null id must never reach getUserById. Any lookup failure renders
+ * the order without an email rather than failing the page.
+ */
+export async function lookupCustomerEmail(
+  auth: {
+    getUserById(
+      id: string,
+    ): Promise<{ data: { user: { email?: string | null } | null }; error: unknown }>;
+  },
+  userId: string | null,
+): Promise<string | null> {
+  if (!userId) {
+    return null;
+  }
+  try {
+    const { data } = await auth.getUserById(userId);
+    return data.user?.email ?? null;
+  } catch {
+    return null;
+  }
+}
 
-// ponytail: the catalog is a handful of guard models; paginate if it passes this.
-export const PRODUCT_LIST_LIMIT = 200;
+const PRODUCT_COLUMNS =
+  'id, name, slug, description, base_price_cents, currency, image_url, active, cad_model, ' +
+  'display_order, availability, sizing_modes, updated_at';
 
 export async function listProducts(): Promise<ProductRow[]> {
   if (shouldUseFake()) {
-    return fakeProducts;
+    return [...fakeProducts].sort(compareShopOrder);
   }
   const client = await serviceClient();
   const { data, error } = await client
     .from('products')
     .select(PRODUCT_COLUMNS)
-    .order('active', { ascending: false })
+    .order('display_order')
     .order('name')
     .limit(PRODUCT_LIST_LIMIT);
   if (error) {
     throw error;
   }
-  return (data ?? []) as ProductRow[];
+  return (data ?? []) as unknown as ProductRow[];
 }
 
 export async function getProduct(id: string): Promise<ProductRow | null> {
@@ -253,7 +284,7 @@ export async function getProduct(id: string): Promise<ProductRow | null> {
   if (error) {
     throw error;
   }
-  return (data as ProductRow | null) ?? null;
+  return (data as unknown as ProductRow | null) ?? null;
 }
 
 function gatesFromError(error: JobError | null): GateResult[] {
@@ -302,4 +333,55 @@ export async function getTriage(jobId: string): Promise<TriageData | null> {
     gates: gatesFromError(typedError),
     values: (measurement?.values ?? null) as TriageData['values'],
   };
+}
+
+const IMAGE_COLUMNS = 'id, product_id, storage_path, alt_text, sort_order, is_main, created_at';
+
+/** One product's gallery, in display order. Bounded by the per-product cap. */
+export async function listProductImages(productId: string): Promise<ProductImageRow[]> {
+  if (!isUuid(productId)) {
+    return [];
+  }
+  if (shouldUseFake()) {
+    return fakeProductImages
+      .filter((row) => row.product_id === productId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+  }
+  const client = await serviceClient();
+  const { data, error } = await client
+    .from('product_images')
+    .select(IMAGE_COLUMNS)
+    .eq('product_id', productId)
+    .order('sort_order')
+    .order('created_at')
+    .limit(MAX_IMAGES_PER_PRODUCT);
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as ProductImageRow[];
+}
+
+/** Main image per product for the list page; at most one per product (0023 index). */
+export async function listMainImages(productIds: string[]): Promise<Map<string, ProductImageRow>> {
+  const ids = productIds.filter(isUuid).slice(0, PRODUCT_LIST_LIMIT);
+  if (ids.length === 0) {
+    return new Map();
+  }
+  let rows: ProductImageRow[];
+  if (shouldUseFake()) {
+    rows = fakeProductImages.filter((row) => row.is_main && ids.includes(row.product_id));
+  } else {
+    const client = await serviceClient();
+    const { data, error } = await client
+      .from('product_images')
+      .select(IMAGE_COLUMNS)
+      .in('product_id', ids)
+      .eq('is_main', true)
+      .limit(ids.length);
+    if (error) {
+      throw error;
+    }
+    rows = (data ?? []) as ProductImageRow[];
+  }
+  return new Map(rows.map((row) => [row.product_id, row]));
 }

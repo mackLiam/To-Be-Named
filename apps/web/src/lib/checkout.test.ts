@@ -65,6 +65,8 @@ function setup(
         base_price_cents: 8900,
         currency: 'usd',
         active: true,
+        availability: 'available',
+        sizing_modes: ['custom'],
         ...opts.product,
       };
     },
@@ -333,15 +335,30 @@ describe('handleCheckout', () => {
     expect(log.inserted).toEqual([]);
   });
 
-  it('409s a missing or inactive product', async () => {
-    for (const product of [null, { active: false }]) {
+  it('409s a missing, archived or not purchasable product', async () => {
+    for (const product of [
+      null,
+      { active: false },
+      { availability: 'coming_soon' },
+      { availability: 'paused' },
+      { availability: 'sold_out' },
+      { sizing_modes: ['preset_m'] },
+      { active: false, availability: 'available' },
+    ]) {
       const { deps, log } = setup({ product });
       expect(await handleCheckout(deps())).toEqual({
         status: 409,
         body: { error: 'product_unavailable' },
       });
       expect(log.inserted).toEqual([]);
+      expect(log.stripeCalls).toEqual([]);
     }
+  });
+
+  it('sells an available product that offers custom fit among other modes', async () => {
+    const { deps, log } = setup({ product: { sizing_modes: ['custom', 'preset_s'] } });
+    expect((await handleCheckout(deps())).status).toBe(200);
+    expect(log.inserted).toHaveLength(1);
   });
 
   it.each([

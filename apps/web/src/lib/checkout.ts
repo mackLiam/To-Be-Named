@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrderStatus, ScanStatus } from '@forms/shared';
 import type Stripe from 'stripe';
 
+import { isPurchasable } from './catalog';
 import { isUuid } from './shop';
 
 /**
@@ -196,6 +197,10 @@ export interface CheckoutProduct {
   base_price_cents: number;
   currency: string;
   active: boolean;
+  // Migration 0022: only an available product that sells custom fit is
+  // purchasable here (lib/catalog.ts isPurchasable).
+  availability: string;
+  sizing_modes: string[];
 }
 
 export interface CheckoutScan {
@@ -295,7 +300,9 @@ export async function handleCheckout(deps: CheckoutDeps): Promise<CheckoutResult
     return fail('account_deleting');
   }
   const product = await store.getProduct(request.product_id);
-  if (!product || !product.active) {
+  // Archived, coming soon, paused, or no custom fit: refused here because the
+  // service role sees every product, whatever the shop lists.
+  if (!product || !isPurchasable(product)) {
     return fail('product_unavailable');
   }
 
@@ -446,7 +453,7 @@ export function supabaseCheckoutStore(client: SupabaseClient): CheckoutStore {
       return check(
         await client
           .from('products')
-          .select('id, name, base_price_cents, currency, active')
+          .select('id, name, base_price_cents, currency, active, availability, sizing_modes')
           .eq('id', id)
           .maybeSingle(),
       ) as CheckoutProduct | null;

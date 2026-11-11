@@ -8,9 +8,11 @@ import { emailDepsFromEnv, notifyOrderShipped } from '@/lib/email';
 import { shouldUseFake } from '@/lib/data';
 import { getStripeSecretKey, isFakeMode } from '@/lib/env';
 import { refundOrder as refundOrderPayment } from '@/lib/refund';
+import { isMoveDirection } from '@/lib/catalog';
 import { isUuid, parseProductForm, parseTrackingForm } from '@/lib/shop';
 import {
   createProduct,
+  moveProduct,
   setProductActive,
   transitionOrder,
   updateOrderTracking,
@@ -68,7 +70,10 @@ export async function saveProduct(
   if (id && !isUuid(id)) {
     return { errors: ['Unknown product.'] };
   }
-  const parsed = parseProductForm(form);
+  const parsed = parseProductForm(
+    form,
+    formData.getAll('sizing_modes').filter((value): value is string => typeof value === 'string'),
+  );
   if (!parsed.ok) {
     return { errors: parsed.errors };
   }
@@ -93,6 +98,20 @@ export async function toggleProduct(formData: FormData): Promise<void> {
     back('/admin/products', 'Unknown product.');
   }
   const result = await setProductActive(w.client, w.actor, id, active === 'true');
+  revalidatePath('/admin/products');
+  back('/admin/products', result.error);
+}
+
+export async function reorderProduct(formData: FormData): Promise<void> {
+  const w = await writer();
+  if (!w) {
+    back('/admin/products', READ_ONLY);
+  }
+  const { id = '', direction } = fields(formData);
+  if (!isUuid(id) || !isMoveDirection(direction)) {
+    back('/admin/products', 'Unknown product or direction.');
+  }
+  const result = await moveProduct(w.client, w.actor, id, direction);
   revalidatePath('/admin/products');
   back('/admin/products', result.error);
 }

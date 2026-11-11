@@ -6,14 +6,17 @@
 
 import { ORDER_STATUSES, validateCadModelDescriptor, type OrderStatus } from '@forms/shared';
 
-import type { StatusMeta } from './view';
+import {
+  isAvailability,
+  normalizeSizingModes,
+  type Availability,
+  type SizingMode,
+} from './catalog';
+import { parseCents } from './money';
+import { shortId, type StatusMeta } from './view';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Route params reach Postgres uuid columns; a malformed one is a 404, not a 500. */
-export function isUuid(value: string): boolean {
-  return UUID_RE.test(value);
-}
+export { isUuid } from './ids';
+export { formatMoney, parseCents } from './money';
 
 // ---------------------------------------------------------------------------
 // Products.
@@ -28,6 +31,9 @@ export interface ProductInput {
   image_url: string | null;
   active: boolean;
   cad_model: Record<string, unknown> | null;
+  display_order: number;
+  availability: Availability;
+  sizing_modes: SizingMode[];
 }
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; errors: string[] };
@@ -35,26 +41,17 @@ export type ParseResult<T> = { ok: true; value: T } | { ok: false; errors: strin
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 // Upper bound is a typo guard (an extra zero), not a business rule.
 const MAX_PRICE_CENTS = 100_000;
+// Matches products_display_order_range (0022).
+export const MAX_DISPLAY_ORDER = 100_000;
 
 /**
- * "89" or "89.00" -> 8900. Rejects anything that is not a plain non-negative
- * amount with at most two decimals, so no float rounding reaches the DB.
+ * Field values as a form posts them. A missing checkbox is "off". Sizing
+ * modes arrive as one `sizing_modes` field per checked box, so the caller
+ * passes them separately (FormData.getAll).
  */
-export function parsePriceToCents(raw: string): number | null {
-  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw.trim());
-  if (!match) {
-    return null;
-  }
-  return Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));
-}
-
-export function centsToPriceInput(cents: number): string {
-  return (cents / 100).toFixed(2);
-}
-
-/** Field values as a form posts them. A missing checkbox is "off". */
 export function parseProductForm(
   form: Record<string, string | undefined>,
+  sizingModes: readonly string[] = ['custom'],
 ): ParseResult<ProductInput> {
   const errors: string[] = [];
   const name = (form.name ?? '').trim();
@@ -73,9 +70,21 @@ export function parseProductForm(
   if (description.length > 600) {
     errors.push('Description must be at most 600 characters.');
   }
-  const cents = parsePriceToCents(form.price ?? '');
+  const cents = parseCents(form.base_price_cents);
   if (cents === null || cents > MAX_PRICE_CENTS) {
-    errors.push('Price must be an amount like 89 or 89.00, at most 1000.00.');
+    errors.push('Price must be whole cents, e.g. 8900 for 89.00, at most 100000.');
+  }
+  const displayOrder = parseCents(form.display_order || '0');
+  if (displayOrder === null || displayOrder > MAX_DISPLAY_ORDER) {
+    errors.push(`Display order must be a whole number from 0 to ${MAX_DISPLAY_ORDER}.`);
+  }
+  const availability = (form.availability ?? '').trim();
+  if (!isAvailability(availability)) {
+    errors.push('Availability must be available, coming soon or paused.');
+  }
+  const modes = normalizeSizingModes(sizingModes);
+  if (modes.length === 0 || modes.length !== new Set(sizingModes).size) {
+    errors.push('Choose at least one sizing mode, from the listed ones only.');
   }
   if (!/^[a-z]{3}$/.test(currency)) {
     errors.push('Currency must be a three-letter code, e.g. usd.');
@@ -99,6 +108,18 @@ export function parseProductForm(
     }
   }
 
+  // Purchasable needs a model the pipeline can build (0022
+  // products_available_needs_cad_model; the paid trigger refuses without one)
+  // and a price Stripe can charge.
+  if (availability === 'available') {
+    if (!cadRaw) {
+      errors.push('Add a CAD model descriptor before making the product available.');
+    }
+    if (cents === 0) {
+      errors.push('A product must cost more than 0 to be available.');
+    }
+  }
+
   if (errors.length > 0) {
     return { ok: false, errors };
   }
@@ -113,6 +134,9 @@ export function parseProductForm(
       image_url: imageUrl || null,
       active: form.active === 'on',
       cad_model: cadModel,
+      display_order: displayOrder!,
+      availability: availability as Availability,
+      sizing_modes: modes,
     },
   };
 }
@@ -261,12 +285,13 @@ export function orderReferenceRange(raw: string | undefined): { from: string; to
   return { from: `${ref}-0000-0000-0000-000000000000`, to: `${ref}-ffff-ffff-ffff-ffffffffffff` };
 }
 
-export function formatMoney(cents: number | null, currency: string | null): string {
-  if (cents == null) {
-    return '-';
+/** Who placed the order, for the admin. user_id is null after account deletion (0012). */
+export function customerLabel(order: {
+  customer_email: string | null;
+  user_id: string | null;
+}): string {
+  if (order.customer_email) {
+    return order.customer_email;
   }
-  return (cents / 100).toLocaleString('en-US', {
-    style: 'currency',
-    currency: (currency ?? 'usd').toUpperCase(),
-  });
+  return order.user_id ? shortId(order.user_id) : 'Deleted account';
 }

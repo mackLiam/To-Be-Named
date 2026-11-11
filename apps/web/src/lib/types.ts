@@ -18,7 +18,8 @@ export interface JobRow {
 
 export interface OrderRow {
   id: string;
-  user_id: string;
+  // Null once the customer deleted their account (migration 0012).
+  user_id: string | null;
   status: string;
   amount_cents: number | null;
   product_id: string;
@@ -54,7 +55,23 @@ export interface ProductRow {
   image_url: string | null;
   active: boolean;
   cad_model: Record<string, unknown> | null;
+  // Migration 0022. availability is checked against AVAILABILITIES in
+  // lib/catalog.ts; sizing_modes against SIZING_MODES.
+  display_order: number;
+  availability: string;
+  sizing_modes: string[];
   updated_at: string;
+}
+
+/** product_images (migration 0023). */
+export interface ProductImageRow {
+  id: string;
+  product_id: string;
+  storage_path: string;
+  alt_text: string;
+  sort_order: number;
+  is_main: boolean;
+  created_at: string;
 }
 
 export interface AuditRow {

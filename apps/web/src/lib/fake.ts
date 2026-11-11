@@ -1,6 +1,13 @@
 import { MEASUREMENT_KEYS, type MeasurementKey } from '@forms/shared';
 
-import type { JobRow, OrderDetail, OrderRow, ProductRow, TriageData } from './types';
+import type {
+  JobRow,
+  OrderDetail,
+  OrderRow,
+  ProductImageRow,
+  ProductRow,
+  TriageData,
+} from './types';
 
 /**
  * Deterministic placeholder data for when no backend is configured. Clearly
@@ -107,6 +114,9 @@ export const fakeProducts: ProductRow[] = [
       ref: {},
       variable_map: null,
     },
+    display_order: 0,
+    availability: 'available',
+    sizing_modes: ['custom'],
     updated_at: t('2026-06-20T12:00:00Z'),
   },
   {
@@ -119,6 +129,9 @@ export const fakeProducts: ProductRow[] = [
     image_url: null,
     active: true,
     cad_model: null,
+    display_order: 1,
+    availability: 'coming_soon',
+    sizing_modes: ['custom'],
     updated_at: t('2026-06-20T12:00:00Z'),
   },
   {
@@ -131,7 +144,33 @@ export const fakeProducts: ProductRow[] = [
     image_url: null,
     active: false,
     cad_model: null,
+    display_order: 2,
+    availability: 'coming_soon',
+    sizing_modes: ['custom', 'preset_s', 'preset_m', 'preset_l'],
     updated_at: t('2026-06-21T09:00:00Z'),
+  },
+];
+
+// Paths follow the 0023 shape; in fake mode there is no bucket, so the admin
+// renders a placeholder instead of the picture.
+export const fakeProductImages: ProductImageRow[] = [
+  {
+    id: '00000000-0000-4000-8000-0000000000e1',
+    product_id: C1,
+    storage_path: `${C1}/00000000-0000-4000-8000-0000000000e1.jpg`,
+    alt_text: 'FAKE guard, front view',
+    sort_order: 0,
+    is_main: true,
+    created_at: t('2026-06-20T12:00:00Z'),
+  },
+  {
+    id: '00000000-0000-4000-8000-0000000000e2',
+    product_id: C1,
+    storage_path: `${C1}/00000000-0000-4000-8000-0000000000e2.webp`,
+    alt_text: 'FAKE guard, side view',
+    sort_order: 1,
+    is_main: false,
+    created_at: t('2026-06-20T12:05:00Z'),
   },
 ];
 
@@ -144,11 +183,12 @@ function fakeOrder(
   right: string | null,
   created: string,
   tracking: string | null = null,
+  userId: string | null = '00000000-0000-4000-8000-0000000000d1',
 ): OrderRow {
   const product = fakeProducts.find((p) => p.id === productId)!;
   return {
     id,
-    user_id: '00000000-0000-4000-8000-0000000000d1',
+    user_id: userId,
     status,
     amount_cents: amount,
     product_id: productId,
@@ -203,6 +243,18 @@ export const fakeOrders: OrderRow[] = [
     '2026-06-28T09:00:00Z',
     'FAKE1Z999',
   ),
+  // The customer deleted their account after delivery (0012: user_id null).
+  fakeOrder(
+    '00000000-0000-4000-8000-0000000000a7',
+    'delivered',
+    C1,
+    8900,
+    B(8),
+    null,
+    '2026-06-20T09:00:00Z',
+    'FAKE1Z998',
+    null,
+  ),
 ];
 
 export function fakeOrderDetail(id: string): OrderDetail | null {
@@ -223,7 +275,7 @@ export function fakeOrderDetail(id: string): OrderDetail | null {
       postal_code: '00000',
       country: 'US',
     },
-    customer_email: 'fake.customer@example.com',
+    customer_email: order.user_id ? 'fake.customer@example.com' : null,
     jobs: fakeJobs
       .filter((job) => job.order_id === id)
       .map(({ id: jobId, scan_id, step, status }) => ({ id: jobId, scan_id, step, status })),

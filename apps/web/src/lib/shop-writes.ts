@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { PRODUCT_LIST_LIMIT, compareShopOrder, planMove, type MoveDirection } from './catalog';
 import { checkOrderTransition, type ProductInput } from './shop';
 
 /**
@@ -99,6 +100,57 @@ export async function setProductActive(
   await audit(client, actor, active ? 'product.activate' : 'product.deactivate', 'products', id, {
     active,
   });
+  return OK;
+}
+
+/**
+ * Move a product one step up or down the shop order. The list is renumbered
+ * 0..n-1 on the first move, then each move rewrites just the two swapped rows.
+ *
+ * ponytail: the rewrites are separate statements; a failure midway leaves a
+ * valid (just different) order, which the next move renormalizes.
+ */
+export async function moveProduct(
+  client: SupabaseClient,
+  actor: string,
+  id: string,
+  direction: MoveDirection,
+): Promise<WriteResult> {
+  const { data, error } = await client
+    .from('products')
+    .select('id, name, display_order')
+    .order('display_order')
+    .order('name')
+    .limit(PRODUCT_LIST_LIMIT);
+  if (error) {
+    throw error;
+  }
+  const rows = ((data ?? []) as { id: string; name: string; display_order: number }[]).sort(
+    compareShopOrder,
+  );
+  if (!rows.some((row) => row.id === id)) {
+    return { error: 'Product not found.' };
+  }
+  const changes = planMove(
+    rows.map((row) => ({ id: row.id, order: row.display_order })),
+    id,
+    direction,
+  );
+  for (const change of changes) {
+    const { error: updateError } = await client
+      .from('products')
+      .update({ display_order: change.order })
+      .eq('id', change.id);
+    if (updateError) {
+      throw updateError;
+    }
+  }
+  if (changes.length > 0) {
+    await audit(client, actor, 'product.reorder', 'products', id, {
+      direction,
+      changes: changes.map((c) => ({ id: c.id, display_order: c.order })),
+    });
+  }
   return OK;
 }
 

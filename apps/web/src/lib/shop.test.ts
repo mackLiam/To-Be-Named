@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ORDER_STATUS_META,
   ORDER_TRANSITIONS,
-  centsToPriceInput,
+  customerLabel,
   describeAudit,
   formatAddress,
   checkOrderTransition,
@@ -12,7 +12,7 @@ import {
   isUuid,
   nextOrderStatuses,
   orderReferenceRange,
-  parsePriceToCents,
+  parseCents,
   parseProductForm,
   parseTrackingForm,
 } from './shop';
@@ -21,30 +21,38 @@ const validForm = {
   name: 'Custom Shin Guard',
   slug: 'custom-guard',
   description: 'Printed to your scan.',
-  price: '89',
+  base_price_cents: '8900',
   currency: 'USD',
   image_url: '',
   active: 'on',
   cad_model: '',
+  display_order: '3',
+  availability: 'coming_soon',
 };
 
-describe('parsePriceToCents', () => {
+const CAD = {
+  provider: 'dry_run',
+  schema_version: '1.1.0',
+  profile: { kind: 'identity' },
+  ref: {},
+  variable_map: null,
+};
+
+describe('parseCents', () => {
   it.each([
-    ['89', 8900],
-    ['89.5', 8950],
-    ['89.05', 8905],
+    ['8900', 8900],
     [' 0 ', 0],
+    ['100000', 100000],
   ])('%s -> %d', (raw, cents) => {
-    expect(parsePriceToCents(raw)).toBe(cents);
+    expect(parseCents(raw)).toBe(cents);
   });
 
-  it.each(['', '-1', '1.234', 'abc', '1,000', '1e3'])('rejects %j', (raw) => {
-    expect(parsePriceToCents(raw)).toBeNull();
-  });
-
-  it('round-trips through the form input', () => {
-    expect(parsePriceToCents(centsToPriceInput(16900))).toBe(16900);
-  });
+  it.each(['', '-1', '89.00', 'abc', '1,000', '1e3', '+5', '1234567890', undefined])(
+    'rejects %j',
+    (raw) => {
+      expect(parseCents(raw)).toBeNull();
+    },
+  );
 });
 
 describe('parseProductForm', () => {
@@ -61,6 +69,9 @@ describe('parseProductForm', () => {
         image_url: null,
         active: true,
         cad_model: null,
+        display_order: 3,
+        availability: 'coming_soon',
+        sizing_modes: ['custom'],
       },
     });
   });
@@ -71,31 +82,76 @@ describe('parseProductForm', () => {
   });
 
   it('collects every field error at once', () => {
-    const result = parseProductForm({
-      name: '',
-      slug: 'Bad Slug',
-      price: 'free',
-      currency: 'dollars',
-      image_url: 'http://insecure.example/x.jpg',
-    });
+    const result = parseProductForm(
+      {
+        name: '',
+        slug: 'Bad Slug',
+        base_price_cents: '89.00',
+        currency: 'dollars',
+        image_url: 'http://insecure.example/x.jpg',
+        display_order: '-1',
+        availability: 'sold_out',
+      },
+      [],
+    );
     expect(result.ok).toBe(false);
-    expect(!result.ok && result.errors).toHaveLength(5);
+    expect(!result.ok && result.errors).toHaveLength(8);
   });
 
   it('rejects a price above the typo guard', () => {
-    expect(parseProductForm({ ...validForm, price: '1000.01' }).ok).toBe(false);
+    expect(parseProductForm({ ...validForm, base_price_cents: '100001' }).ok).toBe(false);
+  });
+
+  it('defaults an empty display order to 0 and caps it', () => {
+    const empty = parseProductForm({ ...validForm, display_order: '' });
+    expect(empty.ok && empty.value.display_order).toBe(0);
+    expect(parseProductForm({ ...validForm, display_order: '100001' }).ok).toBe(false);
+    expect(parseProductForm({ ...validForm, display_order: '1.5' }).ok).toBe(false);
+  });
+
+  it('accepts each availability state', () => {
+    for (const availability of ['coming_soon', 'paused']) {
+      const result = parseProductForm({ ...validForm, availability });
+      expect(result.ok && result.value.availability).toBe(availability);
+    }
+    const missing = parseProductForm({ ...validForm, availability: undefined });
+    expect(missing.ok).toBe(false);
+  });
+
+  it('normalizes sizing modes and rejects unknown or empty sets', () => {
+    const ok = parseProductForm(validForm, ['preset_l', 'custom', 'custom']);
+    expect(ok.ok && ok.value.sizing_modes).toEqual(['custom', 'preset_l']);
+    expect(parseProductForm(validForm, []).ok).toBe(false);
+    expect(parseProductForm(validForm, ['custom', 'preset_xl']).ok).toBe(false);
+  });
+
+  it('refuses available without a CAD model or with a zero price', () => {
+    const noCad = parseProductForm({ ...validForm, availability: 'available' });
+    expect(!noCad.ok && noCad.errors).toEqual([
+      'Add a CAD model descriptor before making the product available.',
+    ]);
+    const free = parseProductForm({
+      ...validForm,
+      availability: 'available',
+      cad_model: JSON.stringify(CAD),
+      base_price_cents: '0',
+    });
+    expect(!free.ok && free.errors).toEqual(['A product must cost more than 0 to be available.']);
+    const good = parseProductForm({
+      ...validForm,
+      availability: 'available',
+      cad_model: JSON.stringify(CAD),
+    });
+    expect(good.ok && good.value.availability).toBe('available');
+  });
+
+  it('allows a zero price while not purchasable', () => {
+    expect(parseProductForm({ ...validForm, base_price_cents: '0' }).ok).toBe(true);
   });
 
   it('accepts a valid CAD descriptor', () => {
-    const cad = {
-      provider: 'dry_run',
-      schema_version: '1.1.0',
-      profile: { kind: 'identity' },
-      ref: {},
-      variable_map: null,
-    };
-    const result = parseProductForm({ ...validForm, cad_model: JSON.stringify(cad) });
-    expect(result.ok && result.value.cad_model).toEqual(cad);
+    const result = parseProductForm({ ...validForm, cad_model: JSON.stringify(CAD) });
+    expect(result.ok && result.value.cad_model).toEqual(CAD);
   });
 
   it('rejects malformed JSON and invalid descriptors', () => {
@@ -231,5 +287,16 @@ describe('describeAudit refunds', () => {
     expect(describeAudit({ action: 'order.refund', detail: { refund_status: 'succeeded' } })).toBe(
       'Refund issued (succeeded)',
     );
+  });
+});
+
+describe('customerLabel', () => {
+  it('prefers the email, then the short user id', () => {
+    expect(customerLabel({ customer_email: 'a@b.co', user_id: 'abcdef12-0000' })).toBe('a@b.co');
+    expect(customerLabel({ customer_email: null, user_id: 'abcdef12-0000' })).toBe('abcdef12');
+  });
+
+  it('names a deleted account instead of crashing on a null user', () => {
+    expect(customerLabel({ customer_email: null, user_id: null })).toBe('Deleted account');
   });
 });
