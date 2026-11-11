@@ -28,6 +28,7 @@ from forms_pipeline.contract import validate_measurements
 from forms_pipeline.extraction.measure import MeasurementError, extract_measurements
 from forms_pipeline.extraction.mesh_loading import MeshValidationError, load_mesh
 from forms_pipeline.harness import HarnessBundleError
+from forms_pipeline.harness import estimate as est
 from forms_pipeline.harness import frame as fr
 from forms_pipeline.harness.bundle import (
     JOINT_NAMES,
@@ -87,6 +88,8 @@ STAGES = (
     "silhouette pass 2",
     "measure",
 )
+# Runs after a successful measure; its failures stay inside row["estimator"].
+REPORT_ONLY_STAGES = ("estimator",)
 OK = "ok"
 FAILED = "failed"
 _EXPECTED = (
@@ -131,12 +134,15 @@ def _clean(value: Any) -> Any:
     return value
 
 
-def measure_mesh(mesh_m: trimesh.Trimesh, work_dir: Path) -> tuple[dict[str, float], str | None]:
+def measure_mesh(
+    mesh_m: trimesh.Trimesh, work_dir: Path
+) -> tuple[dict[str, float], str | None, trimesh.Trimesh]:
     """The measuring step's path (reconstruct.handler._publish then jobs.runner.
     handle_measuring): OBJ in mm, size cap, load_mesh, extract_measurements, gates.
 
-    Returns the values and the gate reason the measuring step would raise (None when
-    the gates pass). The gates are not fatal here: the harness's scale is nominal.
+    Returns the values, the gate reason the measuring step would raise (None when
+    the gates pass) and the loaded mm mesh that was measured. The gates are not fatal
+    here: the harness's scale is nominal.
     TODO(liam): decide whether a gate failure at nominal scale should fail the row.
     """
     settings = get_settings()
@@ -149,14 +155,15 @@ def measure_mesh(mesh_m: trimesh.Trimesh, work_dir: Path) -> tuple[dict[str, flo
     with tempfile.TemporaryDirectory(prefix=".measure-", dir=work_dir) as tmp:
         path = Path(tmp) / "mesh.obj"
         path.write_bytes(obj)
-        result = extract_measurements(load_mesh(path))
+        mesh_mm = load_mesh(path)
+        result = extract_measurements(mesh_mm)
     violations = validate_measurements(result.values)
     gate = (
         "Measurements outside plausible range, please rescan: " + "; ".join(violations)
         if violations
         else None
     )
-    return result.values, gate
+    return result.values, gate, mesh_mm
 
 
 def _first_pass(
@@ -353,7 +360,7 @@ def analyze_bundle(bundle_dir: Path, work_dir: Path, options: Options | None = N
         }
 
         stage = "measure"
-        values, gate = measure_mesh(second.mesh, work_dir)
+        values, gate, mesh_mm = measure_mesh(second.mesh, work_dir)
         metrics = shape_metrics(values)
         metrics["profile"] = width_profile(second.mesh, np.array(art["axis_direction"]))
         row["metrics"] = metrics
@@ -361,6 +368,7 @@ def analyze_bundle(bundle_dir: Path, work_dir: Path, options: Options | None = N
         row["status"] = OK
         row["stage"] = None
         row["reason"] = None
+        row["estimator"] = est.estimator_stage(mesh_mm, art["azimuth_span_deg"], values)
     except (StageError, *_EXPECTED) as exc:
         row["stage"], row["reason"] = stage, str(exc)[:MAX_REASON_CHARS]
     except Exception as exc:  # noqa: BLE001 - one bundle must never stop the run
@@ -559,6 +567,61 @@ def _row_markdown(row: dict) -> list[str]:
         ]
         if row.get("gate_at_nominal_scale"):
             lines += [f"Gates at nominal scale: {row['gate_at_nominal_scale']}", ""]
+    if row.get("estimator"):
+        lines += _estimator_markdown(row["estimator"])
+    return lines
+
+
+def _action(action: dict | None) -> str:
+    if not action:
+        return "-"
+    return f"tape {action['key']}" if action["kind"] == "tape" else str(action["kind"])
+
+
+def _estimator_markdown(e: dict) -> list[str]:
+    lines = [
+        f"### {est.HEADING}",
+        "",
+        f"Provisional prior {_fmt(e.get('prior_version'))}, provisional noise and "
+        "tolerances, source scale_free, no stature. Report only: it never changes the "
+        "row's pass or fail. Every number is a ratio, a relative sigma (sigma / value) "
+        "or r at the nominal scale; nothing here is a real size.",
+        "",
+    ]
+    if e.get("status") != est.OK:
+        return [*lines, f"Estimator failed ({_fmt(e.get('code'))}): {_fmt(e.get('reason'))}", ""]
+    w = e["what_if_tape_Leg_Length"]
+    lines += [
+        "| fact | value |",
+        "|---|---|",
+        f"| verdict | {_fmt(e['verdict'])} |",
+        f"| worst key | {_fmt(e['worst_key'])} |",
+        f"| r (nominal scale) | {_fmt(e['r'], 2)} |",
+        f"| best next action | {_action(e['best_action'])} |",
+        f"| heights observed / observable | {e['heights_observed']} / {e['heights_observable']} |",
+        "",
+        "r after each candidate action (nominal scale): "
+        + ", ".join(f"{k} {_fmt(v, 2)}" for k, v in e["r_after_action"].items()),
+        "",
+        "| ratio | raw | posterior | change |",
+        "|---|---|---|---|",
+    ]
+    for k, v in e["posterior_ratios"].items():
+        raw, change = e["raw_ratios"].get(k), e["ratio_change_from_raw"].get(k)
+        lines.append(f"| {k} | {_fmt(raw)} | {_fmt(v)} | {_fmt(change)} |")
+    lines += [
+        "",
+        "Hypothetical, not a measurement: one tape Leg_Length at the posterior mean "
+        f"(nominal value) gives verdict {_fmt(w['verdict'])}, worst key "
+        f"{_fmt(w['worst_key'])}, r {_fmt(w['r'], 2)} (nominal scale), best next action "
+        f"{_action(w['best_action'])}.",
+        "",
+        "| key | relative sigma, posterior | relative sigma, hypothetical tape Leg_Length |",
+        "|---|---|---|",
+    ]
+    for k, v in e["relative_sigma"].items():
+        lines.append(f"| {k} | {_fmt(v)} | {_fmt(w['relative_sigma'].get(k))} |")
+    lines.append("")
     return lines
 
 
