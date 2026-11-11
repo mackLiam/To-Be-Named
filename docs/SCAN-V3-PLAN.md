@@ -354,8 +354,13 @@ of section 4.6 when the verdict asks for one.
 
 ### 5.1 What the user does
 
-1. Sit, shorts above the knee, foot flat, other leg moved aside (same setup as
-   T3, which the device test showed is comfortable).
+1. Sit, shorts above the knee, foot forward so the knee is only slightly
+   bent, other leg moved aside. **Changed 2026-11-11:** the earlier "foot
+   flat" seated pose bends the knee near 90 degrees, which hides the dip
+   below the kneecap from slices along the shin and shortened Leg_Length
+   by up to 15% on synthetic legs; silhouette v4 now makes a knee bent past
+   about 60 degrees a retake (docs/VIDEO-HARNESS.md). Comfort of the new
+   pose is untested on a device.
 2. Hold the phone at shin height, about an arm's length away, pointing at the
    shin. The app finds the leg automatically (Vision body pose, as in da1b01b).
 3. **Press record, keep the phone at shin height, and move it slowly round
@@ -445,9 +450,10 @@ treating a cut-off view as fatal (silhouette v2/v3). On the phone:
 - **Credit keyframes by visible region:** a keyframe counts toward coverage
   only for the leg heights it shows inside the frame, so the ghost leg stays
   faint where the knee was never seen.
-- **Bent knee:** a seated self-scan with the knee near 90 degrees puts the
-  thigh into the knee slices and appears to shorten Leg_Length. Prompt a
-  slightly straighter leg (foot forward), pending tape ground truth.
+- **Bent knee (required, silhouette v4):** a knee bent past about 60 degrees
+  is now a retake ("sit with your foot further forward"). The Get set
+  screen and the live checks must ask for the foot forward before the sweep
+  starts, or seated self-scans will fail late.
 - **Phone orientation:** irrelevant to the math on the phone (ARKit gravity),
   but an upside-down hold shows up in the ghost-leg overlay.
 - Body pose found no body in any close-up frame, so the on-device ankle and
@@ -568,11 +574,14 @@ Rules (both validators):
   length. Server-side segmentation would then need a permissively licensed
   model (never AGPL, SCAN-PLAN.md section 3). This is the hardest tier to
   make accurate; it comes last and only if demand shows up.
-- **One tape measurement per leg adds real scale.** Everything a plain
-  video yields is a ratio (OD/OW, widths relative to S3, Leg_Length
-  relative to width). A single typed number per leg, Leg_Length from the
-  floor to the knee crease or OW at one mark, fixes the one unknown scale
-  factor, and the ratios carry it to all 25 values. It is the cheapest
+- **Tape measurements add real scale.** Everything a plain video yields is
+  a ratio (OD/OW, widths relative to S3, Leg_Length relative to width). A
+  single typed number per leg, Leg_Length from the floor to the knee crease
+  or OW at one mark, fixes the one unknown scale factor, and the ratios
+  carry it to all 25 values. **Measured 2026-11-11:** under the provisional
+  noise and 6 mm tolerances the estimator's gate still says "required"
+  after one tape Leg_Length (r about 1.1) and asks for one depth next, so
+  plan on two numbers until calibration says otherwise. It is the cheapest
   scale reference there is (no paper detection, no LiDAR) and it is the
   same observation the estimator already takes from manual entry (section
   4.4). The local video harness (docs/VIDEO-HARNESS.md, 2026-11-11) reports

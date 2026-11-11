@@ -187,20 +187,33 @@ ranked by covered area and must support the leg. IMG_3836's "ankle" failure
 was really the truncated knee end shrinking the ankle search window; the
 reason now names the knee. 120 frames is the harness default.
 
-Final (120 sampled frames):
+At 120 sampled frames:
 
 | | IMG_3834 | IMG_3836 |
 |---|---|---|
-| Result | **measured** | fail: "The knee was outside the frame in most of the photos" |
+| Result at silhouette v3 (8ebbd81) | **measured** | fail: "The knee was outside the frame in most of the photos" |
+| Final result at silhouette v4 (b9d9b15) | retake: "The knee was bent too far to measure; sit with your foot further forward so the leg is straighter." | unchanged |
 | Registered / submitted | 119 / 120 | 103 / 103 |
 | Keyframes / span | 22 / 200 deg | 19 / 173 deg |
 | Up source | floor plane, shin 18 deg | leg axis (no floor) |
 
 IMG_3834 ratios: OD/OW 0.88, 0.91, 0.93, 0.96 (S1 to S4); OW/OW_S3 0.69,
 0.87, 1.00, 0.96; Leg_Length/OW_S3 2.62. OD/OW and the profile shape are
-human. Leg_Length/OW_S3 reads short (adults are usually above 3); the likely
-cause is the bent knee putting thigh into the knee slices. No agreement table:
-only one video measured. Full write-up in docs/VIDEO-HARNESS.md.
+human. Leg_Length/OW_S3 reads short (adults are usually above 3). No
+agreement table: only one video measured.
+
+Bent knee (b9d9b15): on a synthetic hinged leg Leg_Length came out -2.9% at
+60 degrees of knee bend and -14.6% at 90, in both reconstruction paths,
+because the thigh hides the dip below the kneecap. A knee bent past about 60
+degrees is now a retake asking for a straighter leg, and IMG_3834 fails that
+way. The bend explains at most about 5% of its short ratio; the rest is
+unexplained until tape ground truth.
+
+Estimator in the harness (5e1ffb3, report only): on IMG_3834 (v3 geometry)
+the gate fails a scale-free capture and asks for tape Leg_Length; even with
+it r is about 1.1 ("required") and it then asks for one depth. Under the
+provisional numbers a plain video needs two tape values, not one. Full
+write-up in docs/VIDEO-HARNESS.md.
 
 ## Untested on a device
 
@@ -237,8 +250,25 @@ capture is Mac-side only.
   flagged `provisional` in the files, until the Phase 0 calibration.
 - Scan: MAX_TILT_DEG stays 30. The math holds at 40 on synthetic shins
   (tests/test_silhouette_tilt.py); opening the gate is a product call.
-- Scan: Leg_Length under a bent knee (IMG_3834 ratio 2.62) needs tape ground
-  truth; if confirmed short, the knee landmark rule needs a bent-knee case.
+- **Scan, product decision: the seated "foot flat" pose is now a retake.**
+  It bends the knee near 90 degrees, which measured Leg_Length up to 15%
+  short on synthetic legs; silhouette v4 refuses knees bent past about 60
+  degrees. SCAN-V3-PLAN.md 5.1 now says "foot forward". Confirm the pose is
+  comfortable on a device, and that the app's Get set screen asks for it.
+- Scan: segment.py's bent-knee rule also changes the photogrammetry path for
+  bent-knee inputs only (short leg becomes a rescan). No version constant
+  covers segment.py; decide whether that needs one.
+- Scan: IMG_3834's short Leg_Length/OW_S3 (2.62) is only about 5% explained
+  by the bend; tape ground truth will say whether OW_S3 reads wide at close
+  range. If its knee really was at the flat stretch, the window rule is too
+  strict for profiles that flatten before the thigh, and a flatness test
+  could replace it.
+- Estimator: prior 0.1.0's mean OD/OW sits 0.19 to 0.31 above the harness's
+  synthetic leg as extraction measures it (the prior is derived from the
+  silhouette test leg's semi-axes). Check the prior derivation against
+  extraction's OW/OD definitions before Phase 1b.
+- Estimator: a scale-free capture needs two tape values (Leg_Length plus one
+  depth) under the provisional numbers, not one as plan 5.7 first said.
 - Scan: segment.ANKLE_SEARCH_FRACTION (40% of the profile) is shared with the
   photogrammetry path and was not changed; only the failure wording was.
 - Scan: new failure copy says "photos" to match the station capture; the

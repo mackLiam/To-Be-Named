@@ -176,9 +176,10 @@ no metadata, recorded badly on purpose. Counts and ratios only.
 | Keyframe span at 120 | 200 deg | 173 deg |
 | Up source | floor plane (shin 18 deg from vertical) | leg axis (no floor found) |
 | Baseline result (production math, 9424e5c) | fail: cut off at the edge of a keyframe | fail: cut off at the edge of a keyframe |
-| Final result (silhouette v3, 8ebbd81) | **measured** | fail: "The knee was outside the frame in most of the photos" |
+| Result at silhouette v3 (8ebbd81) | **measured** | fail: "The knee was outside the frame in most of the photos" |
+| Final result (silhouette v4, b9d9b15) | retake: "The knee was bent too far to measure; sit with your foot further forward so the leg is straighter." | fail: "The knee was outside the frame in most of the photos" |
 
-IMG_3834, scale-free ratios at 120 frames:
+IMG_3834, scale-free ratios at 120 frames (silhouette v3, before the bent-knee rule):
 
 | slice | OD/OW | OW/OW_S3 | OD/OD_S3 |
 |---|---|---|---|
@@ -201,10 +202,21 @@ defect: a compact clump beside the foot outvoted the real floor on point
 count. Ranking planes by covered area fixed it; floor plane, leg points and
 mask axis then agree on an 18 degree shin. The first real video to reach
 measurement: OD/OW 0.88 to 0.96 and the profile shape are human.
-Leg_Length/OW_S3 = 2.62 reads short (an adult is typically above 3): with the
-knee bent about 90 degrees the thigh enters slices perpendicular to the shin
-right at the knee, so the knee landmark lands on the dip below the true knee.
-Unverified until tape ground truth exists.
+Leg_Length/OW_S3 = 2.62 reads short (an adult is typically above 3).
+
+**Bent knee (silhouette v4, b9d9b15).** On a synthetic hinged leg
+(tests/bent_knee_synth.py) the thigh enters slices perpendicular to the shin
+before the dip below the kneecap once the knee bends past about 45 degrees.
+Leg_Length was -1.0% at 45, -2.9% at 60, -5.9% at 75 and -14.6% at 90
+degrees, and the photogrammetry sections behave the same. The dip is hidden
+there, so a knee within one extremum window of the thigh onset (width
+growing faster than 0.8 per unit of shin length) is not accepted, and the
+capture is a retake asking for a straighter leg. IMG_3834 now fails that
+way. Its old knee sat on a flat stretch exactly one window below the onset,
+so the bend explains at most about 5% of its short ratio; the rest (likely a
+generous mask edge at close range widening OW_S3, or a stocky leg) is
+unexplained until tape ground truth exists. The harness therefore has no
+measured real video at v4.
 
 **IMG_3836.** The upside-down phone made camera image-up point 163 degrees
 away from the leg's up, so "up" must come from the scene (floor) or the leg
@@ -225,8 +237,19 @@ segmentation fragments into 70 to 100 components and is not usable here.
 
 ## Scale
 
-Nothing here has a real size. One tape number per leg (Leg_Length or one OW)
-would fix the single unknown scale factor (SCAN-V3-PLAN.md 5.7). The
-estimator already models this case: its `scale_free` source carries a wide
-per-capture log-scale term (docs/ESTIMATOR-V1.md section 4), so shape comes
-from the video and size from the tape or the prior.
+Nothing here has a real size. The harness now runs the leg estimator as a
+report-only stage on every measured row (5e1ffb3): the mesh becomes a
+`scale_free` source, fused with prior 0.1.0 and gated with the provisional
+tolerances, under "Estimator (provisional prior, report only)" in
+results.md. It never changes a row's pass or fail.
+
+On IMG_3834 at silhouette v3 (run with the bent-knee rule disabled in
+memory, as a diagnostic) the gate says fail (r 15.5, about 32% relative
+sigma on every key: size comes only from the prior) and asks for a tape
+Leg_Length. With that one hypothetical tape, r falls to 1.12, which is
+still "required", and the gate next asks for a depth (S4_OD); the synthetic
+bundle behaves the same (r 1.07, then S3_OD). So under the provisional noise
+and 6 mm tolerances a scale-free capture needs **Leg_Length plus one
+depth**, not one number. Posterior ratios move little on synthetic legs
+(0.011 at most) and more on IMG_3834 (S4 OD/OW +0.058, Leg_Length/OW_S3
+-0.082). All of this is provisional until calibration.
