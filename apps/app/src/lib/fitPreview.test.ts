@@ -67,7 +67,7 @@ describe('computeFitPreview', () => {
         expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
       }
     }
-    expect(g.summary.guardHeightMm).toBeCloseTo((0.88 - 0.12) * 400, 6);
+    expect(g.summary.guardHeightMm).toBeCloseTo((0.8 - 0.2) * 400, 6);
     expect(g.summary.guardMaxWidthMm).toBeGreaterThan(0);
   });
 
@@ -154,7 +154,7 @@ describe('GUARD_TEMPLATES', () => {
   it('pins Club to its CAD variables and orders the placeholders around it', () => {
     const { club, pro, junior_max } = GUARD_TEMPLATES;
     expect(DEFAULT_TEMPLATE).toBe(club);
-    expect(club).toMatchObject({ bottom: 0.12, top: 0.88, wrap: 0.62, placeholder: false });
+    expect(club).toMatchObject({ bottom: 0.2, top: 0.8, wrap: 0.62, placeholder: false });
     expect([club.clearanceMm, club.linerMm, club.shellMm]).toEqual([1, 5, 5]);
     expect(pro.placeholder && junior_max.placeholder).toBe(true);
     const h = (t: GuardTemplate) => t.top - t.bottom;

@@ -29,8 +29,9 @@ finishing a task checks this file for anything its change closes.
   model's variables (DESIGN.md 12.2), so the schema ranges are right for
   what they gate. Still open: the wrap fractions are provisional (no print
   through the automated path yet), extraction's medial/lateral halves are
-  not anatomically oriented (v1 conversion ignores them), and the fitPreview
-  coverage numbers.
+  not anatomically oriented (v1 conversion ignores them). The fitPreview
+  Club coverage was corrected to 0.2-0.8 on 2026-11-11 (branch
+  feat/overnight-2026-11-11); Pro and Junior Max remain placeholders.
 
 ### 2026-09-30: maintenance sweeps are not scheduled anywhere
 

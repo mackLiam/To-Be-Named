@@ -277,8 +277,9 @@ estimate is exactly a preset (DESIGN.md 7a.3) and is sold as one.
 
 The **fit-critical set depends on the product**: Leg_Length (coverage), plus
 OW, OD and the anterior shape at every slice inside the product's coverage
-band. Club covers 0.12 to 0.88 of leg length and Junior Max 0.08 to 0.92, so
-for both, all four slices S1-S4 bear load. Only calf-side shape outside the
+band. Club covers 0.2 to 0.8 of leg length (the model lofts S1 to S4;
+fitPreview.ts corrected 2026-11-11) and Junior Max 0.08 to 0.92, so for
+both, all four slices S1-S4 bear load. Only calf-side shape outside the
 shell's wrap matters less.
 
 The gate, per product (tolerances T live with the product, because a thicker

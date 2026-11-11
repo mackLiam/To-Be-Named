@@ -32,11 +32,13 @@ export interface GuardTemplate {
 }
 
 export const GUARD_TEMPLATES = {
+  // Coverage from the CAD model: Loft 1 runs S1 to S4, planes at 0.2 and 0.8
+  // of Leg_Length (DESIGN.md 12.2, SCAN-V3-PLAN.md 6a.2).
   club: {
     id: 'club',
     name: 'Club',
-    bottom: 0.12,
-    top: 0.88,
+    bottom: 0.2,
+    top: 0.8,
     wrap: 0.62,
     clearanceMm: 1,
     linerMm: 5,
@@ -47,8 +49,8 @@ export const GUARD_TEMPLATES = {
   pro: {
     id: 'pro',
     name: 'Pro',
-    bottom: 0.2,
-    top: 0.82,
+    bottom: 0.24,
+    top: 0.76,
     wrap: 0.54,
     clearanceMm: 1,
     linerMm: 4,
