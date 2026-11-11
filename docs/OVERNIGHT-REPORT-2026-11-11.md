@@ -19,6 +19,18 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Business gaps, code-only items | done: checkout gates (b6f4a8d), FAQ, sizing and returns shells, print queue and packing slip (0b51a39) |
 | docs/BUSINESS-GAPS.md | done (5ad999e) |
 
+## Verification (run by the orchestrator, 2026-11-11 about 02:00)
+
+- `make lint typecheck test`: exit 0. Pipeline 1051 passed; shared 142,
+  app 510, web 534 tests; ruff, tsc and ESLint clean.
+- `pnpm turbo run build typecheck test` and `pnpm format:check`: green.
+- `bash supabase/tests/run_sql_checks.sh`: all SQL checks passed (including
+  catalog_checks.sql and order_ops_checks.sql).
+- Swift: `swift build -c release && swift test` in services/reconstruct (23
+  tests) and `swift test` in apps/app/modules/forms-capture/logic-tests (34
+  tests): green. A full Xcode app build needs `pod install` first.
+- Nothing ran on a phone.
+
 ## Done (with commits)
 
 - Contract for the harness bundle (forms.video-bundle v1) written into
