@@ -59,7 +59,8 @@ export default function ShopScreen() {
           {product.image && (
             <Image
               accessibilityIgnoresInvertColors
-              alt={product.name}
+              alt={product.imageAlt ?? product.name}
+              accessibilityLabel={product.imageAlt ?? product.name}
               source={product.image}
               style={styles.image}
             />
@@ -72,12 +73,19 @@ export default function ShopScreen() {
               {formatMoney(product.priceCents, product.currency)}
             </Text>
           </View>
+          {product.availability === 'coming_soon' && (
+            <Body variant="bodyStrong" color={colors.textSecondary}>
+              Coming soon
+            </Body>
+          )}
           <Body color={colors.textSecondary}>{product.description}</Body>
           {member && orderFrom && (
             <Button
               style={styles.action}
+              disabled={!product.purchasable}
               accessibilityLabel={`Order ${product.name}`}
               onPress={() =>
+                product.purchasable &&
                 router.push({
                   pathname: '/order/[key]',
                   params: { key: orderFrom, product: product.id },

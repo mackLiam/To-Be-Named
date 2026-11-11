@@ -14,6 +14,7 @@ import {
   type MeasurementRow,
   type Scan,
 } from './library';
+import { isPurchasable, mainImage, type Availability, type ProductImageRow } from './catalog';
 import { getSupabaseClient, hasSupabaseConfig } from './supabase';
 
 export type { Scan } from './library';
@@ -58,6 +59,12 @@ export interface Product {
   // must render without it. Typed as a source, not a URL, so a bundled asset
   // and a future remote { uri } row both fit the one field.
   image?: ImageSourcePropType;
+  /** Alt text for image (catalog alt text, else the product name). */
+  imageAlt?: string;
+  /** products.availability (0022). Only 'available' and 'coming_soon' reach the app. */
+  availability: Availability;
+  /** isPurchasable(): the client-side mirror of the server refusal. */
+  purchasable: boolean;
 }
 
 /**
@@ -78,6 +85,9 @@ const DEMO_PRODUCTS: Product[] = [
     priceCents: 8900,
     currency: 'usd',
     image: guardSingle,
+    imageAlt: 'Single custom shin guard',
+    availability: 'available',
+    purchasable: true,
   },
   {
     id: 'demo-keeper-guard',
@@ -86,6 +96,9 @@ const DEMO_PRODUCTS: Product[] = [
     priceCents: 10900,
     currency: 'usd',
     image: guardKeeper,
+    imageAlt: 'Keeper shin guard',
+    availability: 'available',
+    purchasable: true,
   },
 ];
 
@@ -252,6 +265,10 @@ export interface ProductQueryRow {
   base_price_cents: number;
   currency: string;
   image_url: string | null;
+  availability: string;
+  display_order: number;
+  sizing_modes: string[];
+  product_images?: ProductImageRow[] | null;
 }
 
 export function toOrder(row: OrderQueryRow): Order {
@@ -268,13 +285,16 @@ export function toOrder(row: OrderQueryRow): Order {
 }
 
 export function toProduct(row: ProductQueryRow): Product {
+  const image = mainImage(row, process.env.EXPO_PUBLIC_SUPABASE_URL);
   return {
     id: row.id,
     name: row.name,
     description: row.description,
     priceCents: row.base_price_cents,
     currency: row.currency,
-    ...(row.image_url ? { image: { uri: row.image_url } } : {}),
+    availability: row.availability === 'available' ? 'available' : 'coming_soon',
+    purchasable: isPurchasable(row),
+    ...(image ? { image: { uri: image.uri }, imageAlt: image.alt } : {}),
   };
 }
 
@@ -318,17 +338,19 @@ export async function listOrders(): Promise<Order[]> {
   return ((data ?? []) as unknown as OrderQueryRow[]).map(toOrder);
 }
 
-/** Only products the admin panel marked available. Cheapest first, so the
- * single guard leads and the pair follows. */
+/** Shop-visible products (RLS hides paused), in display_order then name. */
 export async function listProducts(): Promise<Product[]> {
   if (USE_FAKE_DATA) {
     return DEMO_PRODUCTS;
   }
   const { data, error } = await getSupabaseClient()
     .from('products')
-    .select('id, name, description, base_price_cents, currency, image_url')
+    .select(
+      'id, name, description, base_price_cents, currency, image_url, availability, display_order, sizing_modes, product_images(storage_path, alt_text, is_main)',
+    )
     .eq('active', true)
-    .order('base_price_cents')
+    .order('display_order')
+    .order('name')
     .limit(50);
   if (error) {
     throw error;

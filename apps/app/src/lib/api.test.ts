@@ -127,6 +127,9 @@ describe('row mappers', () => {
       base_price_cents: 8900,
       currency: 'usd',
       image_url: 'https://example.com/g.jpg',
+      availability: 'available',
+      display_order: 0,
+      sizing_modes: ['custom'],
     };
     expect(toProduct(row)).toEqual({
       id: 'p1',
@@ -135,7 +138,15 @@ describe('row mappers', () => {
       priceCents: 8900,
       currency: 'usd',
       image: { uri: 'https://example.com/g.jpg' },
+      imageAlt: 'Guard',
+      availability: 'available',
+      purchasable: true,
     });
+    expect(toProduct({ ...row, availability: 'coming_soon' })).toMatchObject({
+      availability: 'coming_soon',
+      purchasable: false,
+    });
+    expect(toProduct({ ...row, sizing_modes: ['preset_s'] }).purchasable).toBe(false);
     expect('image' in toProduct({ ...row, image_url: null })).toBe(false);
   });
 });

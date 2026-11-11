@@ -68,14 +68,16 @@ export default function OrderScreen() {
     );
   }
 
+  // The server refuses unpurchasable products; the picker never offers them.
+  const options = products.data.filter((candidate) => candidate.purchasable);
   const product: Product | undefined =
-    products.data.find((candidate) => candidate.id === pickedId) ?? products.data[0];
+    options.find((candidate) => candidate.id === pickedId) ?? options[0];
 
   const member = canPlaceOrder(account);
   const productsView = listView({
     loading: products.loading,
     error: products.error,
-    count: products.data.length,
+    count: options.length,
   });
   const footer = product ? (
     member ? (
@@ -106,7 +108,7 @@ export default function OrderScreen() {
       )}
       {productsView === 'empty' && <EmptyState title="Nothing on sale right now" />}
       <View accessibilityRole="radiogroup" style={styles.options}>
-        {products.data.map((option) => {
+        {options.map((option) => {
           const selected = option.id === product?.id;
           return (
             <Pressable
