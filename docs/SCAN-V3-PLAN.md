@@ -1058,7 +1058,7 @@ through the CAD descriptor layer. Not in v1; a decision for later (section 15).
 ## 13. Phased delivery
 
 Ordered so each phase ships value alone and the riskiest assumption is
-tested first. Agent briefs follow root CLAUDE.md step 3 (seven parts, pinned
+tested first. Agent briefs follow docs/OPERATING-PROCEDURE.md step 3 (seven parts, pinned
 contracts, reserved paths).
 
 ### Phase 0: ground truth and the real round-trip (mostly Liam)
