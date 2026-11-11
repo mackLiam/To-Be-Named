@@ -94,7 +94,8 @@ every milestone, so the latest commit on the branch holds the latest state.
   refuses anything not purchasable. Fixed the admin order page crash for
   deleted accounts. I removed the agent's storage select policy on the photo
   bucket: public URLs work without it and it let anyone list photo names for
-  paused products. SQL checks pass.
+  paused products. SQL checks pass. The app Shop tab and order picker follow
+  the same rules (dfac25b).
 
 - App UI pass (e4b8960), led by forms-designer: wordmark on sign-in,
   shared error and loading states with a real retry (web had none), correct
@@ -209,9 +210,6 @@ capture is Mac-side only.
   availability per product, prices and the photos themselves are not set.
 - Catalog: photo EXIF/GPS is not stripped (needs an image library or a
   photographer workflow).
-- The app Shop tab still lists by price and ignores availability; until it
-  is updated a coming-soon product looks buyable in the app (checkout
-  refuses it server-side).
 - App: Android and web users with no scans have no entry point to hand
   measuring (needs a navigation decision).
 - App: capture failure screens show "Code: ERR_..." to users; added on
