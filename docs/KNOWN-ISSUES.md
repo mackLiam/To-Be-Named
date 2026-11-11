@@ -12,6 +12,17 @@ finishing a task checks this file for anything its change closes.
 
 ## Open
 
+### 2026-11-11: admin segment loading states stream a 200 before the admin check
+
+- `apps/web/src/app/admin/orders/[id]/loading.tsx` and
+  `admin/customers/loading.tsx` let Next stream a 200 with the loading UI
+  before the page's `requireAdmin` can call `notFound()`, so a non-admin
+  gets the 404 page with a 200 status. No admin data is sent; it only
+  confirms the route exists (the admin path is not secret).
+- Close by: moving the admin check into a layout that runs before any
+  segment streams, or dropping these loading files. Found by the
+  overnight web UI pass.
+
 ### 2026-11-10: extraction and schema ranges do not match the CAD model's meaning
 
 - The Onshape model reads S#_ISW/ISD/ICW/ICD/OW/OD as crest-relative points
