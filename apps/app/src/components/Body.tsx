@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from 'react';
 import { Text, type TextStyle } from 'react-native';
 
-import { colors, typography } from '../theme/tokens';
+import { colors, maxFontScale, typography } from '../theme/tokens';
 
 type Variant = 'body' | 'bodyStrong' | 'bodySmall' | 'caption' | 'label';
 
@@ -21,5 +21,12 @@ const VARIANT_STYLES: Record<Variant, TextStyle> = {
 
 /** Manrope body text. `label` variant is for small uppercase eyebrows, never a pill. */
 export function Body({ variant = 'body', color = colors.textPrimary, children, style }: BodyProps) {
-  return <Text style={[VARIANT_STYLES[variant], { color }, style]}>{children}</Text>;
+  return (
+    <Text
+      maxFontSizeMultiplier={maxFontScale[variant]}
+      style={[VARIANT_STYLES[variant], { color }, style]}
+    >
+      {children}
+    </Text>
+  );
 }

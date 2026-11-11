@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import type { Measurements } from '@forms/shared';
 
@@ -10,6 +10,7 @@ import { FitPreview } from '../../src/components/FitPreview';
 import { Heading } from '../../src/components/Heading';
 import { ListGroup, ListRow } from '../../src/components/List';
 import { Screen } from '../../src/components/Screen';
+import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateView';
 import { SESSION_TONE, StatusLabel } from '../../src/components/StatusLabel';
 import { useDeleteScanSession, useScanSession } from '../../src/hooks/useScans';
 import {
@@ -28,6 +29,7 @@ import {
   type Scan,
   type ScanSession,
 } from '../../src/lib/library';
+import { dimLabel } from '../../src/lib/manualMeasurements';
 import type { Leg } from '../../src/lib/upload';
 import { colors, spacing, typography } from '../../src/theme/tokens';
 
@@ -62,11 +64,15 @@ export default function ScanDetailScreen() {
     return (
       <Screen onRefresh={reload} refreshing={false}>
         {loading ? (
-          <ActivityIndicator color={colors.textPrimary} />
+          <LoadingState label="Loading this scan" />
         ) : error ? (
-          <Body color={colors.danger}>Could not load this scan. Pull down to try again.</Body>
+          <ErrorState
+            title="This scan did not load."
+            line="Check your connection."
+            onRetry={reload}
+          />
         ) : (
-          <Heading level="h2">Scan not found</Heading>
+          <EmptyState title="Scan not found" line="It may have been deleted." />
         )}
       </Screen>
     );
@@ -113,14 +119,17 @@ export default function ScanDetailScreen() {
         )}
       </View>
       {status === 'processing' && (
-        <Body color={colors.textSecondary} style={styles.note}>
-          Measuring takes a few minutes. Pull down to refresh.
-        </Body>
+        <View style={styles.note}>
+          <Body color={colors.textSecondary}>Measuring takes a few minutes.</Body>
+          <Button variant="text" onPress={reload} busy={loading} style={styles.inlineAction}>
+            Check again
+          </Button>
+        </View>
       )}
       {error && (
-        <Body color={colors.danger} style={styles.note}>
-          Could not load measurements. Pull down to try again.
-        </Body>
+        <View style={styles.note}>
+          <ErrorState title="Measurements did not load." onRetry={reload} />
+        </View>
       )}
       <View style={{ height: spacing.xl }} />
 
@@ -233,7 +242,6 @@ function LegTable({ leg, values }: { leg: Leg; values: Measurements }) {
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        <View style={styles.dimCell} />
         {SLICES.map((slice) => (
           <Body key={slice} variant="caption" color={colors.textSecondary} style={styles.cell}>
             {SLICE_HEIGHT[slice]}
@@ -243,22 +251,24 @@ function LegTable({ leg, values }: { leg: Leg; values: Measurements }) {
       {SLICE_DIMS.map((dim) => (
         <View
           key={dim}
-          style={styles.tableRow}
+          style={styles.dimBlock}
           accessible
-          accessibilityLabel={`${dim}: ${SLICES.map((slice) => values[sliceKey(slice, dim)].toFixed(1)).join(', ')} millimetres, ankle to knee`}
+          accessibilityLabel={`${dimLabel(dim)}: ${SLICES.map((slice) => values[sliceKey(slice, dim)].toFixed(1)).join(', ')} millimetres, ankle to knee`}
         >
-          <Body variant="caption" color={colors.textSecondary} style={styles.dimCell}>
-            {dim}
+          <Body variant="caption" color={colors.textSecondary}>
+            {dimLabel(dim)}
           </Body>
-          {SLICES.map((slice) => (
-            <Text
-              key={slice}
-              numberOfLines={1}
-              style={[typography.bodySmall, styles.cell, styles.value]}
-            >
-              {values[sliceKey(slice, dim)].toFixed(1)}
-            </Text>
-          ))}
+          <View style={styles.valuesRow}>
+            {SLICES.map((slice) => (
+              <Text
+                key={slice}
+                numberOfLines={1}
+                style={[typography.bodySmall, styles.cell, styles.value]}
+              >
+                {values[sliceKey(slice, dim)].toFixed(1)}
+              </Text>
+            ))}
+          </View>
         </View>
       ))}
     </View>
@@ -279,6 +289,7 @@ const styles = StyleSheet.create({
   note: {
     marginTop: spacing.md,
   },
+  inlineAction: { alignSelf: 'flex-start', paddingHorizontal: 0 },
   table: {
     marginTop: spacing.md,
     gap: spacing.xs,
@@ -293,8 +304,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  dimCell: {
-    width: spacing.xl,
+  dimBlock: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  valuesRow: {
+    flexDirection: 'row',
   },
   cell: {
     flex: 1,

@@ -1,11 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Body } from '../src/components/Body';
 import { Button } from '../src/components/Button';
 import { Heading } from '../src/components/Heading';
 import { Screen } from '../src/components/Screen';
+import { LoadingState } from '../src/components/StateView';
 import { UnavailableNotice } from '../src/components/UnavailableNotice';
 import { getCaptureAvailability } from '../src/lib/nativeCapture';
 import type { CaptureAvailability } from '../src/lib/nativeCapture';
@@ -36,7 +37,7 @@ export default function CaptureInfoScreen() {
   if (availability === null) {
     return (
       <Screen>
-        <ActivityIndicator color={colors.textPrimary} accessibilityLabel="Checking this phone" />
+        <LoadingState label="Checking this phone" />
       </Screen>
     );
   }
@@ -62,7 +63,7 @@ export default function CaptureInfoScreen() {
       : 'Even light, no harsh shadows.',
     availability.mode === 'photos'
       ? 'A chair to sit on for five photos on your own, or someone to walk a circle around you.'
-      : 'Room to walk one slow circle around your leg.',
+      : 'Room to walk one slow circle around the leg.',
   ];
 
   return (

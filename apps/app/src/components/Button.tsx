@@ -1,7 +1,8 @@
 import type { PropsWithChildren } from 'react';
-import { Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { buttonA11y } from '../lib/uiState';
+import { colors, maxFontScale, radius, sizing, spacing, typography } from '../theme/tokens';
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'danger' | 'text';
 
@@ -9,7 +10,10 @@ interface ButtonProps extends PropsWithChildren {
   onPress?: () => void;
   variant?: Variant;
   disabled?: boolean;
+  /** Work in flight: shows a spinner beside the label and blocks a second tap. */
+  busy?: boolean;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
   style?: ViewStyle;
 }
 
@@ -23,39 +27,53 @@ interface ButtonProps extends PropsWithChildren {
  * - outline: brown border and text on the yellow field.
  * - danger: oxblood fill, yellow text; destructive confirms only.
  * - text: no fill, brick 600 label (small action text on yellow, 4.7:1).
+ * - disabled: kraft (brown 100) fill, brown 500 label. WCAG exempts disabled
+ *   controls; it is still kept at large-text contrast so the words stay readable.
  */
 export function Button({
   children,
   onPress,
   variant = 'primary',
   disabled = false,
+  busy = false,
   accessibilityLabel,
+  accessibilityHint,
   style,
 }: ButtonProps) {
+  const a11y = buttonA11y({ disabled, busy, label: accessibilityLabel, hint: accessibilityHint });
+  const inert = a11y.accessibilityState.disabled;
+  const labelColor = VARIANT_LABEL[variant].color;
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
+      disabled={inert}
+      {...a11y}
       style={({ pressed }) => [
         styles.base,
         variant === 'text' && styles.textBase,
         VARIANT_CONTAINER[variant],
-        pressed && !disabled && PRESSED_CONTAINER[variant],
-        disabled && styles.disabled,
+        pressed && !inert && PRESSED_CONTAINER[variant],
+        // A busy button keeps full color: it is working, not unavailable.
+        disabled && !busy && DISABLED_CONTAINER[variant],
         style,
       ]}
     >
-      <Text style={[styles.label, VARIANT_LABEL[variant]]}>{children}</Text>
+      <View style={styles.inner}>
+        {busy && <ActivityIndicator size="small" color={labelColor} />}
+        <Text
+          maxFontSizeMultiplier={maxFontScale.button}
+          style={[styles.label, VARIANT_LABEL[variant], disabled && !busy && DISABLED_LABEL]}
+        >
+          {children}
+        </Text>
+      </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 56,
+    minHeight: sizing.control,
     borderRadius: radius,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
@@ -63,15 +81,20 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   textBase: {
-    minHeight: 44,
+    minHeight: sizing.hitTarget,
     paddingHorizontal: spacing.sm,
+  },
+  inner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
   },
   label: {
     ...typography.button,
     textAlign: 'center',
-  },
-  disabled: {
-    opacity: 0.4,
+    flexShrink: 1,
   },
 });
 
@@ -82,6 +105,20 @@ const VARIANT_CONTAINER: Record<Variant, ViewStyle> = {
   danger: { backgroundColor: colors.danger },
   text: {},
 };
+
+/**
+ * Disabled is a flat kraft block, not a faded brand color: brick at 40%
+ * opacity over yellow reads as orange, a color the brand does not have.
+ */
+const DISABLED_CONTAINER: Record<Variant, ViewStyle> = {
+  primary: { backgroundColor: colors.border },
+  secondary: { backgroundColor: colors.border },
+  outline: { borderColor: colors.disabled },
+  danger: { backgroundColor: colors.border },
+  text: {},
+};
+
+const DISABLED_LABEL = { color: colors.textTertiary };
 
 const PRESSED_CONTAINER: Record<Variant, ViewStyle> = {
   primary: { backgroundColor: colors.actionPressed },

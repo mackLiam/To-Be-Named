@@ -61,7 +61,11 @@ export function CodeStep(props: {
         autoFocus
         onSubmitEditing={props.onVerify}
       />
-      <Button onPress={props.onVerify} disabled={props.busy || props.code.length < 6}>
+      <Button
+        onPress={props.onVerify}
+        disabled={props.busy || props.code.length < 6}
+        busy={props.busy}
+      >
         {props.busy ? props.verifyBusyLabel : props.verifyLabel}
       </Button>
       <View>

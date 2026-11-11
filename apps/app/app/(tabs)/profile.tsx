@@ -119,7 +119,11 @@ function GuestSave() {
             error={state.error?.message}
             onSubmitEditing={() => submitEmail(email)}
           />
-          <Button onPress={() => submitEmail(email)} disabled={state.busy || email.trim() === ''}>
+          <Button
+            onPress={() => submitEmail(email)}
+            disabled={state.busy || email.trim() === ''}
+            busy={state.busy}
+          >
             {state.busy ? 'Sending code' : 'Send code'}
           </Button>
           <FakeModeCaption />
@@ -264,7 +268,7 @@ function Confirm(props: {
   return (
     <View accessibilityLiveRegion="polite" style={styles.confirm}>
       <Body variant="bodySmall">{props.line}</Body>
-      <Button variant="danger" onPress={props.onConfirm} disabled={props.busy}>
+      <Button variant="danger" onPress={props.onConfirm} busy={props.busy}>
         {props.action}
       </Button>
       <Button variant="text" onPress={props.onCancel} disabled={props.busy}>

@@ -1,12 +1,13 @@
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
 import { Screen } from '../../src/components/Screen';
+import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateView';
 import { useAccount } from '../../src/hooks/useAccount';
 import { useCheckout } from '../../src/hooks/useCheckout';
 import { useProducts } from '../../src/hooks/useProducts';
@@ -15,7 +16,8 @@ import type { Product } from '../../src/lib/api';
 import { canPlaceOrder } from '../../src/lib/auth';
 import { checkoutErrorMessage, formatMoney, orderTotalCents } from '../../src/lib/checkout';
 import { LEG_LABEL, orderableLegs } from '../../src/lib/library';
-import { colors, radius, spacing, typography } from '../../src/theme/tokens';
+import { listView } from '../../src/lib/uiState';
+import { colors, maxFontScale, radius, sizing, spacing, typography } from '../../src/theme/tokens';
 
 export default function OrderScreen() {
   const router = useRouter();
@@ -33,11 +35,15 @@ export default function OrderScreen() {
     return (
       <Screen onRefresh={scan.reload} refreshing={false}>
         {scan.loading ? (
-          <ActivityIndicator color={colors.textPrimary} />
+          <LoadingState label="Loading this scan" />
         ) : scan.error ? (
-          <Body color={colors.danger}>Could not load this scan. Pull down to try again.</Body>
+          <ErrorState
+            title="This scan did not load."
+            line="Check your connection."
+            onRetry={scan.reload}
+          />
         ) : (
-          <Heading level="h2">Scan not found</Heading>
+          <EmptyState title="Scan not found" line="It may have been deleted." />
         )}
       </Screen>
     );
@@ -57,9 +63,7 @@ export default function OrderScreen() {
           </Button>
         }
       >
-        <Heading level="h1">Nothing to order yet</Heading>
-        <View style={{ height: spacing.md }} />
-        <Body color={colors.textSecondary}>This scan is still being measured.</Body>
+        <EmptyState title="Nothing to order yet" line="This scan is still being measured." />
       </Screen>
     );
   }
@@ -68,12 +72,14 @@ export default function OrderScreen() {
     products.data.find((candidate) => candidate.id === pickedId) ?? products.data[0];
 
   const member = canPlaceOrder(account);
+  const productsView = listView({
+    loading: products.loading,
+    error: products.error,
+    count: products.data.length,
+  });
   const footer = product ? (
     member ? (
-      <Button
-        disabled={checkout.busy}
-        onPress={() => checkout.start({ productId: product.id, legs })}
-      >
+      <Button busy={checkout.busy} onPress={() => checkout.start({ productId: product.id, legs })}>
         {checkout.busy ? 'Opening payment' : 'Continue to payment'}
       </Button>
     ) : (
@@ -90,15 +96,15 @@ export default function OrderScreen() {
       </Body>
       <View style={{ height: spacing.xl }} />
 
-      {products.loading && products.data.length === 0 && (
-        <ActivityIndicator color={colors.textPrimary} />
+      {productsView === 'loading' && <LoadingState label="Loading guards" />}
+      {productsView === 'error' && (
+        <ErrorState
+          title="Guards did not load."
+          line="Check your connection."
+          onRetry={products.reload}
+        />
       )}
-      {products.error && (
-        <Body color={colors.danger}>Could not load guards. Pull down to try again.</Body>
-      )}
-      {!products.loading && !products.error && products.data.length === 0 && (
-        <Body color={colors.textSecondary}>No guards on sale right now.</Body>
-      )}
+      {productsView === 'empty' && <EmptyState title="Nothing on sale right now" />}
       <View accessibilityRole="radiogroup" style={styles.options}>
         {products.data.map((option) => {
           const selected = option.id === product?.id;
@@ -123,7 +129,12 @@ export default function OrderScreen() {
                   accessibilityElementsHidden
                   importantForAccessibility="no"
                 />
-                <Text style={[typography.h3, styles.optionName]}>{option.name}</Text>
+                <Text
+                  maxFontSizeMultiplier={maxFontScale.h3}
+                  style={[typography.h3, styles.optionName]}
+                >
+                  {option.name}
+                </Text>
                 <Body variant="bodyStrong">{formatMoney(option.priceCents, option.currency)}</Body>
               </View>
               <Body variant="bodySmall" color={colors.textSecondary}>
@@ -140,15 +151,20 @@ export default function OrderScreen() {
             <Body color={colors.textSecondary}>
               {legs.length === 1 ? 'Total, one guard' : 'Total, two guards'}
             </Body>
-            <Text style={[typography.h2, styles.amount]}>
+            <Text maxFontSizeMultiplier={maxFontScale.h2} style={[typography.h2, styles.amount]}>
               {formatMoney(orderTotalCents(product.priceCents, legs.length), product.currency)}
             </Text>
           </View>
           <Body variant="caption" color={colors.textSecondary}>
             {member ? 'Secure payment with Stripe.' : 'Ordering needs an account.'}
           </Body>
+          {/* TODO(liam): a buyer paying for a custom item expects delivery time and
+              the remake or returns policy here, before payment. Neither is
+              decided, so nothing is shown; add one line each once they are. */}
           {member && checkout.error && (
-            <Body color={colors.danger}>{checkoutErrorMessage(checkout.error)}</Body>
+            <View accessibilityLiveRegion="polite" role="alert">
+              <Body color={colors.danger}>{checkoutErrorMessage(checkout.error)}</Body>
+            </View>
           )}
         </View>
       )}
@@ -161,6 +177,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   option: {
+    minHeight: sizing.control,
     borderWidth: 2,
     borderColor: colors.border,
     borderRadius: radius,

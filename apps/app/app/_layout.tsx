@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { AccountProvider, useAccount } from '../src/hooks/useAccount';
+import { stackHeader } from '../src/theme/navigation';
 import { colors } from '../src/theme/tokens';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -70,35 +71,15 @@ function RootStack({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="measure/[scanId]" />
           <Stack.Screen
             name="scan/[key]"
-            options={{
-              headerShown: true,
-              headerTitle: 'Scan',
-              headerBackTitle: 'Scans',
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.textPrimary,
-              headerShadowVisible: false,
-            }}
+            options={{ ...stackHeader, headerTitle: 'Scan', headerBackTitle: 'Scans' }}
           />
           <Stack.Screen
             name="capture-info"
-            options={{
-              headerShown: true,
-              headerTitle: 'Scan requirements',
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.textPrimary,
-              presentation: 'modal',
-            }}
+            options={{ ...stackHeader, headerTitle: 'New scan', presentation: 'modal' }}
           />
           <Stack.Screen
             name="order/[key]"
-            options={{
-              headerShown: true,
-              headerTitle: 'Order',
-              headerBackTitle: 'Scan',
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.textPrimary,
-              headerShadowVisible: false,
-            }}
+            options={{ ...stackHeader, headerTitle: 'Order', headerBackTitle: 'Scan' }}
           />
         </Stack.Protected>
         <Stack.Protected guard={account === null}>

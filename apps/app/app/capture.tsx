@@ -6,6 +6,7 @@ import { Body } from '../src/components/Body';
 import { Button } from '../src/components/Button';
 import { Heading } from '../src/components/Heading';
 import { Screen } from '../src/components/Screen';
+import { LoadingState } from '../src/components/StateView';
 import { StepBar } from '../src/components/StepBar';
 import { UnavailableNotice } from '../src/components/UnavailableNotice';
 import { captureErrorMessage, useCaptureFlow } from '../src/hooks/useCaptureFlow';
@@ -100,7 +101,7 @@ export default function CaptureScreen() {
     default:
       return (
         <Screen>
-          <ActivityIndicator color={colors.textPrimary} accessibilityLabel="Checking this phone" />
+          <LoadingState label="Checking this phone" />
         </Screen>
       );
   }
@@ -130,16 +131,18 @@ const PHOTO_STEPS: Record<PhotoCaptureMode, string[]> = {
     'Point the phone at the floor near your foot for a moment, then point the circle at the front of your shin, halfway up, and tap.',
     'Move the phone to each dot on the map and hold still. It takes five photos by itself: the front, then the inner side, then the outer side.',
   ],
+  // Read by the helper holding the phone, so "the leg", never "your leg"
+  // (SCAN-V3-PLAN.md 5.3).
   helper: [
-    'Stand or sit still.',
-    'Your helper points the circle at the front of your shin, halfway up, and taps.',
-    "Your helper walks one slow, full circle around your leg at arm's length.",
+    'The player sits or stands still.',
+    'Point the circle at the front of the shin, halfway up, and tap.',
+    "Walk one slow, full circle around the leg at arm's length.",
   ],
 };
 
 const PHOTO_TITLE: Record<PhotoCaptureMode, string> = {
-  solo: 'Five photos around the front of your leg.',
-  helper: 'Your helper walks one slow circle.',
+  solo: 'Five photos around the front of your leg',
+  helper: 'One slow circle around the leg',
 };
 
 const PHOTO_TARGET: Record<PhotoCaptureMode, string> = {
@@ -221,19 +224,20 @@ function ReadySection({
   return (
     <Screen footer={<Button onPress={() => onStart()}>Start</Button>}>
       <LegHeader leg={leg} />
-      <Heading level="h2">Walk one slow circle around your leg.</Heading>
+      <Heading level="h2">Walk one slow circle around the leg</Heading>
       <View style={{ height: spacing.md }} />
       <Body color={colors.textSecondary}>Keep the leg still and fully in frame.</Body>
     </Screen>
   );
 }
 
-/** Short instruction per native capture state, shown while the guided UI runs. */
+/** Short instruction per native capture state, shown while the guided UI runs.
+ * "The leg", not "your leg": the person holding the phone may be a helper. */
 const CAPTURE_STATE_COPY: Record<CaptureState, string> = {
   initializing: 'Starting the camera.',
-  ready: 'Point the camera at your leg.',
-  detecting: 'Finding your leg. Keep it centered.',
-  capturing: 'Walk slowly around your leg.',
+  ready: 'Point at the shin.',
+  detecting: 'Finding the leg. Keep it in the middle.',
+  capturing: 'Move slowly around the leg.',
   finishing: 'Hold steady.',
   completed: 'Done.',
   cancelled: 'Cancelled.',
@@ -297,7 +301,7 @@ function UploadedSection({
     return (
       <Screen footer={<Button onPress={onNextLeg}>Continue</Button>}>
         <LegHeader leg={state.leg} title={`${LEG_TITLE[state.leg]} done`} />
-        <Heading level="h2">Now the other leg.</Heading>
+        <Heading level="h2">Now the other leg</Heading>
         <OfflineLegNote state={state} />
       </Screen>
     );

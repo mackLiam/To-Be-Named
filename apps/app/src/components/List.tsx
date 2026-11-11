@@ -2,7 +2,7 @@ import { Feather } from '@expo/vector-icons';
 import { Children, type PropsWithChildren, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, radius, sizing, spacing, typography } from '../theme/tokens';
 import { Body } from './Body';
 
 interface ListGroupProps extends PropsWithChildren {
@@ -73,6 +73,8 @@ export function ListRow({
   children,
 }: ListRowProps) {
   const color = tone === 'danger' ? colors.danger : colors.textPrimary;
+  // `{a && <X/>}{b && <Y/>}` arrives as [false, null]: truthy, but nothing to draw.
+  const hasExtra = Children.toArray(children).length > 0;
   const glyph = icon === undefined ? (onPress ? 'chevron-right' : null) : icon;
   const content = (
     <>
@@ -111,7 +113,7 @@ export function ListRow({
           {content}
         </View>
       )}
-      {children && <View style={styles.extra}>{children}</View>}
+      {hasExtra && <View style={styles.extra}>{children}</View>}
     </View>
   );
 }
@@ -127,7 +129,7 @@ const styles = StyleSheet.create({
   divider: { borderTopWidth: 1, borderTopColor: colors.border },
   footnote: { marginTop: spacing.sm, marginHorizontal: spacing.md },
   row: {
-    minHeight: 56,
+    minHeight: sizing.control,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,

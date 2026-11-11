@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Body } from '../src/components/Body';
 import { Button } from '../src/components/Button';
@@ -8,11 +8,10 @@ import { Screen } from '../src/components/Screen';
 import { CodeStep, FakeModeCaption } from '../src/components/EmailCodeSteps';
 import { TextField } from '../src/components/TextField';
 import { TextLink } from '../src/components/TextLink';
+import { Wordmark } from '../src/components/Wordmark';
 import { PRIVACY_URL, TERMS_URL } from '../src/lib/links';
 import { useAuthAction, useEmailCodeFlow } from '../src/hooks/useEmailCodeFlow';
 import { colors, radius, spacing } from '../src/theme/tokens';
-
-import brandIcon from '../assets/brand/icon-brick-512.png';
 
 const continueAsGuest = (backend: { continueAsGuest(): Promise<void> }) =>
   backend.continueAsGuest();
@@ -30,11 +29,18 @@ export default function SignInScreen() {
 
   return (
     <Screen>
-      <Image source={brandIcon} style={styles.icon} accessibilityIgnoresInvertColors />
+      {/* The brand block: the first thing a new parent sees says who and what. */}
+      <View style={styles.brand}>
+        <View style={styles.accent} />
+        <Wordmark surface="brown" height={40} />
+        <Heading level="h2" color={colors.onDark} style={styles.promise}>
+          Shin guards fitted to your scan.
+        </Heading>
+      </View>
 
       {state.step === 'email' ? (
         <View style={styles.stack}>
-          <Heading level="display">Sign in</Heading>
+          <Heading level="h1">Sign in</Heading>
           <Body color={colors.textSecondary}>We email you a code. No password.</Body>
           <TextField
             kind="email"
@@ -47,17 +53,23 @@ export default function SignInScreen() {
             autoFocus
             onSubmitEditing={() => submitEmail(email)}
           />
-          <Button onPress={() => submitEmail(email)} disabled={busy || email.trim() === ''}>
+          <Button
+            onPress={() => submitEmail(email)}
+            disabled={busy || email.trim() === ''}
+            busy={state.busy}
+          >
             {state.busy ? 'Sending code' : 'Continue'}
           </Button>
-          <Button variant="text" onPress={guest.run} disabled={busy}>
-            {guest.busy ? 'Starting' : 'Continue as guest'}
-          </Button>
-          <Body variant="caption" color={colors.textSecondary} style={styles.center}>
-            Guest scans stay on this phone. To order, save them to an account. It takes one code.
-          </Body>
+          <View style={styles.or}>
+            <Button variant="outline" onPress={guest.run} disabled={busy} busy={guest.busy}>
+              {guest.busy ? 'Starting' : 'Continue as guest'}
+            </Button>
+            <Body variant="bodySmall" color={colors.textSecondary}>
+              Guest scans stay on this phone. To order, save them to an account with one code.
+            </Body>
+          </View>
           {guest.error && (
-            <View accessibilityLiveRegion="polite">
+            <View accessibilityLiveRegion="polite" role="alert">
               <Body variant="bodySmall" color={colors.danger}>
                 {guest.error.message}
               </Body>
@@ -94,14 +106,19 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
-  icon: {
-    width: 56,
-    height: 56,
+  brand: {
+    backgroundColor: colors.surfaceDark,
     borderRadius: radius,
-    marginTop: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
     marginBottom: spacing.xl,
+    gap: spacing.md,
   },
+  accent: { width: 40, height: 4, backgroundColor: colors.accentOnDark },
+  promise: { maxWidth: 280 },
   stack: { gap: spacing.md },
-  center: { textAlign: 'center' },
-  legal: { marginTop: spacing.xl },
+  or: { gap: spacing.sm, marginTop: spacing.md },
+  legal: { marginTop: spacing.lg },
 });

@@ -11,15 +11,18 @@ import { Heading } from './Heading';
 const COPY: Record<Exclude<CaptureUnavailableReason, 'ok'>, { title: string; line: string }> = {
   platform: {
     title: 'Scan on your iPhone',
-    line: 'Scanning needs an iPhone Pro with LiDAR. Your scans show up here.',
+    line: 'Use the same email there and your scans show up here.',
   },
   module: {
     title: 'This app cannot scan',
     line: `Update ${BRAND_NAME} on this iPhone and try again.`,
   },
+  // 'device' means neither LiDAR capture nor the ARKit photo capture runs
+  // (nativeCapture.ts), so naming a Pro model here would be wrong: photo
+  // capture covers any iPhone that runs iOS 17.
   device: {
     title: 'This iPhone cannot scan',
-    line: 'Scanning needs an iPhone 12 Pro or later Pro model on iOS 17 or later.',
+    line: 'Scanning needs a newer iPhone on iOS 17 or later.',
   },
 };
 

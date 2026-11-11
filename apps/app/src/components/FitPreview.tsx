@@ -68,10 +68,10 @@ export function FitPreview({
     return left || right ? (
       <View style={styles.notice}>
         <Body variant="bodyStrong" color={colors.danger}>
-          The fit preview failed to draw.
+          The fit preview did not draw.
         </Body>
         <Body variant="bodySmall" color={colors.textSecondary}>
-          Some measurements from this scan are missing or out of range. A rescan fixes it.
+          Some measurements from this scan are missing or out of range. Rescanning usually fixes it.
         </Body>
       </View>
     ) : (
@@ -129,8 +129,7 @@ export function FitPreview({
       </View>
 
       <Body variant="caption" color={colors.textSecondary} style={styles.caption}>
-        An approximate preview from your scan measurements. Your guard is made from the full CAD
-        model.
+        An approximate preview. Your guard is made from all of your measurements, not this drawing.
       </Body>
     </View>
   );

@@ -1,8 +1,10 @@
 import { Feather } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import type { ColorValue } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, typography } from '../../src/theme/tokens';
+import { tabBarLabelStyle, tabBarStyle } from '../../src/theme/navigation';
+import { colors } from '../../src/theme/tokens';
 
 type IconName = keyof typeof Feather.glyphMap;
 
@@ -13,22 +15,17 @@ function tabIcon(name: IconName) {
 }
 
 export default function TabsLayout() {
+  // Height follows the real inset: a fixed 84 pt clips on some devices and
+  // wastes space on web and Android, where the bottom inset is 0.
+  const insets = useSafeAreaInsets();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.onDark,
         tabBarInactiveTintColor: colors.onDarkMuted,
-        tabBarStyle: {
-          backgroundColor: colors.surfaceDark,
-          borderTopWidth: 0,
-          height: 84,
-          paddingTop: 10,
-        },
-        tabBarLabelStyle: {
-          fontFamily: typography.label.fontFamily,
-          fontSize: 11,
-        },
+        tabBarStyle: tabBarStyle(insets.bottom),
+        tabBarLabelStyle,
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Scans', tabBarIcon: tabIcon('aperture') }} />

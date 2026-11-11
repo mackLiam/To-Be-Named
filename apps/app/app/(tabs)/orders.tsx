@@ -2,16 +2,18 @@ import type { OrderStatus } from '@forms/shared';
 import * as Linking from 'expo-linking';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
 import { Screen } from '../../src/components/Screen';
+import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateView';
 import { StatusLabel, type StatusTone } from '../../src/components/StatusLabel';
 import { useOrders } from '../../src/hooks/useOrders';
 import { formatMoney } from '../../src/lib/checkout';
 import { orderReference, trackingUrl } from '../../src/lib/orders';
+import { listView } from '../../src/lib/uiState';
 import { colors, spacing } from '../../src/theme/tokens';
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -47,19 +49,30 @@ export default function OrdersScreen() {
     }, [reload]),
   );
 
+  const view = listView({ loading, error, count: orders.length });
+
   return (
     <Screen title="Orders" onRefresh={reload} refreshing={loading && orders.length > 0}>
-      {loading && orders.length === 0 && <ActivityIndicator color={colors.textPrimary} />}
+      {view === 'loading' && <LoadingState label="Loading your orders" />}
 
-      {error && <Body color={colors.danger}>Could not load your orders. Pull down to retry.</Body>}
+      {view === 'error' && (
+        <ErrorState
+          title="Your orders did not load."
+          line="Check your connection."
+          onRetry={reload}
+        />
+      )}
 
-      {!loading && !error && orders.length === 0 && (
-        <View style={styles.empty}>
-          <Body color={colors.textSecondary}>No orders yet.</Body>
-          <Button variant="outline" onPress={() => router.navigate('/')}>
-            Go to your scans
-          </Button>
-        </View>
+      {view === 'empty' && (
+        <EmptyState
+          title="No orders yet"
+          line="Guards are ordered from a measured scan."
+          action={
+            <Button variant="outline" onPress={() => router.navigate('/')}>
+              Go to your scans
+            </Button>
+          }
+        />
       )}
 
       {orders.map((order) => (
@@ -108,7 +121,6 @@ function Tracking({ carrier, number }: { carrier: string | null; number: string 
 }
 
 const styles = StyleSheet.create({
-  empty: { gap: spacing.lg },
   row: {
     gap: spacing.xs,
     paddingVertical: spacing.md,

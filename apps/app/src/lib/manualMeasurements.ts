@@ -64,6 +64,11 @@ const DIM_LABELS: Record<SliceDim, string> = {
   ICD: 'Inner calf depth',
 };
 
+/** Plain name for a slice dimension, for tables that list every slice. */
+export function dimLabel(dim: SliceDim): string {
+  return DIM_LABELS[dim];
+}
+
 export function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }

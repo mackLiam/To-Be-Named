@@ -138,6 +138,43 @@ export const typography = {
   button: { fontFamily: fontFamily.bodyBold, fontSize: 17, lineHeight: 22, letterSpacing: 0 },
 } as const;
 
+export type TypeLevel = keyof typeof typography;
+
+/**
+ * Dynamic type ceilings. Body text scales with the system setting without a
+ * cap (WCAG 1.4.4 asks for 200%); display levels are capped because a 56 pt
+ * headline at 3x breaks words mid-glyph on a 360 pt screen, and a capped
+ * headline is still far larger than the body text it heads.
+ */
+export const maxFontScale: Record<TypeLevel, number | undefined> = {
+  display: 1.25,
+  h1: 1.35,
+  h2: 1.5,
+  h3: 1.75,
+  body: undefined,
+  bodyStrong: undefined,
+  bodySmall: undefined,
+  label: 2,
+  caption: undefined,
+  button: 2,
+};
+
+// ---------------------------------------------------------------------------
+// Sizing - touch targets and control heights, one definition for every
+// tappable thing (Apple HIG and WCAG 2.5.5 both ask for 44 pt or more).
+// ---------------------------------------------------------------------------
+
+export const sizing = {
+  /** Smallest tappable area, any control. */
+  hitTarget: 44,
+  /** Full-size buttons, rows and fields. */
+  control: 56,
+  /** Screen side gutter. */
+  gutter: spacing.lg,
+  /** Reading column cap on wide web windows. */
+  column: 560,
+} as const;
+
 // Fonts to load with expo-font in the root layout. Keys match fontFamily
 // values above so useFonts(fontsToLoad) and the tokens stay in sync.
 export const fontsToLoad = {
@@ -149,6 +186,6 @@ export const fontsToLoad = {
   Manrope_700Bold: 'Manrope_700Bold',
 } as const;
 
-export const theme = { colors, radius, spacing, fontFamily, typography } as const;
+export const theme = { colors, radius, spacing, sizing, fontFamily, typography } as const;
 
 export type Theme = typeof theme;

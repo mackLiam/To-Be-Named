@@ -1,12 +1,13 @@
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
 import { Screen } from '../../src/components/Screen';
+import { ErrorState, LoadingState } from '../../src/components/StateView';
 import { SESSION_TONE, StatusLabel } from '../../src/components/StatusLabel';
 import { useScanSessions } from '../../src/hooks/useScans';
 import { isCaptureSupported } from '../../src/lib/capture';
@@ -18,7 +19,10 @@ import {
   type Scan,
   type ScanSession,
 } from '../../src/lib/library';
-import { colors, radius, spacing } from '../../src/theme/tokens';
+import { listView } from '../../src/lib/uiState';
+import { colors, radius, sizing, spacing } from '../../src/theme/tokens';
+
+import guardPair from '../../assets/products/guard-pair.jpg';
 
 export default function ScansScreen() {
   const router = useRouter();
@@ -39,31 +43,43 @@ export default function ScansScreen() {
     }, [reload]),
   );
 
-  const firstLoad = loading && sessions.length === 0;
+  const view = listView({ loading, error, count: sessions.length });
 
   return (
     <Screen title="Scans" onRefresh={reload} refreshing={loading && sessions.length > 0}>
       <View style={styles.hero}>
-        <View style={styles.accent} />
-        <Heading level="h1" color={colors.onDark}>
-          {canCapture ? 'Scan your legs' : 'Scan on your iPhone'}
-        </Heading>
-        <Body color={colors.onDarkMuted}>
-          {canCapture
-            ? 'Both legs, about ten minutes.'
-            : 'Needs an iPhone Pro with LiDAR. Scans show up here.'}
-        </Body>
-        {canCapture && (
-          <View style={styles.heroAction}>
-            <Button onPress={() => router.push('/capture-info')}>Start a scan</Button>
-          </View>
-        )}
+        <Image
+          source={guardPair}
+          style={styles.heroImage}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+        <View style={styles.heroBody}>
+          <View style={styles.accent} />
+          <Heading level="h1" color={colors.onDark}>
+            {canCapture ? 'Scan your legs' : 'Scan on your iPhone'}
+          </Heading>
+          <Body color={colors.onDarkMuted}>
+            {canCapture
+              ? 'Both legs, about ten minutes.'
+              : 'Use the same email there and your scans show up here.'}
+          </Body>
+          {canCapture && (
+            <View style={styles.heroAction}>
+              <Button onPress={() => router.push('/capture-info')}>Start a scan</Button>
+            </View>
+          )}
+        </View>
       </View>
 
-      {firstLoad && <ActivityIndicator color={colors.textPrimary} style={styles.loader} />}
+      {view === 'loading' && <LoadingState label="Loading your scans" />}
 
-      {error && (
-        <Body color={colors.danger}>Could not load your scans. Pull down to try again.</Body>
+      {view === 'error' && (
+        <ErrorState
+          title="Your scans did not load."
+          line="Check your connection."
+          onRetry={reload}
+        />
       )}
 
       {sessions.length > 0 && (
@@ -108,20 +124,26 @@ const styles = StyleSheet.create({
   hero: {
     backgroundColor: colors.surfaceDark,
     borderRadius: radius,
-    paddingTop: spacing.lg,
+    overflow: 'hidden',
+    marginBottom: spacing.xl,
+  },
+  // Explicit height, not aspectRatio: a bundled asset brings its own intrinsic
+  // height into the style, and with both set yoga ignores aspectRatio.
+  heroImage: { width: '100%', height: 168 },
+  heroBody: {
+    paddingTop: spacing.md,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
-    marginBottom: spacing.xl,
   },
   accent: { width: 40, height: 4, backgroundColor: colors.accentOnDark, marginBottom: spacing.sm },
   heroAction: { marginTop: spacing.md },
-  loader: { marginTop: spacing.lg },
   listLabel: { marginBottom: spacing.xs },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+    minHeight: sizing.control,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,

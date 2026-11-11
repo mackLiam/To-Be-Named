@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AA_LARGE_TEXT, AA_NORMAL_TEXT, contrastRatio } from './contrast';
-import { colors, fontFamily, radius, spacing, typography } from './tokens';
+import { colors, fontFamily, maxFontScale, radius, sizing, spacing, typography } from './tokens';
 
 describe('brand colors', () => {
   it('pins the four FORMS palette colors from the designer', () => {
@@ -44,6 +44,10 @@ describe('contrast rules', () => {
 
   it.each(pairs)('passes AA normal text: %s', (_name, fg, bg) => {
     expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+
+  it('keeps disabled button labels readable (exempt from AA, held to large-text contrast)', () => {
+    expect(contrastRatio(colors.textTertiary, colors.border)).toBeGreaterThanOrEqual(AA_LARGE_TEXT);
   });
 
   it('passes AA large text for bright brick accents on brown', () => {
@@ -108,5 +112,39 @@ describe('typography', () => {
   it('has a large jump between body text and the smallest heading', () => {
     expect(typography.h3.fontSize - typography.body.fontSize).toBeGreaterThanOrEqual(4);
     expect(typography.display.fontSize - typography.h1.fontSize).toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe('sizing', () => {
+  it('keeps every touch target at 44 pt or more', () => {
+    expect(sizing.hitTarget).toBeGreaterThanOrEqual(44);
+    expect(sizing.control).toBeGreaterThanOrEqual(sizing.hitTarget);
+  });
+
+  it('takes the gutter from the spacing scale', () => {
+    expect(Object.values(spacing)).toContain(sizing.gutter);
+  });
+});
+
+describe('dynamic type ceilings', () => {
+  it('never caps body text, so it can reach 200%', () => {
+    for (const level of ['body', 'bodyStrong', 'bodySmall', 'caption'] as const) {
+      expect(maxFontScale[level]).toBeUndefined();
+    }
+  });
+
+  it('caps headings at or above 1.25x, loosening as the level gets smaller', () => {
+    const caps = (['display', 'h1', 'h2', 'h3'] as const).map((l) => maxFontScale[l] ?? Infinity);
+    expect(caps[0]).toBeGreaterThanOrEqual(1.25);
+    expect(caps).toEqual([...caps].sort((a, b) => a - b));
+  });
+
+  it('lets small label and button text reach 200%', () => {
+    expect(maxFontScale.label).toBeGreaterThanOrEqual(2);
+    expect(maxFontScale.button).toBeGreaterThanOrEqual(2);
+  });
+
+  it('has a ceiling entry for every type level', () => {
+    expect(Object.keys(maxFontScale).sort()).toEqual(Object.keys(typography).sort());
   });
 });

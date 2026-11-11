@@ -1,29 +1,32 @@
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { Body } from '../../src/components/Body';
 import { Button } from '../../src/components/Button';
 import { Heading } from '../../src/components/Heading';
 import { ListGroup, ListRow } from '../../src/components/List';
 import { Screen } from '../../src/components/Screen';
+import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateView';
 import { useAccount } from '../../src/hooks/useAccount';
 import { useProducts } from '../../src/hooks/useProducts';
 import { useScanSessions } from '../../src/hooks/useScans';
 import { canPlaceOrder } from '../../src/lib/auth';
 import { formatMoney } from '../../src/lib/checkout';
 import { newestOrderableSessionKey } from '../../src/lib/library';
-import { colors, radius, spacing, typography } from '../../src/theme/tokens';
+import { listView } from '../../src/lib/uiState';
+import { colors, maxFontScale, radius, spacing, typography } from '../../src/theme/tokens';
 
 export default function ShopScreen() {
-  const { data: products, loading, error } = useProducts();
+  const { data: products, loading, error, reload } = useProducts();
   const { account } = useAccount();
   const { sessions } = useScanSessions();
   const router = useRouter();
   const member = canPlaceOrder(account);
   const orderFrom = newestOrderableSessionKey(sessions);
+  const view = listView({ loading, error, count: products.length });
 
   return (
-    <Screen title="Shop">
+    <Screen title="Shop" onRefresh={reload} refreshing={loading && products.length > 0}>
       {!member && (
         <ListGroup>
           <ListRow
@@ -43,13 +46,13 @@ export default function ShopScreen() {
         </ListGroup>
       )}
 
-      {loading && <ActivityIndicator color={colors.textPrimary} />}
+      {view === 'loading' && <LoadingState label="Loading guards" />}
 
-      {error && <Body color={colors.danger}>Could not load the shop. Try again shortly.</Body>}
-
-      {!loading && !error && products.length === 0 && (
-        <Body color={colors.textSecondary}>No guards on sale right now.</Body>
+      {view === 'error' && (
+        <ErrorState title="The shop did not load." line="Check your connection." onRetry={reload} />
       )}
+
+      {view === 'empty' && <EmptyState title="Nothing on sale right now" />}
 
       {products.map((product) => (
         <View key={product.id} style={styles.product}>
@@ -65,7 +68,7 @@ export default function ShopScreen() {
             <Heading level="h2" style={styles.name}>
               {product.name}
             </Heading>
-            <Text style={[typography.h3, styles.price]}>
+            <Text maxFontSizeMultiplier={maxFontScale.h3} style={[typography.h3, styles.price]}>
               {formatMoney(product.priceCents, product.currency)}
             </Text>
           </View>

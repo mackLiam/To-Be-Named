@@ -1,8 +1,9 @@
+import { Feather } from '@expo/vector-icons';
 import type { PropsWithChildren, ReactNode } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, spacing } from '../theme/tokens';
+import { colors, maxFontScale, sizing, spacing, typography } from '../theme/tokens';
 import { Heading } from './Heading';
 
 interface ScreenProps extends PropsWithChildren {
@@ -13,6 +14,12 @@ interface ScreenProps extends PropsWithChildren {
   /** Enables pull-to-refresh. */
   onRefresh?: () => void;
   refreshing?: boolean;
+  /**
+   * A back control above the content, for stack screens shown without a
+   * native header. On web there is no swipe-back, so without this a guided
+   * screen can feel like a dead end.
+   */
+  back?: { label: string; onPress: () => void };
 }
 
 /**
@@ -20,7 +27,14 @@ interface ScreenProps extends PropsWithChildren {
  * so buttons stay thumb-width on a wide web window; tab screens get their
  * bottom inset from the tab bar, footer screens take it here.
  */
-export function Screen({ children, title, footer, onRefresh, refreshing = false }: ScreenProps) {
+export function Screen({
+  children,
+  title,
+  footer,
+  onRefresh,
+  refreshing = false,
+  back,
+}: ScreenProps) {
   return (
     <SafeAreaView
       style={styles.safeArea}
@@ -43,6 +57,7 @@ export function Screen({ children, title, footer, onRefresh, refreshing = false 
           )
         }
       >
+        {back && <BackBar {...back} />}
         {title && (
           <Heading level="h1" style={styles.title}>
             {title}
@@ -52,6 +67,23 @@ export function Screen({ children, title, footer, onRefresh, refreshing = false 
       </ScrollView>
       {footer && <View style={styles.footer}>{footer}</View>}
     </SafeAreaView>
+  );
+}
+
+function BackBar({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={spacing.sm}
+      style={({ pressed }) => [styles.back, pressed && styles.backPressed]}
+    >
+      <Feather name="chevron-left" size={22} color={colors.textPrimary} />
+      <Text maxFontSizeMultiplier={maxFontScale.button} style={styles.backLabel}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -65,20 +97,36 @@ const styles = StyleSheet.create({
   },
   content: {
     width: '100%',
-    maxWidth: 560,
-    paddingHorizontal: spacing.lg,
+    maxWidth: sizing.column,
+    paddingHorizontal: sizing.gutter,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
   },
   title: {
     marginBottom: spacing.lg,
   },
+  // The rule marks the pinned action as separate from the scrolling content.
   footer: {
     width: '100%',
-    maxWidth: 560,
-    paddingHorizontal: spacing.lg,
+    maxWidth: sizing.column,
+    paddingHorizontal: sizing.gutter,
     paddingTop: spacing.md,
     paddingBottom: spacing.md,
     gap: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
+  back: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    minHeight: sizing.hitTarget,
+    marginLeft: -spacing.sm,
+    marginTop: -spacing.md,
+    marginBottom: spacing.md,
+    paddingRight: spacing.sm,
+    gap: spacing.xs,
+  },
+  backPressed: { opacity: 0.6 },
+  backLabel: { ...typography.button, color: colors.textPrimary },
 });

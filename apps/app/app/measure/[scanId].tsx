@@ -9,6 +9,7 @@ import { Heading } from '../../src/components/Heading';
 import { MeasureDiagram } from '../../src/components/MeasureDiagram';
 import { Rule } from '../../src/components/Rule';
 import { Screen } from '../../src/components/Screen';
+import { LoadingState } from '../../src/components/StateView';
 import {
   STEPS,
   useManualMeasurements,
@@ -55,7 +56,7 @@ export default function MeasureScreen() {
   if (scanId === NEW_SCAN_ID && !leg) {
     return (
       <Screen>
-        <Heading level="h1">Pick a leg first.</Heading>
+        <Heading level="h1">Pick a leg first</Heading>
         <View style={{ height: spacing.md }} />
         <Body>We could not tell which leg to measure. Go back and start again.</Body>
         <View style={{ height: spacing.lg }} />
@@ -69,7 +70,7 @@ export default function MeasureScreen() {
   if (flow.loading) {
     return (
       <Screen>
-        <Body color={colors.textSecondary}>Loading the measurements from your scan.</Body>
+        <LoadingState label="Loading the measurements from your scan" />
       </Screen>
     );
   }
@@ -77,7 +78,7 @@ export default function MeasureScreen() {
   if (flow.loadError) {
     return (
       <Screen>
-        <Heading level="h1">Nothing to check yet.</Heading>
+        <Heading level="h1">Nothing to check yet</Heading>
         <View style={{ height: spacing.md }} />
         <Body>{flow.loadError}</Body>
         <View style={{ height: spacing.lg }} />
@@ -137,7 +138,7 @@ const NEEDS = ['A soft tape measure or a ruler', 'Two hardback books', 'A pen to
 function Intro({ onStart, onCancel }: { onStart: () => void; onCancel: () => void }) {
   return (
     <>
-      <Heading level="display">Measure by hand.</Heading>
+      <Heading level="display">Measure by hand</Heading>
       <View style={{ height: spacing.md }} />
       <Body style={styles.reading}>
         Nine measurements, about ten minutes. A scan is more accurate, so scan again when you can.
@@ -395,7 +396,7 @@ function Review({
 
   return (
     <>
-      <Heading level="display">{adjust ? 'Check your scan.' : 'Check your numbers.'}</Heading>
+      <Heading level="display">{adjust ? 'Check your scan' : 'Check your numbers'}</Heading>
       <View style={{ height: spacing.md }} />
       <Body style={styles.reading}>
         {adjust
@@ -500,7 +501,7 @@ function Review({
         </View>
       )}
       <View style={styles.actions}>
-        <Button onPress={onSubmit} disabled={!flow.canSubmit}>
+        <Button onPress={onSubmit} disabled={!flow.canSubmit} busy={flow.submitting}>
           {flow.submitting ? 'Sending' : 'Send measurements'}
         </Button>
         <Button variant="outline" onPress={onCancel} disabled={flow.submitting}>
@@ -570,7 +571,8 @@ function ReviewRow({
 const styles = StyleSheet.create({
   reading: { maxWidth: 520 },
   instruction: { maxWidth: 520, marginBottom: spacing.sm },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  // Stacked, full width: the primary action is never a content-width chip.
+  actions: { gap: spacing.sm, maxWidth: 520 },
   needRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.md },
   needNumber: { ...typography.h3, color: colors.textPrimary, minWidth: 32 },
   counterRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
@@ -607,7 +609,7 @@ const styles = StyleSheet.create({
     minWidth: 120,
     color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
-    ...(Platform.OS === 'web' ? { outlineWidth: 0 } : null),
+    ...(Platform.OS === 'web' ? { outlineStyle: 'solid' as const, outlineWidth: 0 } : null),
   },
   inputCompact: { ...typography.bodyStrong, minWidth: 48 },
   unit: { ...typography.bodyStrong, color: colors.textSecondary, marginLeft: spacing.sm },

@@ -108,8 +108,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     backgroundColor: colors.background,
     color: colors.textPrimary,
-    // The focus border below replaces the browser outline.
-    ...(Platform.OS === 'web' ? { outlineWidth: 0 } : null),
+    // The focus border below replaces the browser outline. Width 0 alone is
+    // not enough: RN web leaves `outline-style: auto`, which Chrome draws as a
+    // blue ring at any width. A solid outline at width 0 draws nothing.
+    ...(Platform.OS === 'web' ? { outlineStyle: 'solid' as const, outlineWidth: 0 } : null),
   },
   emailText: typography.bodyStrong,
   codeText: {

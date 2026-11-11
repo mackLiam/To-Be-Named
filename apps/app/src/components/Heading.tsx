@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from 'react';
 import { Text, type TextStyle } from 'react-native';
 
-import { colors, typography } from '../theme/tokens';
+import { colors, maxFontScale, typography } from '../theme/tokens';
 
 type Level = 'display' | 'h1' | 'h2' | 'h3';
 
@@ -29,7 +29,11 @@ export function Heading({
   style,
 }: HeadingProps) {
   return (
-    <Text accessibilityRole="header" style={[LEVEL_STYLES[level], { color }, style]}>
+    <Text
+      accessibilityRole="header"
+      maxFontSizeMultiplier={maxFontScale[level]}
+      style={[LEVEL_STYLES[level], { color }, style]}
+    >
       {children}
     </Text>
   );

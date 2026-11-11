@@ -171,7 +171,7 @@ describe('checkoutErrorMessage', () => {
       const message = checkoutErrorMessage(code);
       expect(message).toMatch(/^[A-Z].*\.$/);
       expect(message).not.toContain('_');
-      expect(message).not.toMatch(/[–—]/);
+      expect(message).not.toMatch(/[\u2013\u2014]/);
     }
   });
 
