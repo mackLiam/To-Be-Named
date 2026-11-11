@@ -9,6 +9,10 @@ describe('activeAdminNav', () => {
       '/admin/orders',
     );
     expect(activeAdminNav('/admin/products/new')).toBe('/admin/products');
+    expect(activeAdminNav('/admin/print-queue')).toBe('/admin/print-queue');
+    expect(activeAdminNav('/admin/orders/9f1c2d3e-0000-4000-8000-000000000000/packing-slip')).toBe(
+      '/admin/orders',
+    );
     expect(activeAdminNav('/admin/customers')).toBe('/admin/customers');
     expect(activeAdminNav('/admin/waitlist')).toBe('/admin/waitlist');
     expect(activeAdminNav('/admin/audit/')).toBe('/admin/audit');

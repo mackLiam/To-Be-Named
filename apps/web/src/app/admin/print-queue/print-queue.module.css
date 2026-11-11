@@ -1,0 +1,40 @@
+/* Print queue extras. Table, badges, pager and buttons come from admin.module.css. */
+
+.legList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.leg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm) var(--space-md);
+  min-width: 0;
+}
+
+.legSide {
+  font-weight: 700;
+  min-width: 4ch;
+}
+
+.legState {
+  overflow-wrap: anywhere;
+}
+
+/* Brown block on yellow text pairing, same as the filter toggle. */
+.remakeMark {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--brown-900);
+  color: var(--yellow);
+  border-radius: var(--radius);
+  padding: 2px var(--space-sm);
+}

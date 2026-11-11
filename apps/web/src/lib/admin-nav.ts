@@ -1,6 +1,7 @@
 /** Admin top-bar sections, in display order. */
 export const ADMIN_NAV = [
   { href: '/admin/orders', label: 'Orders' },
+  { href: '/admin/print-queue', label: 'Print queue' },
   { href: '/admin/customers', label: 'Customers' },
   { href: '/admin/products', label: 'Products' },
   { href: '/admin', label: 'Pipeline queue' },

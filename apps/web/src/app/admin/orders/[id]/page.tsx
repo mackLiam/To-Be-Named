@@ -80,6 +80,9 @@ export default async function OrderDetailPage({
           <h1 className={`${styles.title} ${styles.mono}`}>{shortId(order.id)}</h1>
           <StatusBadge status={order.status} kind="order" />
         </div>
+        <Link href={`/admin/orders/${order.id}/packing-slip`} className={styles.secondaryBtn}>
+          Packing slip
+        </Link>
       </div>
 
       {error ? (

@@ -9,10 +9,20 @@ import {
   fakeOrderDetail,
   fakeOrders,
   fakeProductImages,
+  fakePrintQueue,
   fakeProducts,
   fakeTimeline,
   fakeTriage,
 } from './fake';
+import {
+  JOBS_PER_ORDER,
+  PRINT_QUEUE_STATUSES,
+  clampQueuePage,
+  type PrintQueueOrder,
+  type QueueJob,
+  type QueueOrder,
+  type SlipOrder,
+} from './print-queue';
 import { MAX_IMAGES_PER_PRODUCT } from './product-images';
 import { MAX_REFUNDS_PER_ORDER } from './refund';
 import { lookaheadRange, splitLookahead } from './pagination';
@@ -176,6 +186,96 @@ export async function listOrders(opts: {
 }
 
 const REMAKE_LIST_LIMIT = 20;
+
+/**
+ * The few columns a packing slip prints. A narrow read on purpose: no payment
+ * columns, no scans, no customer lookup (the slip is paper).
+ */
+export async function getPackingSlipOrder(id: string): Promise<SlipOrder | null> {
+  if (!isUuid(id)) {
+    return null;
+  }
+  if (shouldUseFake()) {
+    return fakeOrderDetail(id);
+  }
+  const client = await serviceClient();
+  const { data, error } = await client
+    .from('orders')
+    .select('id, scan_id_left, scan_id_right, remake_of, address, products(name)')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  if (!data) {
+    return null;
+  }
+  const { products, ...rest } = data as unknown as Omit<SlipOrder, 'product_name'> & {
+    products: { name: string } | null;
+  };
+  return { ...rest, product_name: products?.name ?? null };
+}
+
+type QueueOrderRow = Omit<QueueOrder, 'product_name'> & { products: { name: string } | null };
+
+/**
+ * Paid and in_production orders, oldest payment first, each with its CAD jobs
+ * (product_id set; measure jobs are not part of the print queue). One bounded
+ * orders page plus one bounded jobs read; stl_path is read as a single text
+ * field so the artifacts blob never leaves the database.
+ */
+export async function listPrintQueue(opts: {
+  page: number;
+  pageSize: number;
+}): Promise<ListResult<PrintQueueOrder>> {
+  const page = clampQueuePage(opts.page);
+  if (shouldUseFake()) {
+    const start = (page - 1) * opts.pageSize;
+    return splitLookahead(fakePrintQueue().slice(start, start + opts.pageSize + 1), opts.pageSize);
+  }
+
+  const client = await serviceClient();
+  const { from, to } = lookaheadRange(page, opts.pageSize);
+  const { data, error } = await client
+    .from('orders')
+    .select(
+      'id, status, scan_id_left, scan_id_right, remake_of, remake_reason, paid_at, created_at, products(name)',
+    )
+    .in('status', [...PRINT_QUEUE_STATUSES])
+    .order('paid_at', { ascending: true, nullsFirst: false })
+    .order('id', { ascending: true })
+    .range(from, to);
+  if (error) {
+    throw error;
+  }
+  const orders = splitLookahead((data ?? []) as unknown as QueueOrderRow[], opts.pageSize);
+  if (orders.rows.length === 0) {
+    return { rows: [], hasNext: false };
+  }
+
+  const ids = orders.rows.map((row) => row.id);
+  const jobs = await client
+    .from('pipeline_jobs')
+    .select('id, order_id, scan_id, step, status, created_at, stl_path:artifacts->>stl_path')
+    .in('order_id', ids)
+    .not('product_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(ids.length * JOBS_PER_ORDER);
+  if (jobs.error) {
+    throw jobs.error;
+  }
+  const byOrder = new Map<string, QueueJob[]>();
+  for (const job of (jobs.data ?? []) as unknown as QueueJob[]) {
+    byOrder.set(job.order_id, [...(byOrder.get(job.order_id) ?? []), job]);
+  }
+  return {
+    rows: orders.rows.map(({ products, ...row }) => ({
+      order: { ...row, product_name: products?.name ?? null },
+      jobs: byOrder.get(row.id) ?? [],
+    })),
+    hasNext: orders.hasNext,
+  };
+}
 
 export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   if (!isUuid(id)) {

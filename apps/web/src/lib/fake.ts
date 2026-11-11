@@ -1,5 +1,6 @@
 import { MEASUREMENT_KEYS, type MeasurementKey } from '@forms/shared';
 
+import { PRINT_QUEUE_STATUSES, type PrintQueueOrder } from './print-queue';
 import type {
   CustomerRow,
   JobRow,
@@ -440,4 +441,30 @@ export function fakeTriage(jobId: string): TriageData | null {
     gates: job.error?.gates ?? [],
     values: job.step === 'measuring' ? buildFakeValues() : null,
   };
+}
+
+const FAKE_STL_STEPS = ['stl_ready', 'queued_for_print', 'printing', 'shipped'];
+
+/** Paid and in_production orders, oldest payment first, with their CAD jobs. */
+export function fakePrintQueue(): PrintQueueOrder[] {
+  return fakeOrders
+    .filter((row) => (PRINT_QUEUE_STATUSES as readonly string[]).includes(row.status))
+    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
+    .map((row) => ({
+      order: { ...row, paid_at: row.created_at },
+      jobs: fakeJobs
+        .filter((job) => job.order_id === row.id)
+        .map((job) => ({
+          id: job.id,
+          order_id: row.id,
+          scan_id: job.scan_id,
+          step: job.step,
+          status: job.status,
+          created_at: job.created_at,
+          stl_path:
+            job.status === 'succeeded' && FAKE_STL_STEPS.includes(job.step)
+              ? `fake/${job.id}.stl`
+              : null,
+        })),
+    }));
 }

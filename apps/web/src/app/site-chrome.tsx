@@ -47,6 +47,9 @@ function SiteFooter() {
     <footer className={styles.footer}>
       <Wordmark surface="brown" className={styles.footerMark} />
       <nav aria-label="Site" className={styles.nav}>
+        <Link href="/faq">FAQ</Link>
+        <Link href="/sizing">Sizing</Link>
+        <Link href="/returns">Returns</Link>
         <Link href="/support">Support</Link>
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Terms</Link>
