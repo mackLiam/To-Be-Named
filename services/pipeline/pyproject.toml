@@ -41,6 +41,10 @@ forms-replay = "forms_pipeline.replay.cli:run"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The estimator prior is data the package loads at runtime (shape/prior.py).
+[tool.setuptools.package-data]
+forms_pipeline = ["shape/priors/*.json"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

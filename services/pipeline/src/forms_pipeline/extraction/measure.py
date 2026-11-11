@@ -146,7 +146,8 @@ def _detect_scale(mesh: trimesh.Trimesh) -> bool:
     return float(mesh.bounding_box.extents.max()) < METERS_HEURISTIC_MAX_DIM
 
 
-def _slice_dims(mesh_rot: trimesh.Trimesh, z: float) -> dict[str, float]:
+def slice_dims(mesh_rot: trimesh.Trimesh, z: float) -> dict[str, float]:
+    """The six slice dimensions (mm) of an oriented mesh's section at height z."""
     section = mesh_rot.section(plane_origin=[0.0, 0.0, z], plane_normal=[0.0, 0.0, 1.0])
     if section is None:
         raise MeasurementError(
@@ -177,13 +178,12 @@ def _slice_dims(mesh_rot: trimesh.Trimesh, z: float) -> dict[str, float]:
     }
 
 
-def extract_measurements(mesh: trimesh.Trimesh) -> ExtractionResult:
-    """Extract the 25-variable measurement set (mm) from an already-validated mesh.
+def oriented_leg_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, float, bool]:
+    """The mesh in mm, rotated into the (width, depth, length) frame with the ankle at z = 0.
 
-    Assumes `mesh` has already passed `mesh_loading.load_mesh`'s untrusted-
-    input checks (size/vertex caps, non-degenerate geometry); this function
-    focuses purely on the geometry algorithm described in the module
-    docstring and raises `MeasurementError` if a slice cannot be measured.
+    Returns (rotated mesh, leg length mm, needs_scale_confirmation). Steps 1-4 of
+    the module docstring; shared by extract_measurements and shape/observe.py so
+    both measure the same sections.
     """
     needs_scale_confirmation = _detect_scale(mesh)
     scale = METERS_TO_MM if needs_scale_confirmation else 1.0
@@ -206,10 +206,22 @@ def extract_measurements(mesh: trimesh.Trimesh) -> ExtractionResult:
 
     leg_length = float(rotated[:, 2].max() - rotated[:, 2].min())
     mesh_rot = trimesh.Trimesh(vertices=rotated, faces=mesh.faces, process=False)
+    return mesh_rot, leg_length, needs_scale_confirmation
+
+
+def extract_measurements(mesh: trimesh.Trimesh) -> ExtractionResult:
+    """Extract the 25-variable measurement set (mm) from an already-validated mesh.
+
+    Assumes `mesh` has already passed `mesh_loading.load_mesh`'s untrusted-
+    input checks (size/vertex caps, non-degenerate geometry); this function
+    focuses purely on the geometry algorithm described in the module
+    docstring and raises `MeasurementError` if a slice cannot be measured.
+    """
+    mesh_rot, leg_length, needs_scale_confirmation = oriented_leg_mesh(mesh)
 
     values: dict[str, float] = {"Leg_Length": leg_length}
     for slice_name, fraction in SLICE_FRACTIONS.items():
-        dims = _slice_dims(mesh_rot, z=fraction * leg_length)
+        dims = slice_dims(mesh_rot, z=fraction * leg_length)
         for dim_name, value in dims.items():
             values[f"{slice_name}_{dim_name}"] = value
 
