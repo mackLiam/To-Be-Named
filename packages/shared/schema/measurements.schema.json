@@ -1,161 +1,161 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zells.com/schemas/measurements-1.0.0.json",
+  "$id": "https://zells.com/schemas/measurements-1.1.0.json",
   "title": "Zells shin measurements",
-  "$comment": "Variable names CONFIRMED 2026-07-02 against the Onshape model's variable table (S1_ISW..S4_OD plus Leg_Length). Slices S1-S4 sit at 20/40/60/80 percent of Leg_Length measured up from the bottom of the ankle; Leg_Length runs from the bottom of the ankle to the knee. All values are millimeters. Renames now require a coordinated schema version bump across TS, Python, and the Onshape model.",
+  "$comment": "Variable names CONFIRMED 2026-07-02 against the Onshape model's variable table (S1_ISW..S4_OD plus Leg_Length). Slices S1-S4 sit at 20/40/60/80 percent of Leg_Length measured up from the bottom of the ankle; Leg_Length runs from the bottom of the ankle to the knee. All values are millimeters. 1.1.0 (2026-11-10): these are LEG measurements, as extraction and manual entry produce them. The Onshape model's variables with the same names are a different quantity (crest-relative points on the guard's inner curve, docs/DESIGN.md 12.2); the pipeline converts leg measurements to model values in exactly one place, services/pipeline/src/forms_pipeline/cad/profile.py, selected by the CAD descriptor's profile. Renames still require a coordinated schema version bump across TS, Python, and the Onshape model.",
   "type": "object",
-  "x-schema-version": "1.0.0",
+  "x-schema-version": "1.1.0",
   "additionalProperties": false,
   "properties": {
     "Leg_Length": {
       "type": "number",
       "minimum": 150,
       "maximum": 600,
-      "description": "Total leg length from the bottom of the ankle to the knee, in millimeters."
+      "description": "Leg length from the bottom of the ankle to the knee, in millimeters."
     },
     "S1_ISW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner shin width at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Width of the inner (medial) half of the cross-section, split at the section centroid (ISW + ICW = OW) at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S1_ISD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner shin depth at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Front-to-back depth of the inner (medial) half of the cross-section at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S1_ICW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner calf width at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Width of the outer (lateral) half of the cross-section, split at the section centroid (ISW + ICW = OW) at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S1_ICD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner calf depth at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Front-to-back depth of the outer (lateral) half of the cross-section at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S1_OW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Outer width at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Full width of the leg cross-section, side to side at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S1_OD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Outer depth at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Full depth of the leg cross-section, front to back at slice S1 (20 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S2_ISW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner shin width at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Width of the inner (medial) half of the cross-section, split at the section centroid (ISW + ICW = OW) at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S2_ISD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner shin depth at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Front-to-back depth of the inner (medial) half of the cross-section at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S2_ICW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner calf width at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Width of the outer (lateral) half of the cross-section, split at the section centroid (ISW + ICW = OW) at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S2_ICD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner calf depth at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Front-to-back depth of the outer (lateral) half of the cross-section at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S2_OW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Outer width at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Full width of the leg cross-section, side to side at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S2_OD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Outer depth at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Full depth of the leg cross-section, front to back at slice S2 (40 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S3_ISW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner shin width at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Width of the inner (medial) half of the cross-section, split at the section centroid (ISW + ICW = OW) at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S3_ISD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner shin depth at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Front-to-back depth of the inner (medial) half of the cross-section at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S3_ICW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner calf width at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Width of the outer (lateral) half of the cross-section, split at the section centroid (ISW + ICW = OW) at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S3_ICD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner calf depth at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Front-to-back depth of the outer (lateral) half of the cross-section at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S3_OW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Outer width at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Full width of the leg cross-section, side to side at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S3_OD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Outer depth at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Full depth of the leg cross-section, front to back at slice S3 (60 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S4_ISW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner shin width at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Width of the inner (medial) half of the cross-section, split at the section centroid (ISW + ICW = OW) at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S4_ISD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner shin depth at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Front-to-back depth of the inner (medial) half of the cross-section at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S4_ICW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner calf width at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Width of the outer (lateral) half of the cross-section, split at the section centroid (ISW + ICW = OW) at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S4_ICD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Inner calf depth at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Front-to-back depth of the outer (lateral) half of the cross-section at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S4_OW": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Outer width at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Full width of the leg cross-section, side to side at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     },
     "S4_OD": {
       "type": "number",
       "minimum": 30,
       "maximum": 220,
-      "description": "Outer depth at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters."
+      "description": "Full depth of the leg cross-section, front to back at slice S4 (80 percent of leg length above the bottom of the ankle), in millimeters. A leg measurement, not the Onshape variable of the same name."
     }
   },
   "required": [

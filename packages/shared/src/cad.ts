@@ -28,8 +28,25 @@ export const CAD_VARIABLE_KINDS = ['variable_studio', 'part_studio_features'] as
 
 export type CadVariableKind = (typeof CAD_VARIABLE_KINDS)[number];
 
+// The stored 25 values are leg measurements; the CAD model's same-named
+// variables are crest-relative points on the guard's inner curve. The pipeline
+// converts once, in services/pipeline/src/forms_pipeline/cad/profile.py; this
+// file only validates the descriptor.
+export const CAD_PROFILE_KINDS = ['identity', 'crest_spline_v1'] as const;
+
+export type CadProfileKind = (typeof CAD_PROFILE_KINDS)[number];
+
+export interface CadWrap {
+  inner_shin: number;
+  inner_calf: number;
+  outer: number;
+}
+
+export type CadProfile = { kind: 'identity' } | { kind: 'crest_spline_v1'; wrap: CadWrap };
+
 export type CadModelDescriptor = {
   provider: CadProvider;
+  profile: CadProfile;
   schema_version: string;
   ref: OnshapeRef | DryRunRef | Record<string, unknown>;
   variable_map?: Record<string, string> | null;
@@ -59,7 +76,7 @@ export function validateCadModelDescriptor(value: unknown): string[] {
     return ['(root): expected an object'];
   }
 
-  const { provider, schema_version, ref, variable_map, variable_kind } = value as Record<
+  const { provider, schema_version, ref, variable_map, variable_kind, profile } = value as Record<
     string,
     unknown
   >;
@@ -82,6 +99,7 @@ export function validateCadModelDescriptor(value: unknown): string[] {
   }
 
   errors.push(...validateVariableMap(variable_map));
+  errors.push(...validateProfile(profile));
 
   if (
     variable_kind !== undefined &&
@@ -92,6 +110,74 @@ export function validateCadModelDescriptor(value: unknown): string[] {
     );
   }
 
+  return errors;
+}
+
+function validateProfile(profile: unknown): string[] {
+  if (!isRecord(profile)) {
+    return [`profile: required object, got ${JSON.stringify(profile)}`];
+  }
+
+  const errors: string[] = [];
+  for (const key of Object.keys(profile)) {
+    if (key !== 'kind' && key !== 'wrap') {
+      errors.push(`profile.${key}: unknown key`);
+    }
+  }
+
+  const { kind, wrap } = profile;
+  if (!(CAD_PROFILE_KINDS as readonly unknown[]).includes(kind)) {
+    errors.push(
+      `profile.kind: expected one of ${CAD_PROFILE_KINDS.join(', ')}, got ${JSON.stringify(kind)}`,
+    );
+    return errors;
+  }
+
+  if (kind === 'identity') {
+    if ('wrap' in profile) {
+      errors.push('profile.wrap: not allowed for kind "identity"');
+    }
+    return errors;
+  }
+
+  if (!isRecord(wrap)) {
+    errors.push(
+      `profile.wrap: required object for kind "crest_spline_v1", got ${JSON.stringify(wrap)}`,
+    );
+    return errors;
+  }
+
+  const wrapKeys = ['inner_shin', 'inner_calf', 'outer'] as const;
+  for (const key of Object.keys(wrap)) {
+    if (!(wrapKeys as readonly string[]).includes(key)) {
+      errors.push(`profile.wrap.${key}: unknown key`);
+    }
+  }
+  let allFinite = true;
+  for (const key of wrapKeys) {
+    const v = wrap[key];
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      allFinite = false;
+      errors.push(`profile.wrap.${key}: required finite number, got ${JSON.stringify(v)}`);
+    }
+  }
+  if (!allFinite) return errors;
+
+  const { inner_shin, inner_calf, outer } = wrap as unknown as CadWrap;
+  if (!(inner_shin > 0)) {
+    errors.push(`profile.wrap.inner_shin: must be greater than 0, got ${inner_shin}`);
+  }
+  if (!(inner_shin < inner_calf)) {
+    errors.push(
+      `profile.wrap.inner_calf: must be greater than inner_shin (${inner_shin}), got ${inner_calf}`,
+    );
+  }
+  if (!(inner_calf < 1)) {
+    errors.push(`profile.wrap.inner_calf: must be less than 1, got ${inner_calf}`);
+  }
+  if (!(outer > 0 && outer < 1)) {
+    errors.push(`profile.wrap.outer: must be between 0 and 1 exclusive, got ${outer}`);
+  }
   return errors;
 }
 

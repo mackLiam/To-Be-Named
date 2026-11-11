@@ -87,7 +87,13 @@ describe('parseProductForm', () => {
   });
 
   it('accepts a valid CAD descriptor', () => {
-    const cad = { provider: 'dry_run', schema_version: '1.0.0', ref: {}, variable_map: null };
+    const cad = {
+      provider: 'dry_run',
+      schema_version: '1.1.0',
+      profile: { kind: 'identity' },
+      ref: {},
+      variable_map: null,
+    };
     const result = parseProductForm({ ...validForm, cad_model: JSON.stringify(cad) });
     expect(result.ok && result.value.cad_model).toEqual(cad);
   });

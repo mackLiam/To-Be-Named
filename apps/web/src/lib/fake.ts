@@ -100,7 +100,13 @@ export const fakeProducts: ProductRow[] = [
     currency: 'usd',
     image_url: null,
     active: true,
-    cad_model: { provider: 'dry_run', schema_version: '1.0.0', ref: {}, variable_map: null },
+    cad_model: {
+      provider: 'dry_run',
+      schema_version: '1.1.0',
+      profile: { kind: 'identity' },
+      ref: {},
+      variable_map: null,
+    },
     updated_at: t('2026-06-20T12:00:00Z'),
   },
   {

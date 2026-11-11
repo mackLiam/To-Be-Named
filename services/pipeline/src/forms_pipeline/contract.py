@@ -11,8 +11,11 @@ missing or malformed, and exposes:
   #7, driven entirely by the schema's `minimum`/`maximum` bounds so the
   ranges never drift out of sync with the schema file.
 
-The schema is frozen at 1.0.0 (names confirmed against the Onshape model
-2026-07-02, see its `$comment`). This module does not restate the contract;
+The schema is at 1.1.0: names and ranges unchanged since 1.0.0 (names
+confirmed against the Onshape model 2026-07-02), descriptions clarified as
+LEG measurements. The Onshape model's same-named variables are a different
+quantity; cad/profile.py is the one place leg values become model values
+(see the schema's `$comment`). This module does not restate the contract;
 it just enforces whatever the schema currently says.
 """
 

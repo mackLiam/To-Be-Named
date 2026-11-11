@@ -437,6 +437,7 @@ def test_provider_returns_cad_result_with_artifacts() -> None:
             "provider": "onshape",
             "schema_version": SCHEMA_VERSION,
             "ref": {"document_id": T_DID, "workspace_id": T_WID, "element_id": T_EID},
+            "profile": {"kind": "identity"},
         }
     )
     assert desc.variable_kind == "part_studio_features"

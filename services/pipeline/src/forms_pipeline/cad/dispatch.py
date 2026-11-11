@@ -2,7 +2,9 @@
 
 This is the single entry point the worker uses for CAD generation. It resolves
 the per-product descriptor (or falls back to an env-configured default model),
-selects the provider from the registry, and logs per-job CAD latency
+converts the leg measurements to model values per the descriptor's profile
+(cad/profile.py, the only place that conversion happens), selects the
+provider from the registry, and logs per-job CAD latency
 (docs/DESIGN.md section 7: measure per-order latency from day one, since
 Onshape regen/export is the pipeline's throughput ceiling).
 """
@@ -16,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from forms_pipeline.cad.model import CadModelDescriptor, CadResult
+from forms_pipeline.cad.profile import DEFAULT_PROFILE, apply_profile
 from forms_pipeline.cad.providers import CadProvider, get_provider
 from forms_pipeline.config import Settings
 from forms_pipeline.contract import SCHEMA_VERSION
@@ -28,7 +31,8 @@ def default_descriptor(settings: Settings) -> CadModelDescriptor:
 
     Used when a job has no order, or the ordered product carries no cad_model.
     Provider is "onshape" when credentials are configured, else "dry_run", so
-    Phase 0 plumbing works end to end without an Onshape account.
+    Phase 0 plumbing works end to end without an Onshape account. Carries the
+    default crest_spline_v1 profile.
     """
     provider = "dry_run" if settings.dry_run else "onshape"
     return CadModelDescriptor(
@@ -40,6 +44,7 @@ def default_descriptor(settings: Settings) -> CadModelDescriptor:
             "element_id": settings.onshape_element_id,
         },
         variable_map=None,
+        profile=DEFAULT_PROFILE,
     )
 
 
@@ -71,8 +76,12 @@ class CadDispatcher:
             else get_provider(descriptor.provider, self.settings)
         )
 
+        # Leg measurements in, model values out (mm both sides). Raises
+        # ProfileError (non-retriable) before any provider call.
+        values_model = apply_profile(values_mm, descriptor.profile)
+
         start = time.monotonic()
-        result = provider.generate_stl(job_id, values_mm, descriptor)
+        result = provider.generate_stl(job_id, values_model, descriptor)
         elapsed = time.monotonic() - start
         logger.info(
             "cad generation complete job=%s provider=%s elapsed_seconds=%.3f",
@@ -80,4 +89,11 @@ class CadDispatcher:
             descriptor.provider,
             elapsed,
         )
-        return result
+        return CadResult(
+            result.stl_bytes,
+            {
+                **result.artifacts,
+                "profile_kind": descriptor.profile.kind,
+                "model_values_mm": values_model,
+            },
+        )

@@ -8,7 +8,9 @@ import pytest
 import trimesh
 
 from forms_pipeline.cad.dispatch import CadDispatcher
+from forms_pipeline.cad.profile import DEFAULT_WRAP
 from forms_pipeline.config import Settings
+from forms_pipeline.contract import MEASUREMENT_KEYS
 from forms_pipeline.jobs import runner
 from forms_pipeline.jobs.runner import (
     STEP_HANDLERS,
@@ -28,6 +30,7 @@ from forms_pipeline.jobs.runner import (
 from forms_pipeline.onshape.client import OnshapeRejectedError
 
 ALL_STEPS = tuple(STEP_HANDLERS)
+DEFAULT_WRAP_DICT = DEFAULT_WRAP.model_dump()
 
 
 class FakeJobStore:
@@ -239,6 +242,7 @@ def test_generating_cad_with_per_product_descriptor_uploads_and_completes() -> N
         "schema_version": "1.0.0",
         "ref": {},
         "variable_map": None,
+        "profile": {"kind": "crest_spline_v1", "wrap": dict(DEFAULT_WRAP_DICT)},
     }
     ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
 
@@ -279,6 +283,7 @@ def test_generating_cad_bad_descriptor_fails_non_retriable() -> None:
         "schema_version": "1.0.0",
         "ref": {},
         "variable_map": None,
+        "profile": {"kind": "crest_spline_v1", "wrap": dict(DEFAULT_WRAP_DICT)},
     }
     store.jobs = [job]
     ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
@@ -290,6 +295,66 @@ def test_generating_cad_bad_descriptor_fails_non_retriable() -> None:
     assert failed_job_id == "job-1"
     assert retriable is False
     assert not store.completed
+
+
+def test_generating_cad_records_profile_artifacts() -> None:
+    store = FakeJobStore()
+    storage = FakeStorageClient()
+    _seed_measurements(store, "scan-1")
+    job = _cad_job("job-1", "scan-1", order_id=None)
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
+
+    handle_generating_cad(job, ctx)
+
+    [(_job_id, _step, artifacts)] = store.completed
+    cad = artifacts["cad"]
+    assert cad["profile_kind"] == "crest_spline_v1"
+    assert set(cad["model_values_mm"]) == set(MEASUREMENT_KEYS)
+    # Model values, not the seeded leg values (all 100mm).
+    assert cad["model_values_mm"] != {key: 100.0 for key in MEASUREMENT_KEYS}
+
+
+@pytest.mark.parametrize("bad_value", [0.0, -5.0, float("nan"), None])
+def test_generating_cad_profile_error_dead_letters_without_retry(bad_value: Any) -> None:
+    from forms_pipeline.extraction.measure import EXTRACTION_VERSION
+
+    store = FakeJobStore()
+    storage = FakeStorageClient()
+    values: dict[str, Any] = {key: 100.0 for key in MEASUREMENT_KEYS}
+    if bad_value is None:
+        del values["S2_OD"]
+    else:
+        values["S2_OD"] = bad_value
+    store.upsert_measurements("scan-1", "1.1.0", EXTRACTION_VERSION, values, True, "scan")
+    job = _cad_job("job-1", "scan-1", order_id=None)
+    store.jobs = [job]
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
+
+    run_once("worker-1", ctx, ALL_STEPS, limit=1)
+
+    [(failed_job_id, error, retriable)] = store.failed
+    assert failed_job_id == "job-1"
+    assert retriable is False
+    assert "S2_OD" in error["reason"]
+    assert not store.completed
+    assert not storage.uploaded
+
+
+def test_generating_cad_descriptor_without_profile_dead_letters() -> None:
+    store = FakeJobStore()
+    storage = FakeStorageClient()
+    _seed_measurements(store, "scan-1")
+    job = _cad_job("job-1", "scan-1", order_id="order-1")
+    store.cad_models["job-1"] = {"provider": "dry_run", "schema_version": "1.1.0", "ref": {}}
+    store.jobs = [job]
+    ctx = JobContext(store=store, storage=storage, cad=_dry_run_cad())
+
+    run_once("worker-1", ctx, ALL_STEPS, limit=1)
+
+    [(_job_id, error, retriable)] = store.failed
+    assert retriable is False
+    assert "profile" in error["reason"]
+    assert not storage.uploaded
 
 
 def _storage_client_with_transport(handler) -> SupabaseStorageClient:  # noqa: ANN001

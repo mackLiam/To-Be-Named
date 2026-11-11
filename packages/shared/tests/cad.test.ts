@@ -6,6 +6,7 @@ function validOnshapeDescriptor() {
   return {
     provider: 'onshape' as const,
     schema_version: SCHEMA_VERSION,
+    profile: { kind: 'identity' as const },
     ref: {
       document_id: 'doc-1',
       workspace_id: 'ws-1',
@@ -19,9 +20,93 @@ function validDryRunDescriptor() {
   return {
     provider: 'dry_run' as const,
     schema_version: SCHEMA_VERSION,
+    profile: { kind: 'identity' as const },
     ref: {},
   };
 }
+
+function withProfile(profile: unknown) {
+  return { ...validDryRunDescriptor(), profile };
+}
+
+function crest(wrap: unknown) {
+  return withProfile({ kind: 'crest_spline_v1', wrap });
+}
+
+const goodWrap = { inner_shin: 0.35, inner_calf: 0.6, outer: 0.7 };
+
+describe('profile', () => {
+  const hasErr = (v: unknown, prefix: string) =>
+    validateCadModelDescriptor(v).some((e) => e.startsWith(prefix));
+
+  it('accepts identity and crest_spline_v1', () => {
+    expect(validateCadModelDescriptor(withProfile({ kind: 'identity' }))).toEqual([]);
+    expect(validateCadModelDescriptor(crest(goodWrap))).toEqual([]);
+  });
+
+  it('rejects a missing or non-object profile', () => {
+    const d = validDryRunDescriptor() as Record<string, unknown>;
+    delete d.profile;
+    expect(hasErr(d, 'profile:')).toBe(true);
+    for (const bad of [null, 'identity', 5, []]) {
+      expect(hasErr(withProfile(bad), 'profile:')).toBe(true);
+    }
+  });
+
+  it('rejects an unknown key inside profile', () => {
+    expect(hasErr(withProfile({ kind: 'identity', extra: 1 }), 'profile.extra')).toBe(true);
+  });
+
+  it('rejects an unknown or missing kind', () => {
+    expect(hasErr(withProfile({ kind: 'spline' }), 'profile.kind')).toBe(true);
+    expect(hasErr(withProfile({}), 'profile.kind')).toBe(true);
+  });
+
+  it('rejects wrap on identity', () => {
+    expect(hasErr(withProfile({ kind: 'identity', wrap: goodWrap }), 'profile.wrap')).toBe(true);
+  });
+
+  it('requires wrap to be an object for crest_spline_v1', () => {
+    expect(hasErr(withProfile({ kind: 'crest_spline_v1' }), 'profile.wrap')).toBe(true);
+    expect(hasErr(crest('x'), 'profile.wrap')).toBe(true);
+    expect(hasErr(crest(null), 'profile.wrap')).toBe(true);
+  });
+
+  it('rejects missing and unknown wrap keys', () => {
+    expect(hasErr(crest({ inner_shin: 0.3, inner_calf: 0.6 }), 'profile.wrap.outer')).toBe(true);
+    expect(hasErr(crest({ ...goodWrap, extra: 0.5 }), 'profile.wrap.extra')).toBe(true);
+  });
+
+  it('rejects non-finite and non-number wrap values', () => {
+    for (const bad of [NaN, Infinity, -Infinity, '0.5', null]) {
+      expect(hasErr(crest({ ...goodWrap, inner_shin: bad }), 'profile.wrap.inner_shin')).toBe(true);
+      expect(hasErr(crest({ ...goodWrap, outer: bad }), 'profile.wrap.outer')).toBe(true);
+    }
+  });
+
+  it('enforces 0 < inner_shin < inner_calf < 1', () => {
+    expect(hasErr(crest({ ...goodWrap, inner_shin: 0 }), 'profile.wrap.inner_shin')).toBe(true);
+    expect(hasErr(crest({ ...goodWrap, inner_shin: -0.1 }), 'profile.wrap.inner_shin')).toBe(true);
+    expect(hasErr(crest({ ...goodWrap, inner_calf: 0.35 }), 'profile.wrap.inner_calf')).toBe(true);
+    expect(hasErr(crest({ ...goodWrap, inner_calf: 0.2 }), 'profile.wrap.inner_calf')).toBe(true);
+    expect(hasErr(crest({ ...goodWrap, inner_calf: 1 }), 'profile.wrap.inner_calf')).toBe(true);
+    expect(hasErr(crest({ ...goodWrap, inner_calf: 1.2 }), 'profile.wrap.inner_calf')).toBe(true);
+  });
+
+  it('enforces 0 < outer < 1', () => {
+    for (const bad of [0, 1, -0.5, 1.5]) {
+      expect(hasErr(crest({ ...goodWrap, outer: bad }), 'profile.wrap.outer')).toBe(true);
+    }
+  });
+
+  it('accepts outer equal to inner values (no ordering rule on outer)', () => {
+    expect(validateCadModelDescriptor(crest({ ...goodWrap, outer: 0.35 }))).toEqual([]);
+  });
+
+  it('pins the schema version', () => {
+    expect(SCHEMA_VERSION).toBe('1.1.0');
+  });
+});
 
 describe('validateCadModelDescriptor', () => {
   it('accepts a valid onshape descriptor', () => {

@@ -4,13 +4,15 @@ Purpose (docs/ROADMAP.md week 2-3): once real leg scans start arriving as
 OBJ files, this gives a one-command way to load a mesh, run the same
 `load_mesh` -> `extract_measurements` -> `validate_measurements` path the
 worker uses, and see the 25 values plus gate results without touching the
-job queue. `--json` output is also the format golden-file expected fixtures
+job queue. `--model-values` also prints the CAD model values (cad/profile.py,
+default crest_spline_v1 profile) that are typed into Onshape by hand today.
+`--json` output is also the format golden-file expected fixtures
 are built from (see `scripts/make_synthetic_fixture.py` and
 `tests/fixtures/README.md`).
 
 Usage:
-    python -m forms_pipeline.extract <mesh-path> [--json]
-    forms-extract <mesh-path> [--json]
+    python -m forms_pipeline.extract <mesh-path> [--json] [--model-values]
+    forms-extract <mesh-path> [--json] [--model-values]
 
 Exit codes:
     0  mesh loaded, measured, and every plausibility gate passed
@@ -25,6 +27,7 @@ import json
 import sys
 from pathlib import Path
 
+from forms_pipeline.cad.profile import DEFAULT_PROFILE, ProfileError, apply_profile
 from forms_pipeline.contract import MEASUREMENT_KEYS, SCHEMA_VERSION, validate_measurements
 from forms_pipeline.extraction.measure import (
     EXTRACTION_VERSION,
@@ -57,6 +60,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Print machine-readable JSON instead of a human-readable table.",
+    )
+    parser.add_argument(
+        "--model-values",
+        action="store_true",
+        help=(
+            "Also print the CAD model values computed from the leg measurements with the "
+            "default crest_spline_v1 profile (what the pipeline sends to Onshape)."
+        ),
     )
     return parser
 
@@ -110,6 +121,13 @@ def _format_table(
     return "\n".join(lines)
 
 
+def _format_model_values(model_values: dict[str, float]) -> str:
+    lines = ["", f"Model values ({DEFAULT_PROFILE.kind}, mm):"]
+    for key in MEASUREMENT_KEYS:
+        lines.append(f"{key.ljust(_NAME_WIDTH)}  {model_values[key]:10.2f} mm")
+    return "\n".join(lines)
+
+
 def _build_json_payload(
     values: dict[str, float],
     needs_scale_confirmation: bool,
@@ -137,11 +155,23 @@ def main(argv: list[str] | None = None) -> int:
 
     violations = validate_measurements(result.values)
 
+    model_values: dict[str, float] | None = None
+    if args.model_values:
+        try:
+            model_values = apply_profile(result.values, DEFAULT_PROFILE)
+        except ProfileError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_LOAD_OR_MEASURE_ERROR
+
     if args.json:
         payload = _build_json_payload(result.values, result.needs_scale_confirmation, violations)
+        if model_values is not None:
+            payload["model_values"] = {"profile": DEFAULT_PROFILE.kind, "values": model_values}
         print(json.dumps(payload, indent=2))
     else:
         print(_format_table(result.values, result.needs_scale_confirmation, violations))
+        if model_values is not None:
+            print(_format_model_values(model_values))
 
     return EXIT_OK if not violations else EXIT_GATES_FAILED
 

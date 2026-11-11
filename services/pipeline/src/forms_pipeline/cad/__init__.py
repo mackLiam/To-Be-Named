@@ -8,6 +8,7 @@ from forms_pipeline.cad.dispatch import (
     resolve_descriptor,
 )
 from forms_pipeline.cad.model import CadModelDescriptor, CadResult, DescriptorError
+from forms_pipeline.cad.profile import DEFAULT_PROFILE, ProfileError, apply_profile
 from forms_pipeline.cad.providers import (
     CadProvider,
     DryRunProvider,
@@ -21,10 +22,13 @@ __all__ = [
     "CadModelDescriptor",
     "CadProvider",
     "CadResult",
+    "DEFAULT_PROFILE",
     "DescriptorError",
     "DryRunProvider",
     "OnshapeProvider",
+    "ProfileError",
     "ProviderNotFoundError",
+    "apply_profile",
     "default_descriptor",
     "get_provider",
     "resolve_descriptor",

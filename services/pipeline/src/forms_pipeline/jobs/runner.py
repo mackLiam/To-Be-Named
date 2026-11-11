@@ -33,6 +33,7 @@ import httpx
 
 from forms_pipeline.cad.dispatch import CadDispatcher
 from forms_pipeline.cad.model import DescriptorError
+from forms_pipeline.cad.profile import ProfileError
 from forms_pipeline.cad.providers import ProviderNotFoundError
 from forms_pipeline.config import Settings, get_settings
 from forms_pipeline.contract import MEASUREMENT_KEYS, SCHEMA_VERSION, validate_measurements
@@ -302,6 +303,9 @@ _NON_RETRIABLE_ERRORS: tuple[type[Exception], ...] = (
     # succeed on retry: fail the job for admin triage, don't loop.
     DescriptorError,
     ProviderNotFoundError,
+    # Measurements the descriptor's profile cannot convert to model values
+    # (missing or non-positive input): the same values fail the same way.
+    ProfileError,
     # Onshape 4xx, a template missing variables, or values that break
     # regeneration: the same input fails the same way every time.
     OnshapeRejectedError,

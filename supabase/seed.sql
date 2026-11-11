@@ -14,9 +14,13 @@ values (
   8900, 'usd', true,
   jsonb_build_object(
     'provider', 'dry_run',
-    'schema_version', '1.0.0',
+    'schema_version', '1.1.0',
     'ref', '{}'::jsonb,
-    'variable_map', null
+    'variable_map', null,
+    'profile', jsonb_build_object(
+      'kind', 'crest_spline_v1',
+      'wrap', jsonb_build_object('inner_shin', 0.35, 'inner_calf', 0.6, 'outer', 0.7)
+    )
   )
 )
 on conflict (slug) do update set cad_model = excluded.cad_model;

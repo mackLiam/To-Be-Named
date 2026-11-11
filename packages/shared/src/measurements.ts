@@ -5,7 +5,7 @@
 // ../schema/measurements.schema.json, the Python extraction script, and the
 // Onshape client must all agree on these exact names.
 
-export const SCHEMA_VERSION = '1.0.0';
+export const SCHEMA_VERSION = '1.1.0';
 
 export const MEASUREMENT_KEYS = [
   'Leg_Length',
