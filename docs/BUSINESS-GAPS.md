@@ -33,6 +33,19 @@ remake started, rescan needed (not yet wired to the pipeline). Still open:
 the remake versus refund policy, whether a fit remake needs a rescan first,
 refunding delivered orders from the panel, HTML email templates, lookup by
 name and CSV export. Build order items 3 and 4 are done.
+
+**Update 2026-11-11 (b6f4a8d, 0b51a39):** build order items 6, 7 and 8 are
+done in code. Stripe Tax, shipping rates, terms consent and promotion codes
+(ranks 1, 2, 4, 18) each sit behind a server-only env switch, off unless
+set; with all off the Checkout params match a frozen baseline. The webhook
+stores Stripe's amount_total, so tax and shipping keep confirmation and
+refunds correct. Known gap: a promotion code that makes the total zero
+completes as no_payment_required, which the webhook ignores, so such codes
+must not exist until that path is fixed. /faq, /sizing and /returns exist
+with repo facts only and marked placeholders for every policy answer (the
+support contact form is not built). /admin/print-queue and a print-only
+packing slip with no prices, measurements or scan data cover the code side
+of fulfillment; the print partner, packaging and carrier stay with Liam.
 ## 1. Summary
 
 The software spine of a shop exists and is well tested: a pending-then-paid order

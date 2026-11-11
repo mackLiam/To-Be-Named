@@ -16,7 +16,7 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Admin product management | done: catalog and photos (9ccd578), orders depth (7b3369f) |
 | Phase 0.5 sweep capture spike (Swift, behind a flag) | built, off by default (ff4c296, 8192b45); untested on a device |
 | UI and UX pass | done: apps/app (e4b8960), apps/web (8aa4481) |
-| Business gaps, code-only items | in progress: env-gated checkout plumbing; FAQ, sizing and returns shells; admin print queue and packing slip |
+| Business gaps, code-only items | done: checkout gates (b6f4a8d), FAQ, sizing and returns shells, print queue and packing slip (0b51a39) |
 | docs/BUSINESS-GAPS.md | done (5ad999e) |
 
 ## Done (with commits)
@@ -134,6 +134,14 @@ every milestone, so the latest commit on the branch holds the latest state.
   usable at 360 px with 44 px targets and visible focus on brown. Checked at
   360 px in fake mode with no horizontal overflow on any route. 453 web
   tests.
+
+- Checkout gates (b6f4a8d): STRIPE_AUTOMATIC_TAX, STRIPE_SHIPPING_RATE_IDS,
+  STRIPE_TERMS_CONSENT, STRIPE_ALLOW_PROMOTION_CODES, all off unless set,
+  params identical to before when off (frozen-baseline test).
+- Pages and fulfillment views (0b51a39): /faq, /sizing, /returns with repo
+  facts only and visible "coming before launch" placeholders; admin print
+  queue and a packing slip that carries no prices, measurements or scan
+  data. 534 web tests.
 
 ## Video results (counts and ratios only)
 
@@ -271,6 +279,15 @@ capture is Mac-side only.
   address, retention, liability, governing law) remain. The waitlist's
   "Check back in a few days" is close to an invented timeline. The web uses
   a 4 px radius and the app 8 px; pick one.
+- Checkout: turning on each gate needs dashboard setup first (tax
+  registrations and Stripe Tax settings; carrier, rates and countries; the
+  terms URL in Stripe's public settings; promotion codes). **Never create a
+  promotion code that can make the total zero** until the webhook handles
+  no_payment_required (today such an order would stay pending forever).
+- Pages: 13 placeholders on /faq, /sizing and /returns (material, care,
+  delivery time, shipping countries, cancellation wording, growing kids,
+  scan tips, pair pricing, returns window, remake vs refund, return
+  shipping, refund timing).
 - Estimator conservative defaults: manual input accepts any non-empty subset
   of the 9 typed keys; a missing or invalid tolerance makes the gate fail,
   never pass; keys already typed are not offered as tape actions.
