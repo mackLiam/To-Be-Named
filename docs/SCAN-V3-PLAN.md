@@ -1042,6 +1042,16 @@ per the shared-worktree rule):
 | 0020_scan_context.sql | Its own `scan_context` table, **not columns on scans**: "scans: update own" (0017) lets the owner update scan columns directly, which would bypass validation. Fields: `age_band` (check against the enum), `stature_mm` (range check 600-2200), `improve_opt_in` (bool, section 4.2). No sex field, no date of birth, no free text. Written only by a SECURITY DEFINER RPC that re-checks ownership and validates. Deleted on account deletion even when measurements are kept as order records. The device prefills the last answers so they are asked once; a players entity (a parent with two kids) is a later product decision. |
 | 0021_refuse_and_snapshot.sql | (a) `request_scan_refusion(scan_id)`: SECURITY DEFINER, owner-checked, accepts `ready` scans, refuses when the scan has a manual or adjusted row or is on a paid order, and relies on the one-active-measure index for concurrency. Used by late player answers, the check card and pair completion. (b) Order measurement snapshot: the 25 values, extraction_version and leg model id copied onto the order at the paid transition; the CAD job reads only the snapshot. |
 
+**Status 2026-11-11:** 0018, 0019 and 0021 are written and tested
+(supabase/tests/estimator_data_checks.sql), unwired. Deviations: the
+snapshot is per leg (orders.snapshot_left and snapshot_right,
+forms.order-leg-snapshot v1, plus snapshot_at), not one shared set, because
+the legs of a pair can differ in version and source; remakes copy the
+original's leg snapshot. request_scan_refusion refuses any manual row (SQL
+cannot yet tell adjusted from manual), deleted scans and erased raw captures.
+A paid transition for a scan with no measurements row is still refused by
+the 0016 CAD trigger (unchanged). 0020 remains reserved.
+
 Manual payload change (lockstep, listed so it is not missed): today the app
 derives all 16 inner values and the worker requires exactly the 25 keys
 (runner.py). In v3 the manual RPC accepts the 9 typed keys, and the worker

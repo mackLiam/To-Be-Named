@@ -423,10 +423,18 @@ Notes:
 - Measurements stored as versioned JSONB against the frozen schema - when the
   extraction algorithm changes, `extraction_version` lets you re-run and compare.
 - A guard is per-leg: orders reference up to two scans.
-- Documented contracts with no tables yet (2026-11-11, docs/ESTIMATOR-V1.md):
-  forms.leg-model v1 (the 3D leg, owner-visible later) and
-  forms.measurement-quality v1 (per-key provenance VALUE_SOURCES and sigma,
-  server and admin only). Migrations 0018-0021 stay reserved for Phase 1b.
+- Estimator tables exist but ship unwired (2026-11-11, migrations 0018,
+  0019, 0021; 0020 reserved for scan_context; contracts in
+  docs/ESTIMATOR-V1.md): `measurement_quality` (one per measurement,
+  forms.measurement-quality v1, server and admin only), `leg_models`
+  (forms.leg-model v1, owner SELECT via scans, in export_my_data),
+  `measurements.superseded_at` with the `accepted_measurement(scan_id)` read
+  rule (newest validated, not superseded), `request_scan_refusion` (owner
+  RPC; refused for manual rows, paid orders, erased captures), and a per-leg
+  order snapshot (`orders.snapshot_left`, `snapshot_right`, `snapshot_at`,
+  forms.order-leg-snapshot v1) taken once at the paid transition inside a
+  guarded block, so it never blocks a payment. No app or worker code uses
+  them until Phase 1b.
 - A scan's files are always under `<storage_user_id>/` in storage. Ownership
   (`user_id`) can change (guest merge) or vanish (account deletion) without the
   files moving, so every worker derives storage paths from `storage_user_id`.

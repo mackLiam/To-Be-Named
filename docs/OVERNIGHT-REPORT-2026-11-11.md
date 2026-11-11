@@ -21,8 +21,8 @@ docs/OVERNIGHT-2026-11-11.md. This is the final state.
    remakes, partial refunds and customer lookup, a UI pass on both apps,
    checkout gates (all off), policy page shells, and a security review with
    its fixes. Everything verified green; nothing ran on a phone.
-4. **Deploy order if any of it ships:** migrations 0022 to 0026 before the
-   web build (0025 before the refund webhook change).
+4. **Deploy order if any of it ships:** migrations 0018 to 0026 (0020
+   unused) before the web build (0025 before the refund webhook change).
 5. **Never create a 100%-off promotion code** until the webhook handles it.
 
 ## Status at a glance
@@ -36,6 +36,7 @@ docs/OVERNIGHT-2026-11-11.md. This is the final state.
 | Typed Leg_Length mode (resolves the pose conflict, unwired) | done (e43035b) |
 | Estimator verdict in the harness, prior 0.1.1 | done (5e1ffb3, 89c2e50) |
 | Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
+| Phase 1 migrations 0018, 0019, 0021 (unwired) | done (802e730) |
 | Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
 | Admin product management | done: catalog and photos (9ccd578), orders depth (7b3369f) |
 | Phase 0.5 sweep capture spike (Swift, behind a flag) | built, off by default (ff4c296, 8192b45); untested on a device |
@@ -309,15 +310,16 @@ capture is Mac-side only.
   change the app's capture copy, because the right pose is your call. Until
   then, station and sweep captures in the current pose will fail late with
   the bent-knee reason.
-- **Phase 1 migrations deferred (against the brief).** forms-architect
-  reviewed the Phase 1 brief and recommended 0018, 0019 and 0021 wait for
-  Phase 1b (wiring after the Phase 0 ground truth): a quality table and a
-  leg-models table with no writer are dead schema; 0021's refusion RPC is a
-  client-callable SECURITY DEFINER function with no caller and a "refuse when
-  adjusted" rule SQL cannot express yet (adjusted and manual share
-  source 'manual'); the order snapshot changes the Stripe paid transition,
-  which should not change unattended. The numbers stay reserved. Tonight
-  ships the pure estimator and the two contracts (docs/ESTIMATOR-V1.md).
+- **Phase 1 migrations 0018, 0019, 0021 (802e730), shipped unwired.**
+  forms-architect first advised deferring them; to follow the brief they
+  were then built in the safest form: deny-by-default tables, an
+  owner-checked refusion RPC with no caller yet, and an order snapshot that
+  runs in a guarded block and can never block a payment (a test forces a
+  failure). Decide: whether pending_payment orders should also block
+  re-fusion; whether measurement_quality belongs in the data export (legal
+  call); whether a fit remake should use newer measurements instead of the
+  original's snapshot. If 0022 to 0026 are ever applied before these on a
+  hosted database, push with `supabase db push --include-all`.
 - Estimator noise levels, the bootstrap prior and the gate tolerances (15 mm
   Leg_Length, 6 mm fit-critical OW and OD) are provisional placeholders,
   flagged `provisional` in the files, until the Phase 0 calibration.
@@ -461,9 +463,11 @@ In order, for Liam:
 4. **Decide the product calls** listed under TODO(liam), the most urgent
    being the gate tolerances with Zane and the
    remake versus refund policy.
-5. **Deploy order** if any of this ships: migrations 0022 to 0026 before
-   the web build (0025 before the refund webhook change), then the app.
-6. **Phase 1b** (estimator wiring, migrations 0018, 0019, 0021, the order
-   snapshot) after step 1, reviewed as one security surface.
+5. **Deploy order** if any of this ships: migrations 0018 to 0026 (0020
+   unused) before the web build (0025 before the refund webhook change),
+   then the app.
+6. **Phase 1b** (estimator wiring onto the 0018, 0019 and 0021 tables, the
+   CAD job reading the order snapshot) after step 1, reviewed as one
+   security surface.
 7. Review and merge this branch into develop (not done tonight, per the
    brief).

@@ -11,12 +11,18 @@ versioned event. Plan context: docs/SCAN-V3-PLAN.md sections 4, 6.2, 7.2.
 - **Phase 1a (now):** the pure `shape/` package, unwired, and the two
   contracts below with shared fixtures. Invisible to users. The measuring step
   still runs extraction only.
-- **Phase 1b (after Phase 0 is green):** runner wiring, migrations 0018,
-  0019, 0021 (numbers stay reserved), the manual payload change, the folded
+- **Phase 1b (after Phase 0 is green):** runner wiring (the tables from
+  migrations 0018, 0019 and 0021 exist since 2026-11-11, unwired), the
+  manual payload change, the folded
   extraction_version (`est-<estimator>+p<prior>`, for example
   `est-0.1.0+p0.1.0`), the backfill, the order snapshot, DESIGN.md section 6
-  rewrite. TODO(liam): migrations were deliberately deferred against the
-  overnight brief; reasons in the overnight report.
+  rewrite.
+- **Order snapshot (0021), pinned for the Phase 1b reader:** per leg,
+  `orders.snapshot_left` / `snapshot_right` jsonb
+  `{format: "forms.order-leg-snapshot", version: 1, scan_id, measurement_id,
+  schema_version, extraction_version, source, values (the 25),
+  leg_model_id | null}`, with `snapshot_at` set exactly when a leg is.
+  Written once at the paid transition; remakes copy the original's leg.
 - The estimator projects to schema 1.1.0 **leg measurements**. It never emits
   crest-relative values; `cad/profile.py` stays the only converter.
 
