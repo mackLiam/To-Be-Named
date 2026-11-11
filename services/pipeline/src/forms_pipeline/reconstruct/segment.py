@@ -17,7 +17,11 @@ thigh) is cut away here:
    bin above the foot (the wide low region) in the lower ANKLE_SEARCH_FRACTION of
    the height; calf = first width maximum above it; knee = first width minimum
    above the calf whose ankle-to-knee length is within the schema's plausible
-   Leg_Length range.
+   Leg_Length range and whose extremum window lies below the thigh onset: the
+   first bin above the calf where the width rises faster than MAX_LIMB_SLOPE.
+   With the knee bent, slices perpendicular to the shin cut the thigh from there
+   up, so a minimum at the foot of that rise is where the thigh came in, not the
+   dip below the kneecap; with no dip below it the knee is not found.
 """
 
 from __future__ import annotations
@@ -42,6 +46,13 @@ ANKLE_SEARCH_FRACTION = 0.4
 SMOOTH_BINS = 5
 EXTREMUM_WINDOW_BINS = 4
 MIN_WIDTH_CHANGE_FRACTION = 0.03
+# Rise of the smoothed equivalent diameter per unit length along the axis; dimensionless,
+# so it holds at any scale. Above the calf a straight leg rises at most 0.44 before its
+# top end (test_silhouette's truth leg, clean and noisy, tilted 0 to 40 degrees; the
+# photogrammetry fixture 0.29). A thigh crossing the slices of a bent knee rises 0.86 at
+# 45 degrees of flexion (knee 1% low), 1.2 at 60 (3% low) and 7 at 90 (15% low):
+# tests/bent_knee_synth.py.
+MAX_LIMB_SLOPE = 0.8
 MIN_CIRCLE_ARC_DEG = 200.0
 MAX_CIRCLE_RESIDUAL_FRACTION = 0.15  # RMS radial residual / fitted radius
 # Below this median slice span the back of the calf is missing or hallucinated,
@@ -181,6 +192,13 @@ def _is_extremum(w: np.ndarray, i: int, fn: Any) -> bool:
     return bool(w[i] == fn(w[lo:hi]))
 
 
+def thigh_onset(widths: np.ndarray, calf: int) -> int | None:
+    """First bin above calf where the smoothed profile rises faster than MAX_LIMB_SLOPE
+    (the thigh of a bent knee entering the slices), or None."""
+    steep = np.flatnonzero(np.diff(widths[calf:]) > MAX_LIMB_SLOPE * BIN_M)
+    return calf + 1 + int(steep[0]) if len(steep) else None
+
+
 def find_landmarks(widths: np.ndarray) -> tuple[int | None, int | None, int | None]:
     """(ankle, calf, knee) bin indices into a smoothed width profile; None if absent."""
     n = len(widths)
@@ -204,7 +222,9 @@ def find_landmarks(widths: np.ndarray) -> tuple[int | None, int | None, int | No
     if calf is None:
         return ankle, None, None
 
-    for i in range(calf + 1, n):
+    onset = thigh_onset(widths, calf)
+    stop = n if onset is None else onset - EXTREMUM_WINDOW_BINS
+    for i in range(calf + 1, stop):
         length_mm = meters_to_mm((i - ankle) * BIN_M)
         if length_mm > LEG_LENGTH_MAX_MM:
             break

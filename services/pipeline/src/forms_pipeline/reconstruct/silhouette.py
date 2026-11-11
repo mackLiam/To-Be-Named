@@ -37,7 +37,10 @@ Algorithm:
    photogrammetry path's rule), crop, and loft a closed mesh. When the photos carry
    on-device body-pose joints, the triangulated ankle and knee seed the search: the
    cut is the narrowest smoothed width within JOINT_WINDOW_M of each joint, so the
-   silhouette profile still decides it.
+   silhouette profile still decides it. A knee cut, seeded or not, never sits within
+   the extremum window below the thigh onset (segment.thigh_onset): with the knee bent
+   the thigh crosses the slices before the dip below the kneecap and hides it, and
+   the capture fails asking for a straighter leg instead of measuring a short one.
 """
 
 from __future__ import annotations
@@ -59,13 +62,14 @@ from forms_pipeline.reconstruct.segment import (
     angular_span_deg,
     meters_to_mm,
     profile_landmarks,
+    thigh_onset,
 )
 
 METHOD = "silhouette"
 # Versions the algorithm, not the capture contract (reconstruct/bundle.py versions
 # that). Bump whenever the mesh or the failure verdict can change for the same
 # capture. Unversioned artifacts are the algorithm before "2".
-SILHOUETTE_VERSION = "3"
+SILHOUETTE_VERSION = "4"
 TRUSTED_TRACKING = "normal"  # a pose ARKit flags as limited is not metric enough
 
 # Tuning values, not physical constants: revisit against real captures.
@@ -131,6 +135,10 @@ _ANKLE_OUT = (
 _KNEE_OUT = (
     "The knee was outside the frame in most of the photos; keep the whole lower leg, "
     "from the ankle to above the knee, in view."
+)
+_KNEE_BENT = (
+    "The knee was bent too far to measure; sit with your foot further forward so the "
+    "leg is straighter."
 )
 
 
@@ -636,10 +644,15 @@ _KNEE_MISSING = "The knee could not be found; include the knee in every photo."
 
 
 def _landmark_reason(
-    widths: np.ndarray, ankle_missing: bool, cut_below: bool, cut_above: bool
+    widths: np.ndarray,
+    ankle_missing: bool,
+    cut_below: bool,
+    cut_above: bool,
+    thigh_in_view: bool = False,
 ) -> str:
     """Why profile_landmarks found no ankle (or, with an ankle, no knee), given the
-    smoothed profile and which ends most views' frames cut off.
+    smoothed profile, which ends most views' frames cut off, and whether the profile
+    reached a thigh onset (then the knee end is in view and the bend hid the knee).
 
     The ankle is blamed on framing only when the lower half of the profile is still
     narrowing at its cut end, so the ankle minimum lies beyond the frame; toes running
@@ -649,6 +662,8 @@ def _landmark_reason(
     above the knee, so the missing knee end is the part to fix (IMG_3836, 2026-11-11).
     """
     if not ankle_missing:
+        if thigh_in_view:
+            return _KNEE_BENT
         return _KNEE_OUT if cut_above else _KNEE_MISSING
     lower = widths[: max(len(widths) // 2, 1)]
     if cut_below and int(np.argmin(lower)) <= EXTREMUM_WINDOW_BINS:
@@ -789,10 +804,13 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
     if len(grid) < MIN_PROFILE_BINS:
         raise _retake(not_traced)
     diameter = 2.0 * np.sqrt(np.sqrt(det))
-    widths, (ankle, _, knee) = profile_landmarks(np.interp(grid, s_run, diameter))
+    widths, (ankle, calf, knee) = profile_landmarks(np.interp(grid, s_run, diameter))
+    onset = None if calf is None else thigh_onset(widths, calf)
     seeds, joints_used = _joint_seeds(usable, origin, axis)
     seeded_ankle = _seeded_minimum(widths, grid, seeds["ankle"]) if "ankle" in seeds else None
     seeded_knee = _seeded_minimum(widths, grid, seeds["knee"]) if "knee" in seeds else None
+    if seeded_knee is not None and onset is not None:
+        seeded_knee = seeded_knee if seeded_knee < onset - EXTREMUM_WINDOW_BINS else None
     seeded_ankle = ankle if seeded_ankle is None else seeded_ankle
     seeded_knee = knee if seeded_knee is None else seeded_knee
     if seeded_ankle is not None and seeded_knee is not None:
@@ -800,7 +818,9 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
         if LEG_LENGTH_MIN_MM <= length_mm <= LEG_LENGTH_MAX_MM:
             ankle, knee = seeded_ankle, seeded_knee
     if ankle is None or knee is None:
-        raise _retake(_landmark_reason(widths, ankle is None, cut_below, cut_above))
+        raise _retake(
+            _landmark_reason(widths, ankle is None, cut_below, cut_above, onset is not None)
+        )
     s_ankle, s_knee = float(grid[ankle]), float(grid[knee])
 
     in_leg = (s_run >= s_ankle) & (s_run <= s_knee) & np.isfinite(rms_run)
