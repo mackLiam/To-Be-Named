@@ -13,12 +13,14 @@
     "@expo-google-fonts/outfit": "^0.4.3",
     "@expo/vector-icons": "^15.0.2",
     "@forms/shared": "workspace:*",
+    "@react-three/fiber": "9.8.2",
     "@supabase/supabase-js": "^2.110.0",
     "expo": "~57.0.1",
     "expo-build-properties": "~57.0.2",
     "expo-constants": "~57.0.2",
     "expo-dev-client": "~57.0.4",
     "expo-font": "~57.0.0",
+    "expo-gl": "57.0.3",
     "expo-linking": "~57.0.1",
     "expo-modules-core": "~57.0.1",
     "expo-router": "~57.0.2",
@@ -31,10 +33,12 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-svg": "15.15.4",
-    "react-native-web": "^0.21.2"
+    "react-native-web": "^0.21.2",
+    "three": "0.187.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "@types/three": "0.187.0",
     "typescript": "~6.0.3",
     "vitest": "^2"
   }
