@@ -15,7 +15,8 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
 | Admin product management | done: catalog and photos (9ccd578), orders depth (7b3369f) |
 | Phase 0.5 sweep capture spike (Swift, behind a flag) | built, off by default (ff4c296, 8192b45); untested on a device |
-| UI and UX pass | apps/app done (e4b8960); apps/web in progress with forms-designer |
+| UI and UX pass | done: apps/app (e4b8960), apps/web (8aa4481) |
+| Business gaps, code-only items | in progress: env-gated checkout plumbing; FAQ, sizing and returns shells; admin print queue and packing slip |
 | docs/BUSINESS-GAPS.md | done (5ad999e) |
 
 ## Done (with commits)
@@ -125,6 +126,14 @@ every milestone, so the latest commit on the branch holds the latest state.
   new plain-text emails. 440 web tests and the SQL checks pass. **Deploy
   migration 0025 before this web build**: the charge.refunded handler calls
   its new RPC and would return 500 (Stripe retries) until it exists.
+
+- Web UI pass (8aa4481), led by forms-designer: the checkout success and
+  cancelled pages were visibly broken (missing classes, invisible wordmark)
+  and are fixed; device copy; drawn wordmark; per-page Open Graph and a share
+  card; honest busy and disabled buttons; retry on every error state; admin
+  usable at 360 px with 44 px targets and visible focus on brown. Checked at
+  360 px in fake mode with no horizontal overflow on any route. 453 web
+  tests.
 
 ## Video results (counts and ratios only)
 
@@ -257,6 +266,11 @@ capture is Mac-side only.
   Stripe-dashboard only; what the refund, cancel and remake emails say about
   money timing and returning the original (left out). The rescan email has
   no caller yet (the pipeline gate failure must trigger it).
+- Web: the privacy page still describes LiDAR and non-LiDAR capture; it is
+  legal text, so left for review. Privacy and terms placeholders (entity,
+  address, retention, liability, governing law) remain. The waitlist's
+  "Check back in a few days" is close to an invented timeline. The web uses
+  a 4 px radius and the app 8 px; pick one.
 - Estimator conservative defaults: manual input accepts any non-empty subset
   of the 9 typed keys; a missing or invalid tolerance makes the gate fail,
   never pass; keys already typed are not offered as tape actions.
