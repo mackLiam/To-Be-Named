@@ -526,20 +526,6 @@ def test_narrow_azimuth_span_is_a_retake() -> None:
         reconstruct_silhouette(vs, floor_y=FLOOR_Y)
 
 
-def test_leg_cut_off_at_the_frame_edge_is_a_retake() -> None:
-    vs = views(0.0)
-    mask = vs[2].mask.copy()
-    cols = np.flatnonzero(mask.any(axis=0))
-    rows = np.flatnonzero(mask.any(axis=1))
-    mid = (rows[0] + rows[-1]) // 2
-    mask[mid:, cols[0] : cols[-1] + 1] = np.maximum(
-        mask[mid:, cols[0] : cols[-1] + 1], mask[mid : mid + 1, cols[0] : cols[-1] + 1]
-    )  # the leg's lower half in this view now runs to the bottom border
-    vs[2] = replace(vs[2], mask=mask)
-    with pytest.raises(ReconstructionQualityError, match=f"cut off .* {vs[2].station} photo"):
-        reconstruct_silhouette(vs, floor_y=FLOOR_Y)
-
-
 def test_garbage_masks_are_a_retake() -> None:
     rng = np.random.default_rng(5)
     vs = [

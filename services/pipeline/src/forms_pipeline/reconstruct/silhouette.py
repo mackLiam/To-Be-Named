@@ -26,7 +26,11 @@ Algorithm:
    point, cut the mask across the projected axis and take both edges, fitted over
    +-EDGE_WINDOW_PX along the axis so each edge has a tangent direction. Two pixels on
    an edge and the camera center span a plane tangent to the leg; its intersection
-   with the slice plane is a tangent line of that cross-section.
+   with the slice plane is a tangent line of that cross-section. Where an edge is the
+   image border (close-up framing) it gives no line; the other edge and the other
+   views still count, and a view the frame cuts off too much to trace its centerline
+   still gives lines, just not the axis. Only when too little remains does the
+   capture fail, with a reason naming what the frame left out.
 4. Per slice, fit an ellipse to the tangent lines through the dual conic
    (l^T C* l = 0, 6 unknowns, SVD), with one pass of residual-based outlier rejection.
 5. Smooth along the axis, find ankle and knee with segment.profile_landmarks (the
@@ -57,6 +61,10 @@ from forms_pipeline.reconstruct.segment import (
 )
 
 METHOD = "silhouette"
+# Versions the algorithm, not the capture contract (reconstruct/bundle.py versions
+# that). Bump whenever the mesh or the failure verdict can change for the same
+# capture. Unversioned artifacts are the algorithm before "2".
+SILHOUETTE_VERSION = "2"
 TRUSTED_TRACKING = "normal"  # a pose ARKit flags as limited is not metric enough
 
 # Tuning values, not physical constants: revisit against real captures.
@@ -73,7 +81,9 @@ STEP_M = 0.002
 EDGE_WINDOW_PX = 10
 CENTERLINE_CUTS = 15
 CENTERLINE_RANGE = (0.25, 0.75)  # of the mask's length: clear of foot and frame edge
-CUTOFF_MAX_FRACTION = 0.1
+# Share of the views (or of the edges) running out of the frame from which a failure is
+# blamed on framing; it picks the wording only, never pass or fail.
+FRAMING_BLAME_FRACTION = 0.5
 OUTLIER_FACTOR = 3.0
 OUTLIER_FLOOR_M = 0.001
 MAX_MEDIAN_RESIDUAL_M = 0.004
@@ -108,6 +118,19 @@ _SCAN_CHUNK = 32
 
 _RETAKE = "Please retake the photos."
 _DISAGREE = "The leg outlines in the photos do not agree; hold the phone steady."
+_NOT_TRACED = "The leg could not be traced in the photos."
+_TOO_CLOSE = (
+    "The leg ran out of the frame in most of the photos; hold the phone further back so "
+    "the whole lower leg, from the foot to above the knee, fits in the frame."
+)
+_ANKLE_OUT = (
+    "The ankle was outside the frame in most of the photos; keep the whole lower leg, "
+    "from the foot to above the knee, in view."
+)
+_KNEE_OUT = (
+    "The knee was outside the frame in most of the photos; keep the whole lower leg, "
+    "from the ankle to above the knee, in view."
+)
 
 
 @dataclass(frozen=True)
@@ -136,13 +159,6 @@ class Ellipse:
 
 def _retake(reason: str) -> ReconstructionQualityError:
     return ReconstructionQualityError(f"{reason} {_RETAKE}")
-
-
-def _cut_off(view: View) -> ReconstructionQualityError:
-    return _retake(
-        f"The leg is cut off at the edge of the {view.station} photo; keep the whole leg "
-        "inside the frame."
-    )
 
 
 def project(
@@ -222,9 +238,16 @@ def _scan(
     return out
 
 
-def _centerline_normal(view: View, leg: np.ndarray) -> tuple[np.ndarray | None, bool]:
-    """Unit normal of the plane through the camera center and the mask's centerline
-    (None if it cannot be traced), and whether the leg runs into the image border."""
+def centerline_normal(view: View, leg: np.ndarray) -> np.ndarray | None:
+    """Unit normal of the plane through the camera center and the mask's centerline, or
+    None if it cannot be traced."""
+    return _centerline(view, leg)[0]
+
+
+def _centerline(view: View, leg: np.ndarray) -> tuple[np.ndarray | None, bool]:
+    """centerline_normal, and whether a missing centerline is the frame's doing: the
+    cuts found both mask edges but too many of them were the image border. Cuts with an
+    edge on the border are left out: there the mask edge is the frame, not the leg."""
     rows, cols = np.nonzero(leg[::4, ::4])
     pts = np.column_stack([cols, rows]).astype(np.float64) * 4.0
     mean = pts.mean(axis=0)
@@ -243,11 +266,10 @@ def _centerline_normal(view: View, leg: np.ndarray) -> tuple[np.ndarray | None, 
         int(np.hypot(*leg.shape)),
     )
     left, right = left[:, 0], right[:, 0]
-    border = hit_l[:, 0] | hit_r[:, 0]
-    cut_off = bool(border.sum() > CUTOFF_MAX_FRACTION * CENTERLINE_CUTS)
-    ok = np.isfinite(left) & np.isfinite(right) & ~border
+    found = np.isfinite(left) & np.isfinite(right)
+    ok = found & ~(hit_l[:, 0] | hit_r[:, 0])
     if ok.sum() < CENTERLINE_CUTS // 2:
-        return None, cut_off
+        return None, bool(found.sum() >= CENTERLINE_CUTS // 2)
     mids = origins[ok] + ((left[ok] + right[ok]) / 2)[:, None] * perp
     mid = mids.mean(axis=0)
     line_dir = np.linalg.svd(mids - mid, full_matrices=False)[2][0]
@@ -255,7 +277,7 @@ def _centerline_normal(view: View, leg: np.ndarray) -> tuple[np.ndarray | None, 
         view.camera_to_world, view.intrinsics, np.array([mid, mid + 100.0 * line_dir])
     )
     normal = np.cross(rays[0], rays[1])
-    return normal / np.linalg.norm(normal), cut_off
+    return normal / np.linalg.norm(normal), False
 
 
 def triangulate_axis(normals: np.ndarray, centers: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -279,15 +301,50 @@ def _slice_frame(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return e1, np.cross(axis, e1)
 
 
+@dataclass(frozen=True)
+class _ViewLines:
+    lines: np.ndarray  # (S, 2, 3): (a, b, c), a x + b y + c = 0 in slice coordinates
+    on_leg: np.ndarray  # (S,) the projected axis point lies on the leg mask
+    at_border: np.ndarray  # (S, 2) that edge is the image border: no line from it
+    runs_off: tuple[bool, bool]  # the leg continues out of the frame below / above
+
+
+def _runs_off(
+    leg: np.ndarray, uv: np.ndarray, depth: np.ndarray, on_leg: np.ndarray
+) -> tuple[bool, bool]:
+    """Per end of the slices this view sees: does the mask continue along the projected
+    axis all the way to the image border (the frame cut the leg), rather than end?"""
+    seen = np.flatnonzero(on_leg)
+    if len(seen) == 0:
+        return False, False
+    h, w = leg.shape
+    out = []
+    for j, step in ((int(seen[0]) - 1, -1), (int(seen[-1]) + 1, 1)):
+        cut = False
+        while 0 <= j < len(uv) and depth[j] > 0 and np.isfinite(uv[j]).all():
+            c, r = int(round(uv[j, 0])), int(round(uv[j, 1]))
+            if not (0 <= c < w and 0 <= r < h):
+                cut = True
+                break
+            if not leg[r, c]:
+                break
+            j += step
+        out.append(cut)
+    return out[0], out[1]
+
+
 def _view_lines(
     view: View,
     leg: np.ndarray,
     origin: np.ndarray,
     frame: tuple[np.ndarray, np.ndarray, np.ndarray],
     s: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Tangent lines (S, 2, 3) as (a, b, c) with a x + b y + c = 0 in slice coordinates,
-    unit (a, b), NaN where missing; plus per slice: axis point on the leg, edge at border.
+) -> _ViewLines:
+    """Tangent lines of one view at every slice, unit (a, b), NaN where missing.
+
+    An edge that is the image border gives no line at that slice; the other edge and
+    the other views still count (docs/SCAN-V3-PLAN.md 4.5: bad frames are dropped,
+    not fatal).
     """
     e1, e2, axis = frame
     c2w, intr = view.camera_to_world, view.intrinsics
@@ -298,7 +355,7 @@ def _view_lines(
     along = p1 - p0
     lines = np.full((len(s), 2, 3), np.nan)
     on_leg = np.zeros(len(s), dtype=bool)
-    at_border = np.zeros(len(s), dtype=bool)
+    at_border = np.zeros((len(s), 2), dtype=bool)
     with np.errstate(invalid="ignore", divide="ignore"):
         along /= np.linalg.norm(along, axis=1, keepdims=True)
         margin = EDGE_WINDOW_PX + 2
@@ -311,7 +368,7 @@ def _view_lines(
     idx = idx[leg[centers_px[:, 1], centers_px[:, 0]]]
     on_leg[idx] = True
     if len(idx) == 0:
-        return lines, on_leg, at_border
+        return _ViewLines(lines, on_leg, at_border, (False, False))
 
     perp = np.column_stack([-along[:, 1], along[:, 0]])
     half_len = int(np.ceil(SEARCH_RADIUS_M * max(intr[0], intr[1]) / depth[idx].min()))
@@ -322,7 +379,7 @@ def _view_lines(
         sel = idx[start : start + _SCAN_CHUNK]
         sides = _scan(legf, p0[sel], along[sel], perp[sel], k, half_len)
         for side, (t, hit) in enumerate(sides):
-            at_border[sel] |= hit.any(axis=1)
+            at_border[sel, side] = hit.any(axis=1)
             valid = np.isfinite(t) & ~hit
             wts = valid.astype(np.float64)
             tv = np.where(valid, t, 0.0)
@@ -344,7 +401,7 @@ def _view_lines(
             norm_ab = np.where(good, norm_ab, 1.0)
             coeffs = np.column_stack([a, b, c]) / norm_ab[:, None]
             lines[sel[good], side] = coeffs[good]
-    return lines, on_leg, at_border
+    return _ViewLines(lines, on_leg, at_border, _runs_off(leg, p0, depth, on_leg))
 
 
 def fit_ellipse(lines: np.ndarray) -> Ellipse | None:
@@ -540,14 +597,14 @@ def triangulate_point(
 
 
 def _joint_seeds(
-    usable: Sequence[tuple[View, np.ndarray, np.ndarray]], origin: np.ndarray, axis: np.ndarray
+    usable: Sequence[tuple[View, np.ndarray]], origin: np.ndarray, axis: np.ndarray
 ) -> tuple[dict[str, float], int]:
     """Axis position of each triangulated joint, and how many views contributed."""
     seeds: dict[str, float] = {}
     used: set[int] = set()
     for name in ("ankle", "knee"):
         idx, centers, dirs = [], [], []
-        for i, (view, _, _) in enumerate(usable):
+        for i, (view, _) in enumerate(usable):
             joint = (view.joints or {}).get(name)
             if joint is None or joint[2] < JOINT_MIN_CONFIDENCE:
                 continue
@@ -592,11 +649,16 @@ def _loft(
         [np.stack([params[:, 2], params[:, 3]], -1), np.stack([params[:, 3], params[:, 4]], -1)],
         axis=1,
     )
+    # Ring point p = S^(1/2) (cos t, sin t): the symmetric root is unique and continuous
+    # in S, so vertex p of one ring sits next to vertex p of the next. An eigenvector
+    # factor is not: eigh may negate both vectors or swap them where the semi-axes
+    # cross, and the ring start then jumps half or a quarter turn, so the side faces
+    # between those rings cut through the leg while the mesh stays watertight.
     lam, vec = np.linalg.eigh(shape)
-    vec[:, :, 1] *= np.sign(np.linalg.det(vec))[:, None]  # proper rotation keeps winding
+    root = np.einsum("rij,rj,rkj->rik", vec, np.sqrt(lam), vec)
     theta = np.linspace(0.0, 2 * np.pi, RING_POINTS, endpoint=False)
     circle = np.column_stack([np.cos(theta), np.sin(theta)])
-    local = params[:, None, :2] + np.einsum("rij,pj->rpi", vec * np.sqrt(lam)[:, None, :], circle)
+    local = params[:, None, :2] + np.einsum("rij,pj->rpi", root, circle)
     rings = origin + s[:, None, None] * axis + local[..., 0:1] * e1 + local[..., 1:2] * e2
     n_rings, p = len(s), RING_POINTS
     caps = origin + s[[0, -1], None] * axis + params[[0, -1], 0:1] * e1 + params[[0, -1], 1:2] * e2
@@ -621,25 +683,32 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
 
     Raises ReconstructionQualityError with a user-facing retake reason.
     """
-    usable: list[tuple[View, np.ndarray, np.ndarray]] = []
+    # Views whose centerline is traced feed the axis; a view the frame cuts off still
+    # gives tangent lines from the edges inside the frame (SCAN-V3-PLAN.md 4.5).
+    usable: list[tuple[View, np.ndarray]] = []
+    normals: list[np.ndarray] = []
+    axis_views: list[int] = []
     for view in views:
         if view.tracking != TRUSTED_TRACKING:
             continue
         leg = leg_component(view.mask)
         if leg is None:
             continue
-        normal, cut_off = _centerline_normal(view, leg)
-        if cut_off:
-            raise _cut_off(view)
+        normal, cut_off = _centerline(view, leg)
         if normal is not None:
-            usable.append((view, leg, normal))
-    if len(usable) < MIN_VIEWS:
+            axis_views.append(len(usable))
+            normals.append(normal)
+        if normal is not None or cut_off:
+            usable.append((view, leg))
+    if len(normals) < MIN_VIEWS:
+        if len(usable) >= MIN_VIEWS:
+            raise _retake(_TOO_CLOSE)
         raise _retake(
-            f"Only {len(usable)} of the photos show the leg clearly; at least {MIN_VIEWS} must."
+            f"Only {len(normals)} of the photos show the leg clearly; at least {MIN_VIEWS} must."
         )
 
-    cameras = np.array([v.camera_to_world[:3, 3] for v, _, _ in usable])
-    origin, axis = triangulate_axis(np.array([n for _, _, n in usable]), cameras)
+    cameras = np.array([v.camera_to_world[:3, 3] for v, _ in usable])
+    origin, axis = triangulate_axis(np.array(normals), cameras[axis_views])
     tilt = float(np.degrees(np.arccos(np.clip(axis[1], -1.0, 1.0))))
     if tilt > MAX_TILT_DEG:
         raise _retake("Keep your shin upright.")
@@ -656,10 +725,17 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
     if floor_y is not None:
         s = s[(origin + s[:, None] * axis)[:, 1] >= floor_y + FLOOR_CLEARANCE_M]
     lines = np.full((len(usable), len(s), 2, 3), np.nan)
-    for i, (view, leg, _) in enumerate(usable):
-        lines[i], on_leg, at_border = _view_lines(view, leg, origin, frame, s)
-        if at_border.sum() > CUTOFF_MAX_FRACTION * max(int(on_leg.sum()), 1):
-            raise _cut_off(view)
+    edges_seen = edges_at_border = 0
+    runs_off = np.zeros((len(usable), 2), dtype=bool)  # per view: below, above
+    for i, (view, leg) in enumerate(usable):
+        found = _view_lines(view, leg, origin, frame, s)
+        lines[i] = found.lines
+        edges_seen += 2 * int(found.on_leg.sum())
+        edges_at_border += int(found.at_border[found.on_leg].sum())
+        runs_off[i] = found.runs_off
+    border_fraction = edges_at_border / max(edges_seen, 1)
+    cut_below, cut_above = (runs_off.sum(axis=0) >= FRAMING_BLAME_FRACTION * len(usable)).tolist()
+    not_traced = _TOO_CLOSE if border_fraction >= FRAMING_BLAME_FRACTION else _NOT_TRACED
 
     pivots = np.column_stack([rel @ e1, rel @ e2])
     lines, params, rms, corrections = _refine_views(lines, pivots, s)
@@ -669,7 +745,7 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
         raise _retake(_DISAGREE)
     valid = np.isfinite(params[:, 0])
     if valid.sum() < MIN_PROFILE_BINS:
-        raise _retake("The leg could not be traced in the photos.")
+        raise _retake(not_traced)
     run = _longest_run(valid)
     s_run, p_run, rms_run = s[run], params[run], rms[run]
     ok = np.isfinite(p_run[:, 0])
@@ -679,11 +755,11 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
     p_run = ndimage.uniform_filter1d(p_run, SMOOTH_STEPS, axis=0, mode="nearest")
     det = p_run[:, 2] * p_run[:, 4] - p_run[:, 3] ** 2
     if np.any(det <= 0) or np.any(p_run[:, 2] <= 0):
-        raise _retake("The leg could not be traced in the photos.")
+        raise _retake(not_traced)
 
     grid = np.arange(s_run[0] + BIN_M / 2, s_run[-1], BIN_M)
     if len(grid) < MIN_PROFILE_BINS:
-        raise _retake("The leg could not be traced in the photos.")
+        raise _retake(not_traced)
     diameter = 2.0 * np.sqrt(np.sqrt(det))
     widths, (ankle, _, knee) = profile_landmarks(np.interp(grid, s_run, diameter))
     seeds, joints_used = _joint_seeds(usable, origin, axis)
@@ -696,9 +772,17 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
         if LEG_LENGTH_MIN_MM <= length_mm <= LEG_LENGTH_MAX_MM:
             ankle, knee = seeded_ankle, seeded_knee
     if ankle is None:
-        raise _retake("The ankle could not be found; include the foot and ankle in every photo.")
+        raise _retake(
+            _ANKLE_OUT
+            if cut_below
+            else "The ankle could not be found; include the foot and ankle in every photo."
+        )
     if knee is None:
-        raise _retake("The knee could not be found; include the knee in every photo.")
+        raise _retake(
+            _KNEE_OUT
+            if cut_above
+            else "The knee could not be found; include the knee in every photo."
+        )
     s_ankle, s_knee = float(grid[ankle]), float(grid[knee])
 
     in_leg = (s_run >= s_ankle) & (s_run <= s_knee) & np.isfinite(rms_run)
@@ -712,9 +796,11 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
 
     artifacts = {
         "method": METHOD,
+        "silhouette_version": SILHOUETTE_VERSION,
         "views_total": len(views),
         "views_used": len(usable),
-        "stations_used": [v.station for v, _, _ in usable],
+        "stations_used": [v.station for v, _ in usable],
+        "views_axis": len(axis_views),
         "azimuth_span_deg": span,
         "axis_tilt_deg": tilt,
         "axis_point_m": [float(x) for x in origin],
@@ -729,5 +815,8 @@ def reconstruct_silhouette(views: Sequence[View], floor_y: float | None) -> Silh
         "joints_used": joints_used,
         "ankle_found": True,
         "knee_found": True,
+        "edges_at_border_fraction": border_fraction,
+        "views_cut_off_below": int(runs_off[:, 0].sum()),
+        "views_cut_off_above": int(runs_off[:, 1].sum()),
     }
     return SilhouetteResult(mesh=mesh, artifacts=artifacts)
