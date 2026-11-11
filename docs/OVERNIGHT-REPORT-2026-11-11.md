@@ -13,9 +13,9 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Iteration on the two test videos | done: IMG_3834 measures, IMG_3836 fails on the knee (da80ef4, 8ebbd81, a957033) |
 | Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
 | Phase 2 3D viewer spike (r3f + expo-gl) | pass on web and bundling (cfb44c0, d373476); native untested |
-| Admin product management | round 1 done (9ccd578, 0a1a2e6); round 2 (orders: remakes, partial refunds, customer lookup, emails; 0024-0026) in progress |
+| Admin product management | done: catalog and photos (9ccd578), orders depth (7b3369f) |
 | Phase 0.5 sweep capture spike (Swift, behind a flag) | built, off by default (ff4c296, 8192b45); untested on a device |
-| UI and UX pass | apps/app done (e4b8960); apps/web after admin round 2 |
+| UI and UX pass | apps/app done (e4b8960); apps/web in progress with forms-designer |
 | docs/BUSINESS-GAPS.md | done (5ad999e) |
 
 ## Done (with commits)
@@ -116,6 +116,15 @@ every milestone, so the latest commit on the branch holds the latest state.
   not in the Pods file list yet), a dev client build,
   EXPO_PUBLIC_SWEEP_CAPTURE=true in the app env and SWEEP_CAPTURE_ENABLED=true
   on the worker.
+
+- Admin orders (7b3369f): remakes (0024, zero-cost paid orders linked to
+  the original, never Stripe, one open remake per order, CAD jobs through the
+  existing paid trigger), partial refunds (0025, ledger plus Stripe's
+  cumulative total so admin and dashboard refunds are not double counted),
+  customer lookup, append-only notes and an order timeline (0026), and four
+  new plain-text emails. 440 web tests and the SQL checks pass. **Deploy
+  migration 0025 before this web build**: the charge.refunded handler calls
+  its new RPC and would return 500 (Stripe retries) until it exists.
 
 ## Video results (counts and ratios only)
 
@@ -242,6 +251,12 @@ capture is Mac-side only.
   "Knee seen in all three thirds of the arc" may be too strict at the arc
   ends. The in-AR ghost leg, voice prompts and the bent-knee prompt are not
   built; the ghost leg is a flat 8-segment bar for now.
+- Orders: the remake versus refund policy (who qualifies, time window,
+  return shipping); whether a fit remake needs a rescan first; whether a
+  fully refunded order may also be remade; refunding delivered orders stays
+  Stripe-dashboard only; what the refund, cancel and remake emails say about
+  money timing and returning the original (left out). The rescan email has
+  no caller yet (the pipeline gate failure must trigger it).
 - Estimator conservative defaults: manual input accepts any non-empty subset
   of the 9 typed keys; a missing or invalid tolerance makes the gate fail,
   never pass; keys already typed are not offered as tape actions.

@@ -402,7 +402,16 @@ product_images id, product_id, storage_path (<product_id>/<uuid>.<ext>), alt_tex
                -- public bucket product-images, no listing policy (0023)
 orders         id, user_id (null after account deletion), product_id, scan_id_left, scan_id_right,
                status, stripe_payment_intent, stripe_checkout_session_id,
-               amount, address(json), paid_at, refunded_at, created_at
+               amount, address(json), paid_at, refunded_at, created_at,
+               remake_of, remake_reason (0024: zero-cost remake, created paid,
+               never Stripe), stripe_refunded_cents (0025: Stripe's cumulative
+               refunded total, a high-water mark)
+order_refunds  id, order_id, seq, kind (full|partial), amount_cents, stripe_refund_id,
+               stripe_status, actor, created_at
+               -- admin refund ledger, append-only, service role only (0025);
+               -- refunded so far = greatest(ledger sum, stripe_refunded_cents)
+order_notes    id, order_id, body (<= 2000), author, request_id, created_at
+               -- internal, append-only, service role only (0026)
 stripe_events  id (Stripe event id), type, received_at
                -- recorded inside the same transaction as each webhook effect
 pipeline_jobs  id, order_id, step, status, attempts, error, started_at,

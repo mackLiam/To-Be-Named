@@ -19,6 +19,20 @@ order page no longer crashes for deleted accounts. Still open: the app Shop
 tab must read availability, order and the main image (until then coming-soon
 items look buyable in the app, though checkout refuses them), preset value
 sets, lead time, EXIF stripping, and the photos themselves.
+
+**Update 2026-11-11 (7b3369f):** refunds and remakes (rank 6), emails (rank
+9) and order management (rank 12) moved forward in code. Admin remakes
+(0024) are zero-cost paid orders linked by remake_of with a fixed reason,
+made from shipped or delivered orders, reusing scans and measurements, one
+open remake per order, CAD jobs through the existing paid trigger. Partial
+refunds from the admin panel (0025) keep a ledger plus Stripe's cumulative
+total from the webhook; remaining = charge minus the larger of the two.
+Customer lookup by email, append-only internal notes and a paginated order
+timeline (0026). New plain-text emails: refund issued, order cancelled,
+remake started, rescan needed (not yet wired to the pipeline). Still open:
+the remake versus refund policy, whether a fit remake needs a rescan first,
+refunding delivered orders from the panel, HTML email templates, lookup by
+name and CSV export. Build order items 3 and 4 are done.
 ## 1. Summary
 
 The software spine of a shop exists and is well tested: a pending-then-paid order
