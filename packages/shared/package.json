@@ -14,6 +14,14 @@
       "types": "./dist/brand.d.ts",
       "default": "./dist/brand.js"
     },
+    "./legModel": {
+      "types": "./dist/legModel.d.ts",
+      "default": "./dist/legModel.js"
+    },
+    "./quality": {
+      "types": "./dist/quality.d.ts",
+      "default": "./dist/quality.js"
+    },
     "./schema/measurements.schema.json": "./schema/measurements.schema.json"
   },
   "files": [

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { MEASUREMENT_KEYS } from '../src/measurements.js';
+import { LEG_LENGTH_RANGE_MM, MEASUREMENT_KEYS } from '../src/measurements.js';
 import { measurementsSchema, validateMeasurements } from '../src/validate.js';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -30,6 +30,13 @@ describe('measurements schema', () => {
     const properties = Object.keys(measurementsSchema.properties as Record<string, unknown>);
     expect(new Set(MEASUREMENT_KEYS)).toEqual(new Set(properties));
     expect(MEASUREMENT_KEYS).toHaveLength(25);
+  });
+
+  it('mirrors the Leg_Length range for platform-neutral contracts (anti-drift)', () => {
+    const spec = (measurementsSchema.properties as Record<string, Record<string, unknown>>)[
+      'Leg_Length'
+    ];
+    expect(LEG_LENGTH_RANGE_MM).toEqual({ min: spec?.['minimum'], max: spec?.['maximum'] });
   });
 
   it('is identical to the schema file on disk (anti-drift)', () => {

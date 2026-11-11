@@ -2,8 +2,7 @@
 // services/pipeline/src/forms_pipeline/shape/contract.py; change both in the
 // same commit.
 
-import { MEASUREMENT_KEYS } from './measurements.js';
-import { measurementsSchema } from './validate.js';
+import { LEG_LENGTH_RANGE_MM, MEASUREMENT_KEYS } from './measurements.js';
 
 export const LEG_MODEL_FORMAT = 'forms.leg-model';
 export const LEG_MODEL_VERSION = 1;
@@ -82,10 +81,7 @@ export function checkExactKeys(
 }
 
 function legLengthBounds(): { min: number; max: number } {
-  const props = (measurementsSchema as { properties: Record<string, Record<string, number>> })
-    .properties;
-  const spec = props['Leg_Length'] as Record<string, number>;
-  return { min: spec['minimum'] as number, max: spec['maximum'] as number };
+  return LEG_LENGTH_RANGE_MM;
 }
 
 // The leg-length key or any OW/OD key; derived from the schema names.

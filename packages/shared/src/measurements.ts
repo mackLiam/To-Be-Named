@@ -37,4 +37,9 @@ export const MEASUREMENT_KEYS = [
 
 export type MeasurementKey = (typeof MEASUREMENT_KEYS)[number];
 
+// Mirror of the schema's Leg_Length minimum and maximum, so contracts that run
+// in React Native (legModel.ts) need not load validate.ts, which reads the
+// schema file from disk. Pinned to the file by an anti-drift test.
+export const LEG_LENGTH_RANGE_MM = { min: 150, max: 600 } as const;
+
 export type Measurements = Record<MeasurementKey, number>;
