@@ -11,7 +11,8 @@ every milestone, so the latest commit on the branch holds the latest state.
 | Video harness: Swift forms-video | done (bf48577) |
 | Video harness: Python driver | done (9424e5c) |
 | Iteration on the two test videos | round 2 in progress |
-| Phase 1a estimator (pure, unwired) and shared contracts | in progress (contracts pinned 5022b62) |
+| Phase 1a estimator (pure, unwired) and shared contracts | done (5022b62, 6159a30, a81fca2) |
+| Phase 2 3D viewer spike (r3f + expo-gl) | in progress |
 | Admin product management | not started |
 | UI and UX pass | not started |
 | docs/BUSINESS-GAPS.md | not started |
@@ -45,6 +46,29 @@ every milestone, so the latest commit on the branch holds the latest state.
   similarity transforms. It found a production bug: the silhouette loft can
   join neighbouring rings half a turn apart (eigenvector sign flip), which
   corrupts any slice that lands in that band. Fix in progress.
+
+- Shared contracts (6159a30): forms.leg-model v1 and
+  forms.measurement-quality v1, TS and Python validators, 67 shared fixtures
+  that pass or fail identically on both sides.
+- Leg estimator v1, Phase 1a (a81fca2): forms_pipeline/shape, pure and
+  unwired. 206 tests, including a calibration check (2-sigma coverage 0.947
+  over 200 seeded synthetic legs). Its output validates in the TS validator.
+  Provisional feasibility table (placeholder noise and tolerances, not a ship
+  check):
+
+  | Source mix | Verdict | r | Worst key |
+  |---|---|---|---|
+  | Full silhouette sweep (span 180) | required | 1.01 | Leg_Length |
+  | Short sweep (span 90) | required | 1.57 | S2_OD |
+  | Mesh | required | 1.21 | Leg_Length |
+  | Manual only | none | 0.00 | none |
+  | Prior only | fail | 18.79 | S3_OD |
+
+  Plan 4.6 requires a full sweep to come out "none". Leg_Length binds: 5 mm
+  landmark sigma plus the per-capture scale term gives 7.6 mm against a
+  15 mm tolerance. Widths and depths pass (r up to 0.95). Per the plan the
+  tolerance or the capture changes, not the bands: a decision for Liam and
+  Zane after the Phase 0 calibration.
 
 ## Video results (counts and ratios only)
 
@@ -106,6 +130,9 @@ capture is Mac-side only.
 - Estimator noise levels, the bootstrap prior and the gate tolerances (15 mm
   Leg_Length, 6 mm fit-critical OW and OD) are provisional placeholders,
   flagged `provisional` in the files, until the Phase 0 calibration.
+- Estimator conservative defaults: manual input accepts any non-empty subset
+  of the 9 typed keys; a missing or invalid tolerance makes the gate fail,
+  never pass; keys already typed are not offered as tape actions.
 
 ## Onshape copies created
 
