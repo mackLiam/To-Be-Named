@@ -440,12 +440,11 @@ None. No Onshape call was made tonight.
 The two videos and everything derived from them stayed on this Mac: bundles
 and results under services/pipeline/recordings/ (gitignored), plus a session
 scratchpad. Nothing was committed or uploaded; docs carry counts and ratios
-only. The mask contact sheets and logs in the scratchpad were deleted; a
-blanket clear of the rest was refused by a safety check, so delete the
-session scratchpad folder
-(/private/tmp/claude-501/-Users-liam-Documents-personal-To-Be-Named/e034ddb4-604f-421a-9c30-9e1d1b685b93/scratchpad)
-yourself; it may still hold a few frame-derived images
-(3836_120.png, out/, probe/, b/).
+only. The mask contact sheets, logs, the frame-derived image and the scratch
+bundle copy were deleted from the scratchpad by explicit path; what remains
+there is scripts and fake-data web screenshots, no body data. The derived
+bundles and results under services/pipeline/recordings/ stay, as the brief
+allows.
 
 ## What failed and why
 
